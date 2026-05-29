@@ -1,0 +1,76 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# uv
+uv.lock
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Reins local runtime data
+.reins/
+*.sqlite
+*.sqlite3
+*.db
+
+# Hermes local runtime data
+.hermes/
+
+# Logs
+*.log
+logs/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# OS files
+Thumbs.db
+
+# Node / frontend, for future web UI
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Generated docs
+site/
+docs/_build/
+
+# Local temporary files
+tmp/
+temp/
+.cache/
+
+# Do not ignore vendored Hermes submodule pointer.
+# The actual vendor/hermes-agent contents are managed by Git submodule.

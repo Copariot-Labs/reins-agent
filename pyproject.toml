@@ -1,0 +1,16 @@
+[project]
+name = "reins"
+version = "0.1.0"
+description = "A local-first personal agent powered by an upstream agent runtime"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+reins = "reins.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
