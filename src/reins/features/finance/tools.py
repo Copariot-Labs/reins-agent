@@ -57,7 +57,13 @@ def _summary_to_dict(report) -> dict[str, Any]:
 
 
 def parse_transaction_text(text: str) -> dict[str, Any]:
-    parsed = parse_finance_text(text)
+    try:
+        parsed = parse_finance_text(text)
+    except FinanceError as exc:
+        return {
+            "ok": False,
+            "error": str(exc),
+        }
 
     transaction = None
 
@@ -135,7 +141,13 @@ def record_transaction(
 
 
 def record_transaction_from_text(text: str) -> dict[str, Any]:
-    parsed = parse_finance_text(text)
+    try:
+        parsed = parse_finance_text(text)
+    except FinanceError as exc:
+        return {
+            "ok": False,
+            "error": str(exc),
+        }
 
     if parsed.intent not in {"record_expense", "record_income"}:
         return {

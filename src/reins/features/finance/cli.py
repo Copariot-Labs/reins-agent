@@ -127,7 +127,12 @@ def handle_parse(argv: Sequence[str]) -> int:
         return 1
 
     text = " ".join(argv)
-    parsed = parse_finance_text(text)
+
+    try:
+        parsed = parse_finance_text(text)
+    except FinanceError as exc:
+        print(f"Finance error: {exc}")
+        return 1
 
     print(format_parsed_intent(parsed))
     return 0
@@ -139,7 +144,12 @@ def handle_add(argv: Sequence[str]) -> int:
         return 1
 
     text = " ".join(argv)
-    parsed = parse_finance_text(text)
+
+    try:
+        parsed = parse_finance_text(text)
+    except FinanceError as exc:
+        print(f"Finance error: {exc}")
+        return 1
 
     if parsed.intent not in {"record_expense", "record_income"}:
         print("This does not look like an income or expense transaction.")

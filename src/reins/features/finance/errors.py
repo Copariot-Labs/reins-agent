@@ -21,5 +21,9 @@ class InvalidDateRangeError(FinanceError):
     """Raised when start date is later than end date."""
 
 
+class InvalidFinanceDateError(FinanceError):
+    """Raised when finance text contains an invalid date."""
+
+
 class InvalidTransactionInputError(FinanceError):
     """Raised when transaction input is invalid."""

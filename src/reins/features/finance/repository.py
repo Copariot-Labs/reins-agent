@@ -160,6 +160,12 @@ def list_transactions(filters: TransactionFilter | None = None) -> list[Transact
     if filters.start_date and filters.end_date and filters.start_date > filters.end_date:
         raise InvalidDateRangeError("Start date cannot be later than end date.")
 
+    if filters.limit <= 0:
+        raise InvalidTransactionInputError("Limit must be greater than zero.")
+
+    if filters.offset < 0:
+        raise InvalidTransactionInputError("Offset cannot be negative.")
+
     clauses = []
     params: list[object] = []
 

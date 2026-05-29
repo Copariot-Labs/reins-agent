@@ -4,6 +4,7 @@ import re
 from datetime import date, timedelta
 
 from reins.features.finance.classifier import classify_finance_intent
+from reins.features.finance.errors import InvalidFinanceDateError
 from reins.features.finance.schema import (
     FinanceIntentName,
     ParsedFinanceIntent,
@@ -85,6 +86,13 @@ def _parse_amount(text: str) -> float | None:
     return candidates[0][0]
 
 
+def _validated_date(year: int, month: int, day: int, raw: str) -> date:
+    try:
+        return date(year, month, day)
+    except ValueError as exc:
+        raise InvalidFinanceDateError(f"Invalid date in finance text: {raw}") from exc
+
+
 def _parse_single_date(text: str, today: date) -> date | None:
     if "前天" in text:
         return today - timedelta(days=2)
@@ -101,18 +109,28 @@ def _parse_single_date(text: str, today: date) -> date | None:
     iso_match = ISO_DATE_PATTERN.search(text)
     if iso_match:
         year, month, day = map(int, iso_match.groups())
-        return date(year, month, day)
+        return _validated_date(year, month, day, iso_match.group(0))
 
     chinese_match = CHINESE_DATE_PATTERN.search(text)
     if chinese_match:
         year_raw, month_raw, day_raw = chinese_match.groups()
         year = int(year_raw) if year_raw else today.year
-        return date(year, int(month_raw), int(day_raw))
+        return _validated_date(
+            year,
+            int(month_raw),
+            int(day_raw),
+            chinese_match.group(0),
+        )
 
     slash_match = SLASH_DATE_PATTERN.search(text)
     if slash_match:
         month_raw, day_raw = slash_match.groups()
-        return date(today.year, int(month_raw), int(day_raw))
+        return _validated_date(
+            today.year,
+            int(month_raw),
+            int(day_raw),
+            slash_match.group(0),
+        )
 
     return None
 

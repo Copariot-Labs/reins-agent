@@ -18,11 +18,6 @@ def get_reins_home() -> Path:
     if value:
         return Path(value).expanduser().resolve()
 
-    hermes_home = os.environ.get("HERMES_HOME")
-
-    if hermes_home:
-        return Path(hermes_home).expanduser().resolve()
-
     return default_reins_home().resolve()
 
 

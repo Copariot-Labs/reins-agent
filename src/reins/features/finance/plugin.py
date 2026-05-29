@@ -129,7 +129,14 @@ def handle_query_summary(parsed: ParsedFinanceIntent) -> FinancePreprocessResult
 
 
 def preprocess_finance_text(text: str) -> FinancePreprocessResult:
-    parsed = parse_finance_text(text)
+    try:
+        parsed = parse_finance_text(text)
+    except FinanceError as exc:
+        return FinancePreprocessResult(
+            handled=True,
+            message=f"Finance error: {exc}",
+            exit_code=1,
+        )
 
     if not should_handle_finance_text(parsed):
         return FinancePreprocessResult(

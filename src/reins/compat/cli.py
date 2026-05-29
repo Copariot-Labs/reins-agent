@@ -13,6 +13,7 @@ REINS_OWNED_COMMANDS = {
     "migrate",
     "finance",
     "debug-env",
+    "web",
 }
 
 
@@ -91,12 +92,14 @@ Reins commands:
   reins migrate hermes
   reins update
   reins finance
+  reins web
   reins debug-env
 
 Examples:
   reins chat
   reins doctor
   reins model
+  reins web
   reins finance --help
   REINS_HOME=/tmp/reins-test reins debug-env
 
@@ -172,11 +175,15 @@ def handle_reins_owned_command(argv: Sequence[str]) -> int:
 
         return finance_main(argv[1:])
 
-    print_unknown_command(command)
+    if command == "web":
+        from reins.compat.web import run_web
 
+        return run_web(argv[1:])
+
+    print_unknown_command(command)
     return 1
 
-# 
+
 def maybe_preprocess_chat(argv: Sequence[str]) -> int | None:
     if not argv:
         return None

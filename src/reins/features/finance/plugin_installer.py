@@ -29,6 +29,13 @@ def write_plugin_yaml(plugin_dir: Path) -> None:
                 "name: reins-finance",
                 'version: "0.1.0"',
                 "description: Reins local finance tools for Hermes Agent",
+                "kind: standalone",
+                "provides_tools:",
+                "  - finance_parse_transaction_text",
+                "  - finance_record_transaction",
+                "  - finance_record_transaction_from_text",
+                "  - finance_list_transactions",
+                "  - finance_summarize_period",
                 "",
             ]
         ),
