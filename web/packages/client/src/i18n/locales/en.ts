@@ -120,6 +120,7 @@ export default {
     memory: 'Memory',
     logs: 'Logs',
     usage: 'Usage',
+    finance: 'Finance',
     performance: 'Performance',
     skillsUsage: 'Skills Usage',
     channels: 'Channels',
@@ -154,6 +155,49 @@ export default {
     nodeVersionWarning: 'Detected Node.js v{version}. Please upgrade to version 23 or later.',
     changelog: 'Changelog',
     noChangelog: 'No changelog available',
+  },
+
+  finance: {
+    title: 'Finance',
+    loadFailed: 'Failed to load finance data',
+    exportFailed: 'Export failed',
+    exportSuccess: 'Exported {count} transactions',
+    actions: {
+      refresh: 'Refresh',
+      exportCsv: 'Export CSV',
+    },
+    filters: {
+      all: 'All',
+    },
+    types: {
+      income: 'Income',
+      expense: 'Expense',
+    },
+    stats: {
+      income: 'Income',
+      expense: 'Expense',
+      net: 'Net',
+      transactions: 'Transactions',
+    },
+    panels: {
+      categories: 'Categories',
+      recent: 'Recent',
+      transactions: 'Transactions',
+    },
+    states: {
+      loading: 'Loading...',
+      noDatabase: 'No finance database found.',
+      noCategories: 'No categories',
+      noRecent: 'No recent transactions',
+    },
+    table: {
+      date: 'Date',
+      type: 'Type',
+      amount: 'Amount',
+      category: 'Category',
+      description: 'Description',
+      payment: 'Payment',
+    },
   },
 
   performance: {

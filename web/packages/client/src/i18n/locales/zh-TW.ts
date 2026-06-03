@@ -120,6 +120,7 @@ export default {
     memory: '記憶',
     logs: '日誌',
     usage: '用量',
+    finance: '財務',
     performance: '效能監控',
     skillsUsage: '技能用量',
     channels: '頻道',
@@ -154,6 +155,49 @@ export default {
     nodeVersionWarning: '偵測到 Node.js v{version}，請升級至 23 以上版本。',
     changelog: '更新日誌',
     noChangelog: '目前無更新日誌',
+  },
+
+  finance: {
+    title: '財務',
+    loadFailed: '載入財務資料失敗',
+    exportFailed: '匯出失敗',
+    exportSuccess: '已匯出 {count} 筆交易',
+    actions: {
+      refresh: '重新整理',
+      exportCsv: '匯出 CSV',
+    },
+    filters: {
+      all: '全部',
+    },
+    types: {
+      income: '收入',
+      expense: '支出',
+    },
+    stats: {
+      income: '收入',
+      expense: '支出',
+      net: '淨額',
+      transactions: '交易數',
+    },
+    panels: {
+      categories: '分類',
+      recent: '最近交易',
+      transactions: '交易明細',
+    },
+    states: {
+      loading: '載入中...',
+      noDatabase: '找不到財務資料庫。',
+      noCategories: '暫無分類',
+      noRecent: '暫無最近交易',
+    },
+    table: {
+      date: '日期',
+      type: '類型',
+      amount: '金額',
+      category: '分類',
+      description: '描述',
+      payment: '付款方式',
+    },
   },
 
   performance: {

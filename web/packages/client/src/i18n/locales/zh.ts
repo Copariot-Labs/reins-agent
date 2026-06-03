@@ -120,6 +120,7 @@ export default {
     memory: '记忆',
     logs: '日志',
     usage: '用量',
+    finance: '财务',
     performance: '性能监控',
     skillsUsage: '技能用量',
     channels: '频道',
@@ -154,6 +155,49 @@ export default {
     nodeVersionWarning: '检测到 Node.js v{version}，请升级到23以上版本。',
     changelog: '更新日志',
     noChangelog: '暂无更新日志',
+  },
+
+  finance: {
+    title: '财务',
+    loadFailed: '加载财务数据失败',
+    exportFailed: '导出失败',
+    exportSuccess: '已导出 {count} 条交易',
+    actions: {
+      refresh: '刷新',
+      exportCsv: '导出 CSV',
+    },
+    filters: {
+      all: '全部',
+    },
+    types: {
+      income: '收入',
+      expense: '支出',
+    },
+    stats: {
+      income: '收入',
+      expense: '支出',
+      net: '净额',
+      transactions: '交易数',
+    },
+    panels: {
+      categories: '分类',
+      recent: '最近交易',
+      transactions: '交易明细',
+    },
+    states: {
+      loading: '加载中...',
+      noDatabase: '未找到财务数据库。',
+      noCategories: '暂无分类',
+      noRecent: '暂无最近交易',
+    },
+    table: {
+      date: '日期',
+      type: '类型',
+      amount: '金额',
+      category: '分类',
+      description: '描述',
+      payment: '支付方式',
+    },
   },
 
   performance: {
