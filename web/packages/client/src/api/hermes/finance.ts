@@ -18,6 +18,17 @@ export interface FinanceTransaction {
   status: string
 }
 
+export interface FinanceTransactionInput {
+  type: FinanceTransactionType
+  amount: number
+  currency?: string
+  category: string
+  description: string
+  counterparty?: string | null
+  payment_method?: string | null
+  occurred_at: string
+}
+
 export interface FinanceCategoryTotal {
   category: string
   amount: number
@@ -52,6 +63,10 @@ export interface FinanceExportResponse {
   count: number
 }
 
+export interface FinanceTransactionMutationResponse {
+  transaction: FinanceTransaction
+}
+
 export interface FinanceQueryParams {
   start_date?: string
   end_date?: string
@@ -79,6 +94,26 @@ export async function fetchFinanceSummary(params: FinanceQueryParams = {}): Prom
 export async function fetchFinanceTransactions(params: FinanceQueryParams = {}): Promise<FinanceTransactionsResponse> {
   const search = toSearchParams(params)
   return request<FinanceTransactionsResponse>(`/api/hermes/finance/transactions?${search.toString()}`)
+}
+
+export async function createFinanceTransaction(input: FinanceTransactionInput): Promise<FinanceTransactionMutationResponse> {
+  return request<FinanceTransactionMutationResponse>('/api/hermes/finance/transactions', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export async function updateFinanceTransaction(id: number, input: FinanceTransactionInput): Promise<FinanceTransactionMutationResponse> {
+  return request<FinanceTransactionMutationResponse>(`/api/hermes/finance/transactions/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  })
+}
+
+export async function deleteFinanceTransaction(id: number): Promise<FinanceTransactionMutationResponse> {
+  return request<FinanceTransactionMutationResponse>(`/api/hermes/finance/transactions/${id}`, {
+    method: 'DELETE',
+  })
 }
 
 export async function exportFinanceData(params: FinanceQueryParams = {}): Promise<FinanceExportResponse> {

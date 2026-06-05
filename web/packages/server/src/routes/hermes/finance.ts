@@ -1,16 +1,25 @@
 import Router from '@koa/router'
 import {
+  createFinanceTransaction,
+  deleteFinanceTransaction,
   exportFinanceTransactions,
   getFinanceSummary,
   listFinanceTransactions,
   parseFinanceQuery,
+  updateFinanceTransaction,
 } from '../../services/hermes/finance'
 
 export const financeRoutes = new Router()
 
 function handleError(ctx: any, err: any) {
   const message = err?.message || 'Finance request failed'
-  const isBadRequest = /invalid|limit|offset|start date|month/i.test(message)
+  if (/not found/i.test(message)) {
+    ctx.status = 404
+    ctx.body = { error: message }
+    return
+  }
+
+  const isBadRequest = /invalid|required|limit|offset|start date|month|amount|currency|category|description|transaction date|transaction type/i.test(message)
   ctx.status = isBadRequest ? 400 : 500
   ctx.body = { error: message }
 }
@@ -34,6 +43,32 @@ financeRoutes.get('/api/hermes/finance/transactions', async (ctx) => {
       limit: query.limit,
       offset: query.offset,
     }
+  } catch (err: any) {
+    handleError(ctx, err)
+  }
+})
+
+financeRoutes.post('/api/hermes/finance/transactions', async (ctx) => {
+  try {
+    const body = ctx.request.body as Record<string, unknown> | undefined
+    ctx.body = { transaction: createFinanceTransaction(body || {}) }
+  } catch (err: any) {
+    handleError(ctx, err)
+  }
+})
+
+financeRoutes.put('/api/hermes/finance/transactions/:id', async (ctx) => {
+  try {
+    const body = ctx.request.body as Record<string, unknown> | undefined
+    ctx.body = { transaction: updateFinanceTransaction(ctx.params.id, body || {}) }
+  } catch (err: any) {
+    handleError(ctx, err)
+  }
+})
+
+financeRoutes.delete('/api/hermes/finance/transactions/:id', async (ctx) => {
+  try {
+    ctx.body = { transaction: deleteFinanceTransaction(ctx.params.id) }
   } catch (err: any) {
     handleError(ctx, err)
   }
