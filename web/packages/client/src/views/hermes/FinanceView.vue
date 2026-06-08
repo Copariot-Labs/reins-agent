@@ -953,6 +953,12 @@ onMounted(() => {
   background: $bg-secondary;
   font-size: 14px;
   outline: none;
+  // For Chrome, Edge, Safari
+  &::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+    cursor: pointer;
+    color: white;
+  }
 
   &:focus {
     border-color: $accent-primary;

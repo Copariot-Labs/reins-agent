@@ -8,6 +8,7 @@ import thinkingImageLight from "@/assets/thinking-light.gif";
 import thinkingImageDark from "@/assets/thinking-dark.gif";
 import { useTheme } from "@/composables/useTheme";
 import { useToolTraceVisibility } from "@/composables/useToolTraceVisibility";
+import ThinkingIndicator from "./ThinkingIndicator.vue";
 
 const chatStore = useChatStore();
 const { t } = useI18n();
@@ -213,12 +214,13 @@ defineExpose({
     <template #after>
       <Transition name="fade">
       <div v-if="chatStore.isRunActive || chatStore.abortState" class="streaming-indicator">
-        <img
+        <!-- <img
           :src="isDark ? thinkingImageDark : thinkingImageLight"
           alt=""
           aria-hidden="true"
           class="thinking-video"
-        >
+        > -->
+        <ThinkingIndicator :show-text="true" text="Thinking" />
         <div v-if="visibleToolCalls.length > 0 || chatStore.compressionState || chatStore.abortState" class="tool-calls-panel">
           <!-- Abort indicator -->
           <div v-if="chatStore.abortState" class="tool-call-item compression-item">

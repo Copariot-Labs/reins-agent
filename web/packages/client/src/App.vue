@@ -65,7 +65,7 @@ useKeyboard()
           </div>
           <div v-if="ready" class="app-layout" :class="{ 'no-sidebar': isLoginPage }">
             <button v-if="!isLoginPage" class="hamburger-btn" @click="appStore.toggleSidebar">
-              <img src="/logo.png" alt="Menu" style="width: 24px; height: 24px;" />
+              <!-- <img src="/logo.png" alt="Menu" style="width: 24px; height: 24px;" /> -->
             </button>
             <div v-if="!isLoginPage && appStore.sidebarOpen" class="mobile-backdrop" @click="appStore.closeSidebar" />
             <AppSidebar v-if="!isLoginPage" />

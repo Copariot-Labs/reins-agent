@@ -1,7 +1,7 @@
 export default {
   // 登录
   login: {
-    title: 'Hermes Web UI',
+    title: 'Reins Web UI',
     description: '输入用户名和密码以继续。',
     placeholder: '访问令牌',
     submit: '登录',
@@ -41,7 +41,8 @@ export default {
     passwordLoginNotConfigured: '密码登录未配置',
     passwordLoginConfigured: '当前账户：{username}',
     defaultCredentialTitle: '请修改默认账户和密码',
-    defaultCredentialMessage: '当前登录账户仍在使用默认用户名或默认密码。为了避免未授权访问，请尽快进入当前账户修改用户名和密码。',
+    defaultCredentialMessage:
+      '当前登录账户仍在使用默认用户名或默认密码。为了避免未授权访问，请尽快进入当前账户修改用户名和密码。',
     defaultCredentialAction: '去修改',
     defaultCredentialLater: '稍后提醒',
   },
@@ -138,8 +139,8 @@ export default {
     groupMonitoring: '监控',
     groupMonitoringShort: '监控',
     groupTools: '工具',
-    groupToolsShort: "工具",
-    versionPreview: "版本预览",
+    groupToolsShort: '工具',
+    versionPreview: '版本预览',
     settings: '设置',
     connected: '已连接',
     disconnected: '未连接',
@@ -322,8 +323,10 @@ export default {
     sessions: '会话',
     webUiSessions: '会话',
     allProfiles: '全部配置',
-    profileMissingModelsTip: '该会话所属配置「{profile}」没有可用的 provider 或模型',
-    sessionScopeHint: '这里只显示当前会话；CLI、Telegram、Discord、Cron 等通道会话在历史中只读查看。',
+    profileMissingModelsTip:
+      '该会话所属配置「{profile}」没有可用的 provider 或模型',
+    sessionScopeHint:
+      '这里只显示当前会话；CLI、Telegram、Discord、Cron 等通道会话在历史中只读查看。',
     openHistory: '打开历史',
     hermesHistory: 'Hermes 历史',
     historyScopeHint: '这里按来源只读查看当前 profile 的 Hermes 历史会话。',
@@ -614,7 +617,8 @@ export default {
   plugins: {
     title: '插件',
     refresh: '刷新',
-    notice: '只读展示可发现的 Hermes 插件 manifest。发现元数据读取不会加载插件代码。v1 管理动作仍保留在 CLI，新 Hermes 会话生效。',
+    notice:
+      '只读展示可发现的 Hermes 插件 manifest。发现元数据读取不会加载插件代码。v1 管理动作仍保留在 CLI，新 Hermes 会话生效。',
     loadFailed: '加载插件失败',
     commandCopied: '命令已复制',
     searchPlaceholder: '搜索 key、名称、描述、路径...',
@@ -735,20 +739,25 @@ export default {
     nousDenied: '授权被拒绝，请重试。',
     nousExpired: '授权已过期，请重试。',
     copilotLoginTitle: 'GitHub Copilot 登录',
-    copilotWaiting: '请前往 GitHub 输入下方设备代码完成授权。授权完成后窗口会自动关闭。',
+    copilotWaiting:
+      '请前往 GitHub 输入下方设备代码完成授权。授权完成后窗口会自动关闭。',
     copilotCopyCode: '代码已复制',
     copilotOpenLink: '打开 GitHub 授权页',
     copilotApproved: '登录成功！',
     copilotDenied: '授权被拒绝。',
     copilotExpired: '授权链接已过期，请重试。',
     copilotAddDetectedTitle: '检测到 GitHub Copilot',
-    copilotAddDetected: '已在本机检测到 GitHub Copilot OAuth 凭证，点击「添加」即可在 Hermes 中启用 Copilot。',
+    copilotAddDetected:
+      '已在本机检测到 GitHub Copilot OAuth 凭证，点击「添加」即可在 Hermes 中启用 Copilot。',
     copilotAddSourceEnv: '来源：~/.hermes/.env（COPILOT_GITHUB_TOKEN）',
     copilotAddSourceGhCli: '来源：gh CLI（gh auth token）',
     copilotAddSourceAppsJson: '来源：VS Code Copilot 插件（apps.json）',
-    copilotDeleteHintEnv: '此操作会清除 ~/.hermes/.env 中的 COPILOT_GITHUB_TOKEN，不影响其他工具。',
-    copilotDeleteHintGhCli: 'Copilot 将从 Hermes 列表移除。不会影响 gh CLI —— `gh auth status` 仍显示已登录。',
-    copilotDeleteHintAppsJson: 'Copilot 将从 Hermes 列表移除。不会影响 VS Code Copilot 插件的登录。',
+    copilotDeleteHintEnv:
+      '此操作会清除 ~/.hermes/.env 中的 COPILOT_GITHUB_TOKEN，不影响其他工具。',
+    copilotDeleteHintGhCli:
+      'Copilot 将从 Hermes 列表移除。不会影响 gh CLI —— `gh auth status` 仍显示已登录。',
+    copilotDeleteHintAppsJson:
+      'Copilot 将从 Hermes 列表移除。不会影响 VS Code Copilot 插件的登录。',
     xaiLoginTitle: 'xAI Grok OAuth 登录',
     xaiWaiting: '请在打开的 xAI 页面完成授权。授权完成后窗口会自动关闭。',
     xaiOpenLink: '打开 xAI 授权页',
@@ -758,9 +767,10 @@ export default {
     customBadge: '自定义',
     previewBadge: '预览',
     disabledBadge: '不可用',
-    disabledTooltip: "此模型当前账号不可用",
+    disabledTooltip: '此模型当前账号不可用',
     customModelPlaceholder: '未列出的模型 ID',
-    customModelHint: '仅用于 provider 支持但未返回的模型；不是重命名。按回车加载。',
+    customModelHint:
+      '仅用于 provider 支持但未返回的模型；不是重命名。按回车加载。',
     removeCustomModel: '移除这个未列出的模型',
     noProviders: '暂无 Provider，添加一个开始吧。',
     models: '模型列表',
@@ -778,7 +788,8 @@ export default {
     aliasSaveFailed: '保存显示名失败',
     manageVisibleModels: '管理可见模型',
     manageVisibleModelsFor: '管理 {name} 可见模型',
-    visibilityHint: '仅影响 Web UI 的模型选择器和模型页展示，不会改写 Hermes CLI 的 provider/model 配置。实际调用仍使用原始模型 ID。',
+    visibilityHint:
+      '仅影响 Web UI 的模型选择器和模型页展示，不会改写 Hermes CLI 的 provider/model 配置。实际调用仍使用原始模型 ID。',
     visibilitySelectOne: '至少保留一个可见模型',
     visibilitySaved: '可见模型已保存',
     visibilitySaveFailed: '保存可见模型失败',
@@ -811,7 +822,8 @@ export default {
     rename: '重命名',
     delete: '删除',
     switchTo: '切换 Hermes Profile',
-    switchConfirm: '将执行 `hermes profile use {name}` 并切换 Hermes CLI 的 active profile，是否继续？',
+    switchConfirm:
+      '将执行 `hermes profile use {name}` 并切换 Hermes CLI 的 active profile，是否继续？',
     switchSuccess: 'Hermes active profile 已切换为 "{name}"',
     switchFailed: '切换 Hermes Profile 失败，网关可能需要手动重启',
     createSuccess: '配置 "{name}" 已创建',
@@ -833,10 +845,12 @@ export default {
     newName: '新名称',
     newNamePlaceholder: '小写字母、数字、连字符',
     cloneFromCurrent: '从当前配置克隆',
-    cloneCleanupNotice: '克隆时会自动跳过独占型平台凭据（Weixin / Telegram / Slack 等），避免与源配置冲突',
+    cloneCleanupNotice:
+      '克隆时会自动跳过独占型平台凭据（Weixin / Telegram / Slack 等），避免与源配置冲突',
     cloneStrippedCredentials: '已清理 {count} 项独占凭据：{list}',
     cloneDisabledPlatforms: '已禁用 {count} 个平台：{list}',
-    cloneStrippedConfigCredentials: '已清理 config.yaml 中 {count} 项内嵌凭据：{list}',
+    cloneStrippedConfigCredentials:
+      '已清理 config.yaml 中 {count} 项内嵌凭据：{list}',
     archivePath: '归档路径',
     archivePathPlaceholder: '归档文件的服务器路径',
     importName: '配置名称（可选）',
@@ -1043,7 +1057,8 @@ export default {
       openaiVoiceHint: '用于语音合成的音色',
 
       // 自定义端点
-      customHint: '支持任何 OpenAI 兼容的 TTS 服务——可用于 GPT-SoVITS、CosyVoice 等自部署服务。',
+      customHint:
+        '支持任何 OpenAI 兼容的 TTS 服务——可用于 GPT-SoVITS、CosyVoice 等自部署服务。',
       customUrl: 'API 地址',
       customUrlHint: 'TTS 服务的完整基础地址',
       customUrlPlaceholder: '本地适配器中配置的地址 如：http://127.0.0.1:9880',
@@ -1088,7 +1103,8 @@ export default {
       mimoVoiceHint: '选择预置音色',
       mimoVoiceDesignPrompt: '音色描述',
       mimoVoiceDesignPromptHint: '描述你想要的音色特征',
-      mimoVoiceDesignPromptPlaceholder: '例如：温柔的年轻女声，语速稍慢，带着磁性',
+      mimoVoiceDesignPromptPlaceholder:
+        '例如：温柔的年轻女声，语速稍慢，带着磁性',
       mimoCloneAudio: '上传音频',
       mimoCloneAudioHint: '上传音频样本用于音色复刻，支持 mp3/wav，最大 10MB',
       mimoCloneAudioUpload: '选择文件',
@@ -1099,34 +1115,35 @@ export default {
     },
   },
   githubPreview: {
-    title: "版本预览",
-    description: "将选中的 GitHub tag 克隆到 Web UI 预览工作目录，安装依赖并以开发端口运行。",
-    refresh: "刷新",
-    selectTag: "选择 tag",
-    prepare: "准备代码",
-    install: "安装依赖",
-    start: "开启预览",
-    stop: "停止",
-    note: "预览代码存放在 Web UI 数据目录下。正式环境仍使用 8648，预览开发环境使用前端 8651、后端 8650。",
-    path: "预览路径",
-    webuiHome: "预览数据目录",
-    currentTag: "当前 Tag",
-    repoReady: "仓库就绪",
-    dependencies: "依赖已安装",
-    running: "运行状态",
-    notRunning: "未运行",
-    open: "打开预览",
-    log: "操作日志路径",
-    logOutput: "日志输出",
-    actionLog: "操作日志",
-    devLog: "开发服务日志",
-    yes: "是",
-    no: "否",
-    actionFailed: "操作失败",
-    prepareSuccess: "预览代码已准备好",
-    installSuccess: "依赖安装完成",
-    startSuccess: "预览已启动",
-    stopSuccess: "预览已停止",
+    title: '版本预览',
+    description:
+      '将选中的 GitHub tag 克隆到 Web UI 预览工作目录，安装依赖并以开发端口运行。',
+    refresh: '刷新',
+    selectTag: '选择 tag',
+    prepare: '准备代码',
+    install: '安装依赖',
+    start: '开启预览',
+    stop: '停止',
+    note: '预览代码存放在 Web UI 数据目录下。正式环境仍使用 8648，预览开发环境使用前端 8651、后端 8650。',
+    path: '预览路径',
+    webuiHome: '预览数据目录',
+    currentTag: '当前 Tag',
+    repoReady: '仓库就绪',
+    dependencies: '依赖已安装',
+    running: '运行状态',
+    notRunning: '未运行',
+    open: '打开预览',
+    log: '操作日志路径',
+    logOutput: '日志输出',
+    actionLog: '操作日志',
+    devLog: '开发服务日志',
+    yes: '是',
+    no: '否',
+    actionFailed: '操作失败',
+    prepareSuccess: '预览代码已准备好',
+    installSuccess: '依赖安装完成',
+    startSuccess: '预览已启动',
+    stopSuccess: '预览已停止',
   },
 
   // 平台频道设置
@@ -1158,7 +1175,8 @@ export default {
     ignoredChannelsHint: '不响应的频道 ID（逗号分隔）',
     noThreadChannels: '无线程频道',
     noThreadChannelsHint: '不创建线程的频道 ID（逗号分隔）',
-    exclusiveTokenWarning: '此平台使用独占 token 锁。每个 profile 必须使用不同的身份 token，否则会与其他 profile 冲突导致 gateway 启动失败。',
+    exclusiveTokenWarning:
+      '此平台使用独占 token 锁。每个 profile 必须使用不同的身份 token，否则会与其他 profile 冲突导致 gateway 启动失败。',
     botToken: 'Bot Token',
     botTokenHint: '开发者门户获取的 Bot Token',
     accessToken: 'Access Token',
@@ -1261,7 +1279,8 @@ export default {
     copyRoomLink: '复制房间链接',
     deleteRoomConfirm: '确定删除这个房间吗？',
     clearContext: '清理上下文',
-    clearContextConfirm: '确定清理当前房间上下文吗？消息和压缩快照会被删除，智能体和成员会保留。',
+    clearContextConfirm:
+      '确定清理当前房间上下文吗？消息和压缩快照会被删除，智能体和成员会保留。',
     contextCleared: '上下文已清理',
     you: '你',
     joined: '已加入房间',
@@ -1402,77 +1421,136 @@ export default {
 
   // 更新日志
   changelog: {
-    new_0_6_4_1: 'CI 流程加固：PR 检查固定 npm 安装路径，并补齐 Docker smoke 校验',
+    new_0_6_4_1:
+      'CI 流程加固：PR 检查固定 npm 安装路径，并补齐 Docker smoke 校验',
     new_0_6_4_2: '聊天消息列表新增虚拟分页，长会话滚动和加载更稳定',
-    new_0_6_4_3: 'Docker 镜像发布改为仅在 release 场景执行，避免普通 PR 触发发布流程',
-    new_0_6_4_4: '新增版本预览工作流：超级管理员可选择 main 或 GitHub tag，准备预览代码、安装依赖、启动/停止预览并查看日志',
-    new_0_6_4_5: '预览实例隔离前后端端口、Web UI home 和 agent bridge endpoint，并在运行时修补旧版本的端口、WebSocket、base URL 与嵌套预览入口',
-    new_0_6_4_6: '修复 legacy session_usage 表缺少 created_at 时的迁移问题，旧数据会以默认值补齐',
-    new_0_6_4_7: '预览和正式环境的 bridge profile worker endpoint 按 broker 隔离，避免同名 Profile 并发聊天时互相抢占导致 unknown run',
-    new_0_6_3_1: 'Bridge spinner 状态不再写入模型 reasoning，避免装饰性 thinking 文案污染后续上下文',
-    new_0_6_3_2: 'History 新增 Hermes CLI 会话导入控制，并在导入时更安全地规范化消息结构',
-    new_0_6_3_3: 'Provider 配置支持编辑内置 base URL，新增 LM Studio 内置 Provider，并支持从 LM Studio /models 实时发现模型',
-    new_0_6_3_4: '通过 Web UI bridge 发起的 OpenRouter 请求会携带 Hermes Web UI 应用归因 headers',
+    new_0_6_4_3:
+      'Docker 镜像发布改为仅在 release 场景执行，避免普通 PR 触发发布流程',
+    new_0_6_4_4:
+      '新增版本预览工作流：超级管理员可选择 main 或 GitHub tag，准备预览代码、安装依赖、启动/停止预览并查看日志',
+    new_0_6_4_5:
+      '预览实例隔离前后端端口、Web UI home 和 agent bridge endpoint，并在运行时修补旧版本的端口、WebSocket、base URL 与嵌套预览入口',
+    new_0_6_4_6:
+      '修复 legacy session_usage 表缺少 created_at 时的迁移问题，旧数据会以默认值补齐',
+    new_0_6_4_7:
+      '预览和正式环境的 bridge profile worker endpoint 按 broker 隔离，避免同名 Profile 并发聊天时互相抢占导致 unknown run',
+    new_0_6_3_1:
+      'Bridge spinner 状态不再写入模型 reasoning，避免装饰性 thinking 文案污染后续上下文',
+    new_0_6_3_2:
+      'History 新增 Hermes CLI 会话导入控制，并在导入时更安全地规范化消息结构',
+    new_0_6_3_3:
+      'Provider 配置支持编辑内置 base URL，新增 LM Studio 内置 Provider，并支持从 LM Studio /models 实时发现模型',
+    new_0_6_3_4:
+      '通过 Web UI bridge 发起的 OpenRouter 请求会携带 Hermes Web UI 应用归因 headers',
     new_0_6_3_5: '公开 auth status 接口不再向未登录请求暴露第一个用户名',
-    new_0_6_3_6: '钉钉设置新增 AI Card Template ID，并持久化为 DINGTALK_CARD_TEMPLATE_ID',
-    new_0_6_3_7: 'Bridge socket JSON 输出会清洗孤立 Unicode surrogate 字符，避免聊天 SSE 崩溃',
+    new_0_6_3_6:
+      '钉钉设置新增 AI Card Template ID，并持久化为 DINGTALK_CARD_TEMPLATE_ID',
+    new_0_6_3_7:
+      'Bridge socket JSON 输出会清洗孤立 Unicode surrogate 字符，避免聊天 SSE 崩溃',
     new_0_6_2_1: 'Web Bridge 支持 /plan 命令，计划命令会正确启动并展示运行状态',
-    new_0_6_2_2: '聊天输入框指令菜单新增 /goal 和 /subgoal，支持状态、暂停、恢复、完成和清空等操作',
+    new_0_6_2_2:
+      '聊天输入框指令菜单新增 /goal 和 /subgoal，支持状态、暂停、恢复、完成和清空等操作',
     new_0_6_2_3: 'Goal 和 subgoal 工作流接入聊天会话，支持目标延续和状态更新',
     new_0_6_2_4: '修复任务投递目标渠道选项，定时任务可以选择正确的投递位置',
     new_0_6_2_5: '上下文 token 用量在重连后会按快照感知逻辑准确恢复',
-    new_0_6_2_6: '上下文检查点压缩对较慢的 Codex 总结更稳定：Web UI 等待 5 分钟，Python bridge broker 不再在 2 分钟后提前切断 worker 请求',
-    new_0_6_2_7: '修复聊天队列推进，queued 消息不会提前跳入消息列表，多窗口同步场景也保持一致',
-    new_0_6_2_8: 'Clarify 弹窗输入框不再按 Enter 直接提交，已回复的 Clarify 也不会在切换会话后重复弹出',
-    new_0_6_2_9: 'Bridge 终端环境刷新和 stale pid 清理收敛到更准确的作用域，减少前端运行状态残留',
+    new_0_6_2_6:
+      '上下文检查点压缩对较慢的 Codex 总结更稳定：Web UI 等待 5 分钟，Python bridge broker 不再在 2 分钟后提前切断 worker 请求',
+    new_0_6_2_7:
+      '修复聊天队列推进，queued 消息不会提前跳入消息列表，多窗口同步场景也保持一致',
+    new_0_6_2_8:
+      'Clarify 弹窗输入框不再按 Enter 直接提交，已回复的 Clarify 也不会在切换会话后重复弹出',
+    new_0_6_2_9:
+      'Bridge 终端环境刷新和 stale pid 清理收敛到更准确的作用域，减少前端运行状态残留',
     new_0_6_2_10: '默认上下文长度遵循 Hermes 规范，调整为 256,000 tokens',
-    new_0_5_31_1: "增强 Bridge Broker 重启稳定性，修复群聊最终流式渲染，并新增群聊 {'@'}all 路由",
+    new_0_5_31_1:
+      "增强 Bridge Broker 重启稳定性，修复群聊最终流式渲染，并新增群聊 {'@'}all 路由",
     new_0_5_31_2: '文件管理支持复制绝对路径，并修复移动端会话抽屉层级遮挡问题',
-    new_0_5_31_3: 'Profile 选择器新增头像展示、自定义头像、运行状态弹窗，以及网关/Profile 重启操作',
-    new_0_5_31_4: 'Profile 头像会同步用于单聊、群聊和折叠侧边栏，头像元数据保存到 Web UI 目录并兼容 Windows 路径',
-    new_0_5_31_5: '改进 Docker、Termux、Windows 的 gateway 检测和重启逻辑，优先使用 gateway_state/gateway.pid 判断 managed gateway 是否存活',
-    new_0_5_31_6: '新增 APIKEY.FUN 生图媒体接口和内置 apikey-image-gen skill，支持文生图、图生图和图片编辑，并从 active Profile 的 fun-codex 配置读取凭据',
-    new_0_5_33_1: '单聊和群聊的运行失败、Socket 错误会作为红色 Agent 消息保留在消息列表中，不再一闪而过',
-    new_0_5_33_2: '会话搜索支持按当前选中的 Profile 限定范围，未选择 Profile 时仍可搜索全部 Profile',
-    new_0_5_33_3: 'Skills 页面新增中英文推荐清单，未选中 Skill 时展示推荐内容，并支持再次点击已选 Skill 取消选中',
+    new_0_5_31_3:
+      'Profile 选择器新增头像展示、自定义头像、运行状态弹窗，以及网关/Profile 重启操作',
+    new_0_5_31_4:
+      'Profile 头像会同步用于单聊、群聊和折叠侧边栏，头像元数据保存到 Web UI 目录并兼容 Windows 路径',
+    new_0_5_31_5:
+      '改进 Docker、Termux、Windows 的 gateway 检测和重启逻辑，优先使用 gateway_state/gateway.pid 判断 managed gateway 是否存活',
+    new_0_5_31_6:
+      '新增 APIKEY.FUN 生图媒体接口和内置 apikey-image-gen skill，支持文生图、图生图和图片编辑，并从 active Profile 的 fun-codex 配置读取凭据',
+    new_0_5_33_1:
+      '单聊和群聊的运行失败、Socket 错误会作为红色 Agent 消息保留在消息列表中，不再一闪而过',
+    new_0_5_33_2:
+      '会话搜索支持按当前选中的 Profile 限定范围，未选择 Profile 时仍可搜索全部 Profile',
+    new_0_5_33_3:
+      'Skills 页面新增中英文推荐清单，未选中 Skill 时展示推荐内容，并支持再次点击已选 Skill 取消选中',
     new_0_5_33_4: '清理未使用的 changelog 国际化内容，减少前端 i18n 体积',
-    new_0_5_33_5: '修复 Windows 中文系统下 agent bridge 解析 netstat 输出编码失败导致启动异常的问题',
-    new_0_5_33_6: '更新 Nous Portal 预设模型列表，对齐公开 catalog 和 Portal 推荐模型',
-    new_0_5_33_7: 'Profile 列表和运行状态改为从目录读取 Profile 名称、从 config 读取默认模型，避免 CLI 表格列宽导致 name/model/gateway 解析错位',
-    new_0_5_34_1: '存储会话和群聊消息时会规范化多模态工具结果，避免 base64 图片污染回放内容',
-    new_0_5_34_2: '自定义 Hermes 模型改为由后端配置持久化，并新增添加/移除模型接口',
+    new_0_5_33_5:
+      '修复 Windows 中文系统下 agent bridge 解析 netstat 输出编码失败导致启动异常的问题',
+    new_0_5_33_6:
+      '更新 Nous Portal 预设模型列表，对齐公开 catalog 和 Portal 推荐模型',
+    new_0_5_33_7:
+      'Profile 列表和运行状态改为从目录读取 Profile 名称、从 config 读取默认模型，避免 CLI 表格列宽导致 name/model/gateway 解析错位',
+    new_0_5_34_1:
+      '存储会话和群聊消息时会规范化多模态工具结果，避免 base64 图片污染回放内容',
+    new_0_5_34_2:
+      '自定义 Hermes 模型改为由后端配置持久化，并新增添加/移除模型接口',
     new_0_5_34_3: '修复 Bridge 运行结束后的最终上下文用量和工具状态更新',
     new_0_5_34_4: '优化看板过滤、负责人展示、卡片操作和任务详情处理',
-    new_0_5_34_5: '修复压缩用量统计：缓存固定 prompt/tool 上下文，并展示完整上下文 token 总量',
-    new_0_5_34_6: '群聊 Agent 缓存各自固定上下文，仅在真正开始压缩时显示压缩进度',
-    new_0_5_34_7: 'Web UI 内置 Skills 会同步注入到所有 Profile，并在日志中标明目标 Profile',
-    new_0_5_34_8: '如果 Windows 下看板功能异常，请升级 Hermes 以获取最新的看板数据库迁移修复',
-    new_0_5_35_1: 'Bridge 会话支持不同 session 并发运行，同一 session 仍保持串行，避免消息顺序错乱',
-    new_0_5_35_2: '新增“性能监控”页面，可查看系统 CPU/内存、Web UI、Bridge Broker、Workers 和活跃会话状态',
-    new_0_5_35_3: '新增 Worker 级资源统计，展示每个 worker 的 CPU、内存、Profile、会话数和运行状态',
-    new_0_5_35_4: '优化 Bridge worker 生命周期清理，Broker 关闭或父进程退出时会回收 worker，减少残留 Python 进程',
-    new_0_5_35_5: '监控接口增强跨平台兼容，支持 macOS、Windows、Linux、Docker 和 Termux 的资源采集降级',
-    new_0_5_35_6: '性能监控不再因为 Agent 初始化中的 worker 请求而阻塞，降低 Windows 上 request timed out 的概率',
-    new_0_5_35_7: '聊天 Markdown 新增文本内容内联预览，下载图标会直接下载文件，避免被预览弹窗拦截',
-    new_0_5_35_8: '优化内容展示抽屉：移动端全宽并提供关闭入口，桌面端加宽到 800px，文本与 Markdown 背景保持一致',
-    new_0_6_0_1: '分账户、分 Profile 管理现在统一覆盖会话、模型、用量、看板、任务、上传、媒体以及相关 Hermes API',
-    new_0_6_0_2: '内置媒体 Skills 仅在媒体接口使用生成的服务端 token，并按请求的 Profile 读取 fun-codex/xAI 凭据',
-    new_0_6_0_3: '单聊和群聊都会向运行提示词注入当前 Hermes Profile，方便 Skills 请求时带上 X-Hermes-Profile',
-    new_0_6_0_4: 'delegate_task 的 subagent 进度会实时展示到聊天界面，包含开始、工具调用、进度和完成状态',
-    new_0_6_0_5: '停止或中断运行时会清理临时事件，避免旧的 abort 状态带入下一次聊天',
-    new_0_6_0_6: '同步更新文档和官网文案，覆盖账户管理、默认凭据、分账户分 Profile 管理、上传下载和内置媒体 Skills',
-    new_0_6_0_7: '新增 CLI 维护命令，用于清理登录 IP 锁和重置默认 admin / 123456 登录账户',
-    new_0_6_0_8: '0.6.0 是 Web UI 从单用户走向多用户的分界版本；如果多用户模式遇到问题，请提交 issue，必要时可回退到 0.5.35 单用户版本',
-    new_0_6_1_1: '会话列表默认展示当前账户可用的全部 Profile；只有显式选择 Profile 过滤时才按 Profile 限定，同时 CLI start/stop/status 不再打印 node:sqlite 实验警告',
-    new_0_6_1_2: 'Clarify 和确认回复现在会通过已鉴权的聊天 socket 传到 Hermes bridge，并补充了响应链路测试',
-    new_0_6_1_3: '导航项和聊天会话行改为原生链接，支持新标签打开、复制链接，并保留侧边栏折叠状态',
-    new_0_6_1_4: '会话链接不再把路由 Profile 泄漏到普通会话列表过滤里，并补齐“在新标签页打开”的多语言文案',
-    new_0_6_1_5: 'Skills 会读取当前 Profile config 中的 skills.external_dirs，标记 external 来源，保持本地优先，并支持读取外部 skill 文件',
-    new_0_6_1_6: '登录 IP 锁阈值提升到 10 次失败，锁定后的登录页会提示清锁和重置默认登录的恢复命令',
-    new_0_6_1_7: '移动端或后台导致的聊天断连会按临时断连处理，重连后从服务端恢复运行状态',
-    new_0_6_1_8: 'Bridge 工具标记 flush 会在工具和运行边界持久化残留的工具调用前缀，避免刷新后内容截断',
-    new_0_6_1_9: 'History 和会话删除改为携带 Profile 精确目标，并在全局 Profile 切换时刷新历史页',
-    new_0_6_1_10: '移除旧的 AUTH_DISABLED 认证绕过以适配多用户权限模型，同时保留 AUTH_TOKEN 支持',
-
+    new_0_5_34_5:
+      '修复压缩用量统计：缓存固定 prompt/tool 上下文，并展示完整上下文 token 总量',
+    new_0_5_34_6:
+      '群聊 Agent 缓存各自固定上下文，仅在真正开始压缩时显示压缩进度',
+    new_0_5_34_7:
+      'Web UI 内置 Skills 会同步注入到所有 Profile，并在日志中标明目标 Profile',
+    new_0_5_34_8:
+      '如果 Windows 下看板功能异常，请升级 Hermes 以获取最新的看板数据库迁移修复',
+    new_0_5_35_1:
+      'Bridge 会话支持不同 session 并发运行，同一 session 仍保持串行，避免消息顺序错乱',
+    new_0_5_35_2:
+      '新增“性能监控”页面，可查看系统 CPU/内存、Web UI、Bridge Broker、Workers 和活跃会话状态',
+    new_0_5_35_3:
+      '新增 Worker 级资源统计，展示每个 worker 的 CPU、内存、Profile、会话数和运行状态',
+    new_0_5_35_4:
+      '优化 Bridge worker 生命周期清理，Broker 关闭或父进程退出时会回收 worker，减少残留 Python 进程',
+    new_0_5_35_5:
+      '监控接口增强跨平台兼容，支持 macOS、Windows、Linux、Docker 和 Termux 的资源采集降级',
+    new_0_5_35_6:
+      '性能监控不再因为 Agent 初始化中的 worker 请求而阻塞，降低 Windows 上 request timed out 的概率',
+    new_0_5_35_7:
+      '聊天 Markdown 新增文本内容内联预览，下载图标会直接下载文件，避免被预览弹窗拦截',
+    new_0_5_35_8:
+      '优化内容展示抽屉：移动端全宽并提供关闭入口，桌面端加宽到 800px，文本与 Markdown 背景保持一致',
+    new_0_6_0_1:
+      '分账户、分 Profile 管理现在统一覆盖会话、模型、用量、看板、任务、上传、媒体以及相关 Hermes API',
+    new_0_6_0_2:
+      '内置媒体 Skills 仅在媒体接口使用生成的服务端 token，并按请求的 Profile 读取 fun-codex/xAI 凭据',
+    new_0_6_0_3:
+      '单聊和群聊都会向运行提示词注入当前 Hermes Profile，方便 Skills 请求时带上 X-Hermes-Profile',
+    new_0_6_0_4:
+      'delegate_task 的 subagent 进度会实时展示到聊天界面，包含开始、工具调用、进度和完成状态',
+    new_0_6_0_5:
+      '停止或中断运行时会清理临时事件，避免旧的 abort 状态带入下一次聊天',
+    new_0_6_0_6:
+      '同步更新文档和官网文案，覆盖账户管理、默认凭据、分账户分 Profile 管理、上传下载和内置媒体 Skills',
+    new_0_6_0_7:
+      '新增 CLI 维护命令，用于清理登录 IP 锁和重置默认 admin / 123456 登录账户',
+    new_0_6_0_8:
+      '0.6.0 是 Web UI 从单用户走向多用户的分界版本；如果多用户模式遇到问题，请提交 issue，必要时可回退到 0.5.35 单用户版本',
+    new_0_6_1_1:
+      '会话列表默认展示当前账户可用的全部 Profile；只有显式选择 Profile 过滤时才按 Profile 限定，同时 CLI start/stop/status 不再打印 node:sqlite 实验警告',
+    new_0_6_1_2:
+      'Clarify 和确认回复现在会通过已鉴权的聊天 socket 传到 Hermes bridge，并补充了响应链路测试',
+    new_0_6_1_3:
+      '导航项和聊天会话行改为原生链接，支持新标签打开、复制链接，并保留侧边栏折叠状态',
+    new_0_6_1_4:
+      '会话链接不再把路由 Profile 泄漏到普通会话列表过滤里，并补齐“在新标签页打开”的多语言文案',
+    new_0_6_1_5:
+      'Skills 会读取当前 Profile config 中的 skills.external_dirs，标记 external 来源，保持本地优先，并支持读取外部 skill 文件',
+    new_0_6_1_6:
+      '登录 IP 锁阈值提升到 10 次失败，锁定后的登录页会提示清锁和重置默认登录的恢复命令',
+    new_0_6_1_7:
+      '移动端或后台导致的聊天断连会按临时断连处理，重连后从服务端恢复运行状态',
+    new_0_6_1_8:
+      'Bridge 工具标记 flush 会在工具和运行边界持久化残留的工具调用前缀，避免刷新后内容截断',
+    new_0_6_1_9:
+      'History 和会话删除改为携带 Profile 精确目标，并在全局 Profile 切换时刷新历史页',
+    new_0_6_1_10:
+      '移除旧的 AUTH_DISABLED 认证绕过以适配多用户权限模型，同时保留 AUTH_TOKEN 支持',
   },
-}
+};

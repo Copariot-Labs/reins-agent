@@ -1,7 +1,7 @@
 export default {
   // Login
   login: {
-    title: 'Hermes Web UI',
+    title: 'Reins Web UI',
     description: 'Enter your username and password to continue.',
     placeholder: 'Access token',
     submit: 'Login',
@@ -12,7 +12,8 @@ export default {
     tokenLogin: 'Token',
     usernamePlaceholder: 'Username',
     passwordPlaceholder: 'Password',
-    defaultCredentialsHint: 'Default username: admin. Default password: 123456.',
+    defaultCredentialsHint:
+      'Default username: admin. Default password: 123456.',
     credentialsRequired: 'Please enter username and password',
     invalidCredentials: 'Invalid username or password',
     tooManyAttempts: 'Too many failed attempts, please try again later',
@@ -41,14 +42,16 @@ export default {
     passwordLoginNotConfigured: 'Password login is not configured',
     passwordLoginConfigured: 'Current account: {username}',
     defaultCredentialTitle: 'Change the default account credentials',
-    defaultCredentialMessage: 'This account is still using the default username or password. To prevent unauthorized access, update the username and password as soon as possible.',
+    defaultCredentialMessage:
+      'This account is still using the default username or password. To prevent unauthorized access, update the username and password as soon as possible.',
     defaultCredentialAction: 'Update now',
     defaultCredentialLater: 'Remind me later',
   },
 
   users: {
     title: 'Account Management',
-    description: 'Create users, assign roles, and control which profiles regular admins can access.',
+    description:
+      'Create users, assign roles, and control which profiles regular admins can access.',
     create: 'Create User',
     edit: 'Edit User',
     username: 'Username',
@@ -138,8 +141,8 @@ export default {
     groupMonitoring: 'Monitoring',
     groupMonitoringShort: 'Mon',
     groupTools: 'Tools',
-    groupToolsShort: "Tools",
-    versionPreview: "Version Preview",
+    groupToolsShort: 'Tools',
+    versionPreview: 'Version Preview',
     settings: 'Settings',
     connected: 'Connected',
     disconnected: 'Disconnected',
@@ -149,10 +152,12 @@ export default {
     updateVersion: 'Upgrade to v{version}',
     reloadClientVersion: 'Reload for v{version}',
     updating: 'Updating...',
-    updateSuccess: 'Update successful. Please refresh the page shortly. If it does not start after a while, start it manually.',
+    updateSuccess:
+      'Update successful. Please refresh the page shortly. If it does not start after a while, start it manually.',
     updateFailed: 'Update failed',
     logout: 'Sign Out',
-    nodeVersionWarning: 'Detected Node.js v{version}. Please upgrade to version 23 or later.',
+    nodeVersionWarning:
+      'Detected Node.js v{version}. Please upgrade to version 23 or later.',
     changelog: 'Changelog',
     noChangelog: 'No changelog available',
   },
@@ -230,7 +235,8 @@ export default {
 
   performance: {
     title: 'Performance',
-    subtitle: 'Inspect system resources, bridge broker, workers, and active sessions',
+    subtitle:
+      'Inspect system resources, bridge broker, workers, and active sessions',
     refresh: 'Refresh',
     autoRefreshOn: 'Auto refresh',
     autoRefreshOff: 'Manual refresh',
@@ -271,7 +277,8 @@ export default {
     contextEditTitle: 'Edit Context Length',
     contextEditDesc: 'Set context length limit for current model (in tokens)',
     contextEditPlaceholder: 'Enter context length',
-    contextEditHint: 'Common values: 256k (Hermes default), 128k (GPT-4), 32k (GPT-3.5)',
+    contextEditHint:
+      'Common values: 256k (Hermes default), 128k (GPT-4), 32k (GPT-3.5)',
     contextEditSave: 'Save',
     contextEditCancel: 'Cancel',
     contextEditInvalid: 'Please enter a valid context length',
@@ -282,7 +289,8 @@ export default {
     outlineTitle: 'Conversation Outline',
     outlineEmpty: 'No conversation content',
     outlineUserQuestion: 'User question',
-    inputPlaceholder: 'Type a message... (Enter to send, Shift+Enter for new line)',
+    inputPlaceholder:
+      'Type a message... (Enter to send, Shift+Enter for new line)',
     slashCommandArgs: {
       message: '<message>',
       title: '<title>',
@@ -322,15 +330,19 @@ export default {
     sessions: 'Sessions',
     webUiSessions: 'Sessions',
     allProfiles: 'All profiles',
-    profileMissingModelsTip: 'Profile "{profile}" has no available provider or model for this session',
-    sessionScopeHint: 'Chat shows Web UI/API Server sessions only. CLI, Telegram, Discord, Cron, and other channel sessions are read-only in History.',
+    profileMissingModelsTip:
+      'Profile "{profile}" has no available provider or model for this session',
+    sessionScopeHint:
+      'Chat shows Web UI/API Server sessions only. CLI, Telegram, Discord, Cron, and other channel sessions are read-only in History.',
     openHistory: 'Open History',
     hermesHistory: 'Hermes History',
-    historyScopeHint: 'Read-only Hermes history sessions for the current profile, grouped by source.',
+    historyScopeHint:
+      'Read-only Hermes history sessions for the current profile, grouped by source.',
     noSessions: 'No sessions',
     searchTitle: 'Search Sessions',
     searchSubtitle: 'Search by title or message content',
-    searchScope: 'Search scope: Web UI local session database only. Read-only Hermes history sessions are not included.',
+    searchScope:
+      'Search scope: Web UI local session database only. Read-only Hermes history sessions are not included.',
     searchHint: 'Cmd/Ctrl+K',
     searchPlaceholder: 'Search sessions...',
     searchEmpty: 'Recent sessions',
@@ -614,7 +626,8 @@ export default {
   plugins: {
     title: 'Plugins',
     refresh: 'Refresh',
-    notice: 'Read-only inventory of discoverable Hermes plugin manifests. Discovery metadata is read without loading plugin code. Management actions stay in CLI for v1; changes take effect in new Hermes sessions.',
+    notice:
+      'Read-only inventory of discoverable Hermes plugin manifests. Discovery metadata is read without loading plugin code. Management actions stay in CLI for v1; changes take effect in new Hermes sessions.',
     loadFailed: 'Failed to load plugins',
     commandCopied: 'Command copied',
     searchPlaceholder: 'Search key, name, description, path...',
@@ -722,7 +735,8 @@ export default {
     deleteProvider: 'Delete Provider',
     deleteConfirm: 'Are you sure you want to delete "{name}"?',
     codexLoginTitle: 'OpenAI Codex Login',
-    codexWaiting: 'Enter this code at the authorization page to complete login:',
+    codexWaiting:
+      'Enter this code at the authorization page to complete login:',
     codexCopyCode: 'Code copied',
     codexOpenLink: 'Open authorization page',
     codexApproved: 'Login successful',
@@ -735,22 +749,28 @@ export default {
     nousDenied: 'Authorization was denied. Please try again.',
     nousExpired: 'Authorization expired. Please try again.',
     copilotLoginTitle: 'GitHub Copilot Login',
-    copilotWaiting: 'Open GitHub and enter the device code below to authorize. The window will close automatically once approved.',
+    copilotWaiting:
+      'Open GitHub and enter the device code below to authorize. The window will close automatically once approved.',
     copilotCopyCode: 'Code copied',
     copilotOpenLink: 'Open GitHub authorization page',
     copilotApproved: 'Sign-in succeeded!',
     copilotDenied: 'Authorization denied.',
     copilotExpired: 'The authorization link has expired. Please retry.',
     copilotAddDetectedTitle: 'GitHub Copilot detected',
-    copilotAddDetected: 'A GitHub Copilot OAuth token was detected on this machine. Click Add to enable Copilot in Hermes.',
+    copilotAddDetected:
+      'A GitHub Copilot OAuth token was detected on this machine. Click Add to enable Copilot in Hermes.',
     copilotAddSourceEnv: 'Source: ~/.hermes/.env (COPILOT_GITHUB_TOKEN)',
     copilotAddSourceGhCli: 'Source: gh CLI (gh auth token)',
     copilotAddSourceAppsJson: 'Source: VS Code Copilot extension (apps.json)',
-    copilotDeleteHintEnv: 'This will clear COPILOT_GITHUB_TOKEN in ~/.hermes/.env. Other tools are not affected.',
-    copilotDeleteHintGhCli: 'Copilot will be hidden from Hermes. Your gh CLI login is not affected — `gh auth status` will still show you signed in.',
-    copilotDeleteHintAppsJson: 'Copilot will be hidden from Hermes. Your VS Code Copilot extension login is not affected.',
+    copilotDeleteHintEnv:
+      'This will clear COPILOT_GITHUB_TOKEN in ~/.hermes/.env. Other tools are not affected.',
+    copilotDeleteHintGhCli:
+      'Copilot will be hidden from Hermes. Your gh CLI login is not affected — `gh auth status` will still show you signed in.',
+    copilotDeleteHintAppsJson:
+      'Copilot will be hidden from Hermes. Your VS Code Copilot extension login is not affected.',
     xaiLoginTitle: 'xAI Grok OAuth Login',
-    xaiWaiting: 'Complete authorization in the opened xAI page. This window will close automatically once approved.',
+    xaiWaiting:
+      'Complete authorization in the opened xAI page. This window will close automatically once approved.',
     xaiOpenLink: 'Open xAI authorization page',
     xaiCopyLink: 'Copy authorization link',
     xaiApproved: 'Sign-in succeeded!',
@@ -758,9 +778,10 @@ export default {
     customBadge: 'CUSTOM',
     previewBadge: 'PREVIEW',
     disabledBadge: 'UNAVAILABLE',
-    disabledTooltip: "This model is currently unavailable for your account.",
+    disabledTooltip: 'This model is currently unavailable for your account.',
     customModelPlaceholder: 'Unlisted model ID',
-    customModelHint: 'For provider-supported models not returned by the API; not a display rename. Press Enter to load.',
+    customModelHint:
+      'For provider-supported models not returned by the API; not a display rename. Press Enter to load.',
     removeCustomModel: 'Remove this unlisted model',
     noProviders: 'No providers found. Add a custom provider to get started.',
     models: 'Models',
@@ -770,7 +791,8 @@ export default {
     aliasTitle: 'Model display name',
     aliasTitleFor: 'Display name for {model}',
     aliasPlaceholder: 'Leave empty to use original model ID',
-    aliasHint: 'Display-only alias. Hermes still receives the canonical model ID.',
+    aliasHint:
+      'Display-only alias. Hermes still receives the canonical model ID.',
     aliasCanonical: 'Original ID: {model}',
     aliasUseOriginal: 'Use original ID',
     aliasManage: 'Display names',
@@ -778,7 +800,8 @@ export default {
     aliasSaveFailed: 'Failed to save display name',
     manageVisibleModels: 'Manage visible models',
     manageVisibleModelsFor: 'Manage visible models for {name}',
-    visibilityHint: 'Only affects the Web UI model picker and Models page. Hermes CLI provider/model config is not rewritten; calls still use canonical model IDs.',
+    visibilityHint:
+      'Only affects the Web UI model picker and Models page. Hermes CLI provider/model config is not rewritten; calls still use canonical model IDs.',
     visibilitySelectOne: 'Keep at least one visible model',
     visibilitySaved: 'Visible models saved',
     visibilitySaveFailed: 'Failed to save visible models',
@@ -819,9 +842,11 @@ export default {
     rename: 'Rename',
     delete: 'Delete',
     switchTo: 'Switch Hermes Profile',
-    switchConfirm: 'This will run `hermes profile use {name}` and change the active Hermes CLI profile. Continue?',
+    switchConfirm:
+      'This will run `hermes profile use {name}` and change the active Hermes CLI profile. Continue?',
     switchSuccess: 'Hermes active profile switched to "{name}"',
-    switchFailed: 'Failed to switch Hermes profile. Gateway may need manual restart.',
+    switchFailed:
+      'Failed to switch Hermes profile. Gateway may need manual restart.',
     createSuccess: 'Profile "{name}" created',
     createFailed: 'Failed to create profile',
     renameSuccess: 'Profile renamed',
@@ -834,17 +859,22 @@ export default {
     importSuccess: 'Profile imported',
     importFailed: 'Failed to import profile',
     importSelectFile: 'Select archive file',
-    importInvalidFile: 'Please select a valid archive (.tar.gz, .tgz, .gz, .zip)',
+    importInvalidFile:
+      'Please select a valid archive (.tar.gz, .tgz, .gz, .zip)',
     name: 'Profile Name',
     namePlaceholder: 'Lowercase letters, numbers, hyphens only',
-    nameValidation: 'Profile name can only contain lowercase letters, numbers, underscores, and hyphens',
+    nameValidation:
+      'Profile name can only contain lowercase letters, numbers, underscores, and hyphens',
     newName: 'New Name',
     newNamePlaceholder: 'Lowercase letters, numbers, hyphens',
     cloneFromCurrent: 'Clone from current profile',
-    cloneCleanupNotice: 'Cloning automatically skips exclusive platform credentials (Weixin / Telegram / Slack, etc.) to avoid conflicts with the source profile',
-    cloneStrippedCredentials: 'Stripped {count} exclusive credential(s): {list}',
+    cloneCleanupNotice:
+      'Cloning automatically skips exclusive platform credentials (Weixin / Telegram / Slack, etc.) to avoid conflicts with the source profile',
+    cloneStrippedCredentials:
+      'Stripped {count} exclusive credential(s): {list}',
     cloneDisabledPlatforms: 'Disabled {count} platform(s): {list}',
-    cloneStrippedConfigCredentials: 'Stripped {count} embedded credential(s) from config.yaml: {list}',
+    cloneStrippedConfigCredentials:
+      'Stripped {count} embedded credential(s) from config.yaml: {list}',
     archivePath: 'Archive Path',
     archivePathPlaceholder: 'Server path to archive file',
     importName: 'Profile Name (optional)',
@@ -973,11 +1003,14 @@ export default {
     },
     compression: {
       enabled: 'Enable Compression',
-      enabledHint: 'Automatically compress long chat history before it exceeds the model context',
+      enabledHint:
+        'Automatically compress long chat history before it exceeds the model context',
       threshold: 'Compression Threshold',
-      thresholdHint: 'Start compression when estimated tokens exceed this context ratio',
+      thresholdHint:
+        'Start compression when estimated tokens exceed this context ratio',
       targetRatio: 'Target Ratio',
-      targetRatioHint: 'Target history size after compression as a context ratio',
+      targetRatioHint:
+        'Target history size after compression as a context ratio',
       protectLastN: 'Protect Recent Messages',
       protectLastNHint: 'Keep this many latest messages uncompressed',
       protectFirstN: 'Protect First Messages',
@@ -996,14 +1029,16 @@ export default {
       humanOnly: 'Show human sessions only',
       humanOnlyHint: 'Hide sub-agent/session monitor noise by default',
       liveMonitorHumanOnly: 'Live monitor: show human sessions only',
-      liveMonitorHumanOnlyHint: 'Hide sub-agent/session monitor noise in the Live monitor by default',
+      liveMonitorHumanOnlyHint:
+        'Hide sub-agent/session monitor noise in the Live monitor by default',
       atHourHint: 'Reset session at this hour daily',
       requireAuth: 'Session Authorization',
       requireAuthHint: 'Require authorization for session operations',
     },
     privacy: {
       redactPii: 'Redact PII',
-      redactPiiHint: 'Auto-detect and hide sensitive info (passwords, keys, etc.)',
+      redactPiiHint:
+        'Auto-detect and hide sensitive info (passwords, keys, etc.)',
     },
     apiServer: {
       enable: 'Enable',
@@ -1051,17 +1086,20 @@ export default {
       openaiVoiceHint: 'Voice to use for synthesis',
 
       // Custom endpoint
-      customHint: 'Use any OpenAI-compatible TTS API — works with GPT-SoVITS, CosyVoice, etc.',
+      customHint:
+        'Use any OpenAI-compatible TTS API — works with GPT-SoVITS, CosyVoice, etc.',
       customUrl: 'API URL',
       customUrlHint: 'Base URL of your TTS service',
-      customUrlPlaceholder: 'The address configured in the local adapter, e.g. http://127.0.0.1:9880',
+      customUrlPlaceholder:
+        'The address configured in the local adapter, e.g. http://127.0.0.1:9880',
       customApiKey: 'API Key (Optional)',
       customApiKeyHint: 'Some custom endpoints require authentication',
       customApiKeyPlaceholder: 'Leave blank if not needed',
       // Edge TTS
       edgeHint: 'Powered by Microsoft Edge TTS (node-edge-tts).',
       edgeUrl: 'Adapter URL',
-      edgeUrlHint: 'Address of your Edge TTS adapter, e.g. http://127.0.0.1:9882',
+      edgeUrlHint:
+        'Address of your Edge TTS adapter, e.g. http://127.0.0.1:9882',
       edgeUrlPlaceholder: 'http://127.0.0.1:9882',
       edgeVoice: 'Voice',
       edgeVoiceHint: 'Select a voice for speech synthesis',
@@ -1081,7 +1119,8 @@ export default {
 
       // MiMo TTS
       providerMimo: 'MiMo TTS',
-      mimoHint: 'Xiaomi MiMo TTS — supports preset voices, voice design, and voice clone modes',
+      mimoHint:
+        'Xiaomi MiMo TTS — supports preset voices, voice design, and voice clone modes',
       mimoApiKey: 'API Key',
       mimoApiKeyHint: 'Get your key at platform.xiaomimimo.com',
       mimoApiKeyPlaceholder: 'MiMo API Key',
@@ -1096,45 +1135,49 @@ export default {
       mimoVoiceHint: 'Select a preset voice',
       mimoVoiceDesignPrompt: 'Voice Description',
       mimoVoiceDesignPromptHint: 'Describe the voice characteristics you want',
-      mimoVoiceDesignPromptPlaceholder: 'e.g., A warm young female voice, slightly slow, with a magnetic tone',
+      mimoVoiceDesignPromptPlaceholder:
+        'e.g., A warm young female voice, slightly slow, with a magnetic tone',
       mimoCloneAudio: 'Upload Audio',
-      mimoCloneAudioHint: 'Upload an audio sample for voice cloning (mp3/wav, max 10MB)',
+      mimoCloneAudioHint:
+        'Upload an audio sample for voice cloning (mp3/wav, max 10MB)',
       mimoCloneAudioUpload: 'Choose File',
       mimoCloneAudioClear: 'Clear',
       mimoStylePrompt: 'Style Prompt',
-      mimoStylePromptHint: 'Optional — describe the speaking style in natural language',
+      mimoStylePromptHint:
+        'Optional — describe the speaking style in natural language',
       mimoStylePromptPlaceholder: 'e.g., Bright and bouncy tone, fast pace',
     },
   },
   githubPreview: {
-    title: "Version Preview",
-    description: "Clone a selected GitHub tag into the Web UI preview workspace, install dependencies, and run it with the development ports.",
-    refresh: "Refresh",
-    selectTag: "Select a tag",
-    prepare: "Prepare Code",
-    install: "Install Dependencies",
-    start: "Start Preview",
-    stop: "Stop",
-    note: "Preview code is stored under the Web UI data home. Production remains on port 8648; preview development runs on frontend 8651 and backend 8650.",
-    path: "Preview Path",
-    webuiHome: "Preview Data Home",
-    currentTag: "Current Tag",
-    repoReady: "Repository Ready",
-    dependencies: "Dependencies Installed",
-    running: "Running",
-    notRunning: "Not running",
-    open: "Open Preview",
-    log: "Action Log Path",
-    logOutput: "Log Output",
-    actionLog: "Action Log",
-    devLog: "Dev Server Log",
-    yes: "Yes",
-    no: "No",
-    actionFailed: "Action failed",
-    prepareSuccess: "Preview code is ready",
-    installSuccess: "Dependencies installed",
-    startSuccess: "Preview started",
-    stopSuccess: "Preview stopped",
+    title: 'Version Preview',
+    description:
+      'Clone a selected GitHub tag into the Web UI preview workspace, install dependencies, and run it with the development ports.',
+    refresh: 'Refresh',
+    selectTag: 'Select a tag',
+    prepare: 'Prepare Code',
+    install: 'Install Dependencies',
+    start: 'Start Preview',
+    stop: 'Stop',
+    note: 'Preview code is stored under the Web UI data home. Production remains on port 8648; preview development runs on frontend 8651 and backend 8650.',
+    path: 'Preview Path',
+    webuiHome: 'Preview Data Home',
+    currentTag: 'Current Tag',
+    repoReady: 'Repository Ready',
+    dependencies: 'Dependencies Installed',
+    running: 'Running',
+    notRunning: 'Not running',
+    open: 'Open Preview',
+    log: 'Action Log Path',
+    logOutput: 'Log Output',
+    actionLog: 'Action Log',
+    devLog: 'Dev Server Log',
+    yes: 'Yes',
+    no: 'No',
+    actionFailed: 'Action failed',
+    prepareSuccess: 'Preview code is ready',
+    installSuccess: 'Dependencies installed',
+    startSuccess: 'Preview started',
+    stopSuccess: 'Preview stopped',
   },
 
   // Platform channel settings
@@ -1146,11 +1189,14 @@ export default {
     reactions: 'Reactions',
     reactionsHint: 'React to messages with emoji',
     freeResponseChats: 'Free Response Chats',
-    freeResponseChatsHint: "Chat IDs that respond without {'@'}mention (comma-separated)",
+    freeResponseChatsHint:
+      "Chat IDs that respond without {'@'}mention (comma-separated)",
     freeResponseChannels: 'Free Response Channels',
-    freeResponseChannelsHint: "Channel IDs that respond without {'@'}mention (comma-separated)",
+    freeResponseChannelsHint:
+      "Channel IDs that respond without {'@'}mention (comma-separated)",
     freeResponseRooms: 'Free Response Rooms',
-    freeResponseRoomsHint: "Room IDs that respond without {'@'}mention (comma-separated)",
+    freeResponseRoomsHint:
+      "Room IDs that respond without {'@'}mention (comma-separated)",
     mentionPatterns: 'Custom Mention Patterns',
     mentionPatternsHint: 'Additional trigger patterns',
     autoThread: 'Auto Thread',
@@ -1165,8 +1211,10 @@ export default {
     ignoredChannels: 'Ignored Channels',
     ignoredChannelsHint: 'Channels where bot never responds (comma-separated)',
     noThreadChannels: 'No-Thread Channels',
-    noThreadChannelsHint: 'Channels where bot responds without threads (comma-separated)',
-    exclusiveTokenWarning: 'This platform uses exclusive token locking. Each profile must use a different identity token to avoid conflicts with other profiles.',
+    noThreadChannelsHint:
+      'Channels where bot responds without threads (comma-separated)',
+    exclusiveTokenWarning:
+      'This platform uses exclusive token locking. Each profile must use a different identity token to avoid conflicts with other profiles.',
     botToken: 'Bot Token',
     botTokenHint: 'Bot token from developer portal',
     accessToken: 'Access Token',
@@ -1182,11 +1230,13 @@ export default {
     clientSecret: 'Client Secret',
     clientSecretHint: 'DingTalk Client Secret',
     cardTemplateId: 'AI Card Template ID',
-    cardTemplateIdHint: 'DingTalk AI Card template ID; leave empty to disable AI Cards',
+    cardTemplateIdHint:
+      'DingTalk AI Card template ID; leave empty to disable AI Cards',
     allowedUsers: 'Allowed Users',
     allowedUsersHint: 'Whitelist user IDs or OpenIDs (comma-separated)',
     allowAllUsers: 'Allow All Users',
-    allowAllUsersHint: 'Allow messages from any user; keep off to use the allowlist',
+    allowAllUsersHint:
+      'Allow messages from any user; keep off to use the allowlist',
     botId: 'Bot ID',
     botIdHint: 'WeCom Bot ID',
     wecomSecretHint: 'WeCom Bot Secret',
@@ -1207,10 +1257,12 @@ export default {
     qqAppSecret: 'App Secret',
     qqAppSecretHint: 'QQ Open Platform Bot App Secret',
     qqMarkdown: 'Markdown Support',
-    qqMarkdownHint: 'Enable Markdown formatted messages (some clients may not support)',
+    qqMarkdownHint:
+      'Enable Markdown formatted messages (some clients may not support)',
     qqSandbox: 'Sandbox Mode',
     qqSandboxHint: 'Enable sandbox environment (for testing)',
-    qqQrScanHint: 'Scan the QR code with QQ, or open the link on your phone to complete binding',
+    qqQrScanHint:
+      'Scan the QR code with QQ, or open the link on your phone to complete binding',
   },
 
   // Language
@@ -1259,7 +1311,8 @@ export default {
     copyRoomLink: 'Copy Room Link',
     deleteRoomConfirm: 'Delete this room?',
     clearContext: 'Clear context',
-    clearContextConfirm: 'Clear this room context? Messages and compression snapshots will be removed, but agents and members stay.',
+    clearContextConfirm:
+      'Clear this room context? Messages and compression snapshots will be removed, but agents and members stay.',
     contextCleared: 'Context cleared',
     you: 'You',
     joined: 'Joined room',
@@ -1282,7 +1335,8 @@ export default {
     maxHistoryTokens: 'Max History Tokens',
     maxHistoryTokensDesc: 'Maximum tokens for compressed context sent to LLM',
     tailMessageCount: 'Tail Message Count',
-    tailMessageCountDesc: 'Number of recent messages to keep verbatim after compression',
+    tailMessageCountDesc:
+      'Number of recent messages to keep verbatim after compression',
     compressionConfig: 'Compression Config',
     compressionSaved: 'Compression config saved',
     compressNow: 'Compress Now',
@@ -1358,7 +1412,8 @@ export default {
     emptyDir: 'Empty directory',
     loading: 'Loading...',
     confirmDelete: 'Are you sure you want to delete "{name}"?',
-    confirmDeleteDir: 'Are you sure you want to delete directory "{name}" and all its contents?',
+    confirmDeleteDir:
+      'Are you sure you want to delete directory "{name}" and all its contents?',
     deleteFailed: 'Delete failed',
     deleted: 'Deleted',
     renameTo: 'Rename to',
@@ -1391,7 +1446,8 @@ export default {
     fileTooLarge: 'File too large (exceeds limit)',
     backendError: 'File read failed, remote environment may be unavailable',
     backendTimeout: 'File read timed out',
-    unsupportedBackend: 'Current terminal backend does not support file download',
+    unsupportedBackend:
+      'Current terminal backend does not support file download',
     invalidPath: 'Invalid file path',
     contentDisplay: 'Content display',
     download: 'Download',
@@ -1400,77 +1456,147 @@ export default {
 
   // Changelog
   changelog: {
-    new_0_6_4_1: 'CI is hardened with pinned npm install behavior and PR Docker smoke coverage',
-    new_0_6_4_2: 'Chat now uses virtualized pagination so long conversations scroll and load more reliably',
-    new_0_6_4_3: 'Docker image publishing now runs only for releases instead of ordinary PR checks',
-    new_0_6_4_4: 'Version Preview is available to super admins, with main/tag selection, preview checkout, dependency install, start/stop controls, and logs',
-    new_0_6_4_5: 'Preview instances isolate frontend/backend ports, Web UI home, and agent bridge endpoint, with runtime patches for older tags covering ports, WebSocket routing, base URL behavior, and nested preview navigation',
-    new_0_6_4_6: 'Legacy session_usage tables missing created_at now migrate safely with a default value',
-    new_0_6_4_7: 'Bridge profile worker endpoints are now namespaced by broker endpoint, preventing production and preview instances with the same Profile from stealing worker sockets and causing unknown run errors',
-    new_0_6_3_1: 'Bridge spinner status is no longer stored as model reasoning, preventing decorative thinking text from contaminating future context',
-    new_0_6_3_2: 'History now includes controls to import Hermes CLI sessions into the Web UI local history with safer message normalization',
-    new_0_6_3_3: 'Provider setup now supports editable built-in base URLs, LM Studio as a built-in provider, and live LM Studio /models discovery',
-    new_0_6_3_4: 'OpenRouter requests sent through the Web UI bridge now include Hermes Web UI app attribution headers',
-    new_0_6_3_5: 'The public auth status endpoint no longer exposes the first username to unauthenticated requests',
-    new_0_6_3_6: 'DingTalk settings now include an AI Card Template ID field persisted as DINGTALK_CARD_TEMPLATE_ID',
-    new_0_6_3_7: 'Bridge socket JSON output now sanitizes lone Unicode surrogate characters to prevent SSE crashes during chat',
-    new_0_6_2_1: 'Web Bridge now supports /plan commands with correct run startup and visible command state',
-    new_0_6_2_2: 'The chat input command menu now includes /goal and /subgoal commands, including status, pause, resume, done, and clear actions',
-    new_0_6_2_3: 'Goal and subgoal workflows now integrate with chat sessions, including goal continuations and status updates',
-    new_0_6_2_4: 'Job delivery target channel options are restored so scheduled jobs can pick the intended destination',
-    new_0_6_2_5: 'Context token usage now resumes accurately with snapshot-aware calculations after reconnects',
-    new_0_6_2_6: 'Context checkpoint compression is more reliable for slow Codex summarization: Web UI waits 5 minutes and the Python bridge broker no longer cuts off worker requests after 2 minutes',
-    new_0_6_2_7: 'Chat queue promotion is fixed so queued messages do not jump into the message list early, including synced windows',
-    new_0_6_2_8: 'Clarify prompts no longer submit open-text replies on Enter and answered prompts no longer reopen after switching sessions',
-    new_0_6_2_9: 'Bridge terminal environment refresh and stale pid cleanup are scoped more tightly, reducing stale runtime status in the UI',
-    new_0_6_2_10: 'The default context length now follows the Hermes standard of 256,000 tokens',
-    new_0_5_31_1: "Harden Bridge broker restarts, fix final group-chat stream rendering, and add {'@'}all routing for group chat",
-    new_0_5_31_2: 'File manager can copy absolute paths, and the mobile session drawer overlay no longer falls behind chat content',
-    new_0_5_31_3: 'Profile selector now shows avatars, custom avatar uploads, runtime status modal, and gateway/profile restart actions',
-    new_0_5_31_4: 'Profile avatars now appear in single chat, group chat, and collapsed sidebar, with Web UI profile metadata storage and Windows-safe paths',
-    new_0_5_31_5: 'Improve Docker, Termux, and Windows gateway detection and restart checks by using gateway_state/gateway.pid for managed gateway liveness',
-    new_0_5_31_6: 'Add APIKEY.FUN image-generation media endpoint and bundled apikey-image-gen skill for text-to-image, image-to-image, and image editing via the active Profile fun-codex provider',
-    new_0_5_33_1: 'Single chat and group chat now keep run failures and socket errors as red Agent messages in the message list instead of flashing them briefly',
-    new_0_5_33_2: 'Session search can now scope results to the selected Profile, while still searching all Profiles when no Profile is selected',
-    new_0_5_33_3: 'Skills page now shows Chinese and English recommendation documents when no skill is selected, and clicking the selected skill again clears the selection',
-    new_0_5_33_4: 'Remove unused changelog localization entries to reduce frontend i18n size',
-    new_0_5_33_5: 'Fix agent bridge startup failures on Chinese Windows systems caused by netstat output encoding',
-    new_0_5_33_6: 'Refresh the Nous Portal preset model list from the public catalog and Portal recommendations',
-    new_0_5_33_7: 'Profile lists and runtime status now read Profile names from disk and default models from config, avoiding CLI table column-width parsing errors',
-    new_0_5_34_1: 'Normalize multimodal tool results while storing session and group-chat messages, avoiding base64 image payloads in replays',
-    new_0_5_34_2: 'Persist custom Hermes models through backend-managed configuration and expose add/remove model endpoints',
-    new_0_5_34_3: 'Keep Bridge final context usage and tool status updates accurate after runs complete',
-    new_0_5_34_4: 'Improve Kanban board filtering, assignee display, card actions, and task detail handling',
-    new_0_5_34_5: 'Fix compression usage accounting by caching fixed prompt/tool context and reporting full-context token totals',
-    new_0_5_34_6: 'Cache fixed context per group-chat agent and only show compression progress when compression actually starts',
-    new_0_5_34_7: 'Sync Web UI bundled skills into every Profile and log the target Profile for each injection',
-    new_0_5_34_8: 'If Kanban fails on Windows, upgrade Hermes to pick up the latest kanban database migration fixes',
-    new_0_5_35_1: 'Bridge sessions can now run concurrently across different sessions while same-session runs stay serialized to preserve message order',
-    new_0_5_35_2: 'Add the Performance Monitor page for system CPU/memory, Web UI, Bridge Broker, Workers, and active session status',
-    new_0_5_35_3: 'Add per-worker resource metrics showing CPU, memory, Profile, session count, and running state',
-    new_0_5_35_4: 'Improve Bridge worker lifecycle cleanup so broker shutdowns and parent-process exits reclaim workers and reduce orphan Python processes',
-    new_0_5_35_5: 'Harden monitoring compatibility with resource collection fallbacks for macOS, Windows, Linux, Docker, and Termux',
-    new_0_5_35_6: 'Performance monitoring no longer blocks on worker requests while agents are initializing, reducing request timeouts on Windows',
-    new_0_5_35_7: 'Chat Markdown now supports inline text-content previews, and download icons download files directly instead of opening the preview drawer',
-    new_0_5_35_8: 'Polish the content preview drawer with a mobile close action, full-width mobile layout, 800px desktop width, and consistent text/Markdown backgrounds',
-    new_0_6_0_1: 'Account- and Profile-scoped management now consistently protects sessions, models, usage, Kanban, jobs, uploads, media, and related Hermes APIs',
-    new_0_6_0_2: 'Bundled media skills use the generated server token only for media endpoints and resolve fun-codex/xAI credentials from the requested Profile',
-    new_0_6_0_3: 'Single chat and group chat now inject the current Hermes Profile into run instructions so skills can send X-Hermes-Profile',
-    new_0_6_0_4: 'delegate_task subagent progress now streams into the chat UI with start, tool, progress, and completion updates',
-    new_0_6_0_5: 'Stopping or aborting a run clears transient events so stale abort state does not leak into the next chat',
-    new_0_6_0_6: 'Update docs and website copy for account management, default credentials, account/Profile management, uploads/downloads, and bundled media skills',
-    new_0_6_0_7: 'Add CLI maintenance commands for clearing login IP locks and resetting the default admin / 123456 login',
-    new_0_6_0_8: 'Version 0.6.0 is the boundary between single-user and multi-user Web UI. If multi-user mode causes issues, please file an issue and roll back to the 0.5.35 single-user release if needed',
-    new_0_6_1_1: 'Session lists now show every Profile available to the account unless a Profile filter is explicitly selected, and CLI start/stop/status no longer print the node:sqlite experimental warning',
-    new_0_6_1_2: 'Clarify and confirmation replies now travel through the authenticated chat socket to the Hermes bridge, with response-path tests',
-    new_0_6_1_3: 'Navigation entries and chat session rows now use native links for open-in-new-tab, copy-link, and persistent collapsed sidebar behavior',
-    new_0_6_1_4: 'Session links no longer leak route Profile filters into the normal session list, and Open in new tab labels are localized',
-    new_0_6_1_5: 'Skills now read skills.external_dirs from the active Profile config, mark external skills, preserve local precedence, and resolve external files',
-    new_0_6_1_6: 'Login IP lockout now allows 10 failed attempts and the locked login screen shows clear-lock and reset-default-login recovery commands',
-    new_0_6_1_7: 'Mobile and background chat disconnects are treated as transient, then reconnect resumes the run state from the server',
-    new_0_6_1_8: 'Bridge tool marker flushing now persists partial tool-call marker prefixes at tool and run boundaries',
-    new_0_6_1_9: 'Profile-aware history actions now delete sessions with profile-qualified targets and refresh History when the global Profile changes',
-    new_0_6_1_10: 'The legacy AUTH_DISABLED bypass was removed for multi-user permissions, while AUTH_TOKEN remains supported',
-
+    new_0_6_4_1:
+      'CI is hardened with pinned npm install behavior and PR Docker smoke coverage',
+    new_0_6_4_2:
+      'Chat now uses virtualized pagination so long conversations scroll and load more reliably',
+    new_0_6_4_3:
+      'Docker image publishing now runs only for releases instead of ordinary PR checks',
+    new_0_6_4_4:
+      'Version Preview is available to super admins, with main/tag selection, preview checkout, dependency install, start/stop controls, and logs',
+    new_0_6_4_5:
+      'Preview instances isolate frontend/backend ports, Web UI home, and agent bridge endpoint, with runtime patches for older tags covering ports, WebSocket routing, base URL behavior, and nested preview navigation',
+    new_0_6_4_6:
+      'Legacy session_usage tables missing created_at now migrate safely with a default value',
+    new_0_6_4_7:
+      'Bridge profile worker endpoints are now namespaced by broker endpoint, preventing production and preview instances with the same Profile from stealing worker sockets and causing unknown run errors',
+    new_0_6_3_1:
+      'Bridge spinner status is no longer stored as model reasoning, preventing decorative thinking text from contaminating future context',
+    new_0_6_3_2:
+      'History now includes controls to import Hermes CLI sessions into the Web UI local history with safer message normalization',
+    new_0_6_3_3:
+      'Provider setup now supports editable built-in base URLs, LM Studio as a built-in provider, and live LM Studio /models discovery',
+    new_0_6_3_4:
+      'OpenRouter requests sent through the Web UI bridge now include Hermes Web UI app attribution headers',
+    new_0_6_3_5:
+      'The public auth status endpoint no longer exposes the first username to unauthenticated requests',
+    new_0_6_3_6:
+      'DingTalk settings now include an AI Card Template ID field persisted as DINGTALK_CARD_TEMPLATE_ID',
+    new_0_6_3_7:
+      'Bridge socket JSON output now sanitizes lone Unicode surrogate characters to prevent SSE crashes during chat',
+    new_0_6_2_1:
+      'Web Bridge now supports /plan commands with correct run startup and visible command state',
+    new_0_6_2_2:
+      'The chat input command menu now includes /goal and /subgoal commands, including status, pause, resume, done, and clear actions',
+    new_0_6_2_3:
+      'Goal and subgoal workflows now integrate with chat sessions, including goal continuations and status updates',
+    new_0_6_2_4:
+      'Job delivery target channel options are restored so scheduled jobs can pick the intended destination',
+    new_0_6_2_5:
+      'Context token usage now resumes accurately with snapshot-aware calculations after reconnects',
+    new_0_6_2_6:
+      'Context checkpoint compression is more reliable for slow Codex summarization: Web UI waits 5 minutes and the Python bridge broker no longer cuts off worker requests after 2 minutes',
+    new_0_6_2_7:
+      'Chat queue promotion is fixed so queued messages do not jump into the message list early, including synced windows',
+    new_0_6_2_8:
+      'Clarify prompts no longer submit open-text replies on Enter and answered prompts no longer reopen after switching sessions',
+    new_0_6_2_9:
+      'Bridge terminal environment refresh and stale pid cleanup are scoped more tightly, reducing stale runtime status in the UI',
+    new_0_6_2_10:
+      'The default context length now follows the Hermes standard of 256,000 tokens',
+    new_0_5_31_1:
+      "Harden Bridge broker restarts, fix final group-chat stream rendering, and add {'@'}all routing for group chat",
+    new_0_5_31_2:
+      'File manager can copy absolute paths, and the mobile session drawer overlay no longer falls behind chat content',
+    new_0_5_31_3:
+      'Profile selector now shows avatars, custom avatar uploads, runtime status modal, and gateway/profile restart actions',
+    new_0_5_31_4:
+      'Profile avatars now appear in single chat, group chat, and collapsed sidebar, with Web UI profile metadata storage and Windows-safe paths',
+    new_0_5_31_5:
+      'Improve Docker, Termux, and Windows gateway detection and restart checks by using gateway_state/gateway.pid for managed gateway liveness',
+    new_0_5_31_6:
+      'Add APIKEY.FUN image-generation media endpoint and bundled apikey-image-gen skill for text-to-image, image-to-image, and image editing via the active Profile fun-codex provider',
+    new_0_5_33_1:
+      'Single chat and group chat now keep run failures and socket errors as red Agent messages in the message list instead of flashing them briefly',
+    new_0_5_33_2:
+      'Session search can now scope results to the selected Profile, while still searching all Profiles when no Profile is selected',
+    new_0_5_33_3:
+      'Skills page now shows Chinese and English recommendation documents when no skill is selected, and clicking the selected skill again clears the selection',
+    new_0_5_33_4:
+      'Remove unused changelog localization entries to reduce frontend i18n size',
+    new_0_5_33_5:
+      'Fix agent bridge startup failures on Chinese Windows systems caused by netstat output encoding',
+    new_0_5_33_6:
+      'Refresh the Nous Portal preset model list from the public catalog and Portal recommendations',
+    new_0_5_33_7:
+      'Profile lists and runtime status now read Profile names from disk and default models from config, avoiding CLI table column-width parsing errors',
+    new_0_5_34_1:
+      'Normalize multimodal tool results while storing session and group-chat messages, avoiding base64 image payloads in replays',
+    new_0_5_34_2:
+      'Persist custom Hermes models through backend-managed configuration and expose add/remove model endpoints',
+    new_0_5_34_3:
+      'Keep Bridge final context usage and tool status updates accurate after runs complete',
+    new_0_5_34_4:
+      'Improve Kanban board filtering, assignee display, card actions, and task detail handling',
+    new_0_5_34_5:
+      'Fix compression usage accounting by caching fixed prompt/tool context and reporting full-context token totals',
+    new_0_5_34_6:
+      'Cache fixed context per group-chat agent and only show compression progress when compression actually starts',
+    new_0_5_34_7:
+      'Sync Web UI bundled skills into every Profile and log the target Profile for each injection',
+    new_0_5_34_8:
+      'If Kanban fails on Windows, upgrade Hermes to pick up the latest kanban database migration fixes',
+    new_0_5_35_1:
+      'Bridge sessions can now run concurrently across different sessions while same-session runs stay serialized to preserve message order',
+    new_0_5_35_2:
+      'Add the Performance Monitor page for system CPU/memory, Web UI, Bridge Broker, Workers, and active session status',
+    new_0_5_35_3:
+      'Add per-worker resource metrics showing CPU, memory, Profile, session count, and running state',
+    new_0_5_35_4:
+      'Improve Bridge worker lifecycle cleanup so broker shutdowns and parent-process exits reclaim workers and reduce orphan Python processes',
+    new_0_5_35_5:
+      'Harden monitoring compatibility with resource collection fallbacks for macOS, Windows, Linux, Docker, and Termux',
+    new_0_5_35_6:
+      'Performance monitoring no longer blocks on worker requests while agents are initializing, reducing request timeouts on Windows',
+    new_0_5_35_7:
+      'Chat Markdown now supports inline text-content previews, and download icons download files directly instead of opening the preview drawer',
+    new_0_5_35_8:
+      'Polish the content preview drawer with a mobile close action, full-width mobile layout, 800px desktop width, and consistent text/Markdown backgrounds',
+    new_0_6_0_1:
+      'Account- and Profile-scoped management now consistently protects sessions, models, usage, Kanban, jobs, uploads, media, and related Hermes APIs',
+    new_0_6_0_2:
+      'Bundled media skills use the generated server token only for media endpoints and resolve fun-codex/xAI credentials from the requested Profile',
+    new_0_6_0_3:
+      'Single chat and group chat now inject the current Hermes Profile into run instructions so skills can send X-Hermes-Profile',
+    new_0_6_0_4:
+      'delegate_task subagent progress now streams into the chat UI with start, tool, progress, and completion updates',
+    new_0_6_0_5:
+      'Stopping or aborting a run clears transient events so stale abort state does not leak into the next chat',
+    new_0_6_0_6:
+      'Update docs and website copy for account management, default credentials, account/Profile management, uploads/downloads, and bundled media skills',
+    new_0_6_0_7:
+      'Add CLI maintenance commands for clearing login IP locks and resetting the default admin / 123456 login',
+    new_0_6_0_8:
+      'Version 0.6.0 is the boundary between single-user and multi-user Web UI. If multi-user mode causes issues, please file an issue and roll back to the 0.5.35 single-user release if needed',
+    new_0_6_1_1:
+      'Session lists now show every Profile available to the account unless a Profile filter is explicitly selected, and CLI start/stop/status no longer print the node:sqlite experimental warning',
+    new_0_6_1_2:
+      'Clarify and confirmation replies now travel through the authenticated chat socket to the Hermes bridge, with response-path tests',
+    new_0_6_1_3:
+      'Navigation entries and chat session rows now use native links for open-in-new-tab, copy-link, and persistent collapsed sidebar behavior',
+    new_0_6_1_4:
+      'Session links no longer leak route Profile filters into the normal session list, and Open in new tab labels are localized',
+    new_0_6_1_5:
+      'Skills now read skills.external_dirs from the active Profile config, mark external skills, preserve local precedence, and resolve external files',
+    new_0_6_1_6:
+      'Login IP lockout now allows 10 failed attempts and the locked login screen shows clear-lock and reset-default-login recovery commands',
+    new_0_6_1_7:
+      'Mobile and background chat disconnects are treated as transient, then reconnect resumes the run state from the server',
+    new_0_6_1_8:
+      'Bridge tool marker flushing now persists partial tool-call marker prefixes at tool and run boundaries',
+    new_0_6_1_9:
+      'Profile-aware history actions now delete sessions with profile-qualified targets and refresh History when the global Profile changes',
+    new_0_6_1_10:
+      'The legacy AUTH_DISABLED bypass was removed for multi-user permissions, while AUTH_TOKEN remains supported',
   },
-}
+};
