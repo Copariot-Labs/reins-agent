@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import { useMessage } from "naive-ui";
+// import { useMessage } from "naive-ui";
 import { useAppStore } from "@/stores/hermes/app";
 // import ModelSelector from "./ModelSelector.vue";
 import ProfileSelector from "./ProfileSelector.vue";
@@ -15,7 +15,7 @@ import RouteLinkItem from '@/components/common/RouteLinkItem.vue'
 import { isStoredSuperAdmin } from "@/api/client";
 
 const { t } = useI18n();
-const message = useMessage();
+// const message = useMessage();
 const route = useRoute();
 const router = useRouter();
 const appStore = useAppStore();
@@ -32,7 +32,6 @@ const isSuperAdmin = computed(() => isStoredSuperAdmin());
 function isNavActive(...names: string[]) {
   return names.includes(selectedKey.value);
 }
-const logoPath = '/logo.png';
 
 const { record: collapsedGroups, persist: persistCollapsedGroups } = usePersistentRecord('hermes.sidebar.collapsedGroups');
 
@@ -52,14 +51,14 @@ function isGroupCollapsed(key: string) {
 }
 
 
-async function handleUpdate() {
-  const ok = await appStore.doUpdate();
-  if (ok) {
-    message.success(t('sidebar.updateSuccess'), { duration: 5000 });
-  } else {
-    message.error(t('sidebar.updateFailed'));
-  }
-}
+// async function handleUpdate() {
+//   const ok = await appStore.doUpdate();
+//   if (ok) {
+//     message.success(t('sidebar.updateSuccess'), { duration: 5000 });
+//   } else {
+//     message.error(t('sidebar.updateFailed'));
+//   }
+// }
 
 // function handleReloadClient() {
 //   appStore.reloadClient();

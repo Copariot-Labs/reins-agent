@@ -4,15 +4,11 @@ import { useI18n } from "vue-i18n";
 import VirtualMessageList from "./VirtualMessageList.vue";
 import MessageItem from "./MessageItem.vue";
 import { useChatStore } from "@/stores/hermes/chat";
-import thinkingImageLight from "@/assets/thinking-light.gif";
-import thinkingImageDark from "@/assets/thinking-dark.gif";
-import { useTheme } from "@/composables/useTheme";
 import { useToolTraceVisibility } from "@/composables/useToolTraceVisibility";
 import ThinkingIndicator from "./ThinkingIndicator.vue";
 
 const chatStore = useChatStore();
 const { t } = useI18n();
-const { isDark } = useTheme();
 const { toolTraceVisible } = useToolTraceVisibility();
 const listRef = ref<InstanceType<typeof VirtualMessageList> | null>(null);
 const pendingBottomSessionId = ref<string | null>(null);
