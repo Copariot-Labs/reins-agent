@@ -1,5 +1,5 @@
-import { createRouter, createWebHashHistory } from 'vue-router'
-import { hasApiKey, isStoredSuperAdmin } from '@/api/client'
+import { createRouter, createWebHashHistory } from 'vue-router';
+import { hasApiKey, isStoredSuperAdmin } from '@/api/client';
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -11,150 +11,150 @@ const router = createRouter({
       meta: { public: true },
     },
     {
-      path: '/hermes/chat',
+      path: '/reins/chat',
       name: 'hermes.chat',
       component: () => import('@/views/hermes/ChatView.vue'),
     },
     {
-      path: '/hermes/session/:sessionId',
+      path: '/reins/session/:sessionId',
       name: 'hermes.session',
       component: () => import('@/views/hermes/ChatView.vue'),
     },
     {
-      path: '/hermes/history',
+      path: '/reins/history',
       name: 'hermes.history',
       component: () => import('@/views/hermes/HistoryView.vue'),
     },
     {
-      path: '/hermes/history/session/:sessionId',
+      path: '/reins/history/session/:sessionId',
       name: 'hermes.historySession',
       component: () => import('@/views/hermes/HistoryView.vue'),
     },
     {
-      path: '/hermes/jobs',
+      path: '/reins/jobs',
       name: 'hermes.jobs',
       component: () => import('@/views/hermes/JobsView.vue'),
     },
     {
-      path: '/hermes/kanban',
+      path: '/reins/kanban',
       name: 'hermes.kanban',
       component: () => import('@/views/hermes/KanbanView.vue'),
     },
     {
-      path: '/hermes/models',
+      path: '/reins/models',
       name: 'hermes.models',
       component: () => import('@/views/hermes/ModelsView.vue'),
     },
     {
-      path: '/hermes/profiles',
+      path: '/reins/profiles',
       name: 'hermes.profiles',
       component: () => import('@/views/hermes/ProfilesView.vue'),
       meta: { requiresSuperAdmin: true },
     },
     {
-      path: '/hermes/logs',
+      path: '/reins/logs',
       name: 'hermes.logs',
       component: () => import('@/views/hermes/LogsView.vue'),
     },
     {
-      path: '/hermes/usage',
+      path: '/reins/usage',
       name: 'hermes.usage',
       component: () => import('@/views/hermes/UsageView.vue'),
     },
     {
-      path: '/hermes/finance',
+      path: '/reins/finance',
       name: 'hermes.finance',
       component: () => import('@/views/hermes/FinanceView.vue'),
     },
     {
-      path: '/hermes/performance',
+      path: '/reins/performance',
       name: 'hermes.performance',
       component: () => import('@/views/hermes/PerformanceView.vue'),
       meta: { requiresSuperAdmin: true },
     },
     {
-      path: '/hermes/skills-usage',
+      path: '/reins/skills-usage',
       name: 'hermes.skillsUsage',
       component: () => import('@/views/hermes/SkillsUsageView.vue'),
     },
     {
-      path: '/hermes/skills',
+      path: '/reins/skills',
       name: 'hermes.skills',
       component: () => import('@/views/hermes/SkillsView.vue'),
     },
     {
-      path: '/hermes/plugins',
+      path: '/reins/plugins',
       name: 'hermes.plugins',
       component: () => import('@/views/hermes/PluginsView.vue'),
     },
     {
-      path: '/hermes/memory',
+      path: '/reins/memory',
       name: 'hermes.memory',
       component: () => import('@/views/hermes/MemoryView.vue'),
     },
     {
-      path: '/hermes/settings',
+      path: '/reins/settings',
       name: 'hermes.settings',
       component: () => import('@/views/hermes/SettingsView.vue'),
     },
     {
-      path: '/hermes/channels',
+      path: '/reins/channels',
       name: 'hermes.channels',
       component: () => import('@/views/hermes/ChannelsView.vue'),
     },
     {
-      path: '/hermes/terminal',
+      path: '/reins/terminal',
       name: 'hermes.terminal',
       component: () => import('@/views/hermes/TerminalView.vue'),
     },
     {
-      path: '/hermes/group-chat',
+      path: '/reins/group-chat',
       name: 'hermes.groupChat',
       component: () => import('@/views/hermes/GroupChatView.vue'),
     },
     {
-      path: '/hermes/group-chat/room/:roomId',
+      path: '/reins/group-chat/room/:roomId',
       name: 'hermes.groupChatRoom',
       component: () => import('@/views/hermes/GroupChatView.vue'),
     },
     {
-      path: '/hermes/files',
+      path: '/reins/files',
       name: 'hermes.files',
       component: () => import('@/views/hermes/FilesView.vue'),
     },
     {
-      path: '/hermes/version-preview',
+      path: '/reins/version-preview',
       name: 'hermes.versionPreview',
       component: () => import('@/views/hermes/VersionPreviewView.vue'),
       meta: { requiresSuperAdmin: true },
     },
   ],
-})
+});
 
 router.beforeEach((to, _from, next) => {
   // Public pages don't need auth
   if (to.meta.public) {
     // Already has key, skip login
     if (to.name === 'login' && hasApiKey()) {
-      next({ path: '/hermes/chat' })
-      return
+      next({ path: '/reins/chat' });
+      return;
     }
-    next()
-    return
+    next();
+    return;
   }
 
   // All other pages require token
   if (!hasApiKey()) {
-    next({ name: 'login' })
-    return
+    next({ name: 'login' });
+    return;
   }
 
   if (to.meta.requiresSuperAdmin && !isStoredSuperAdmin()) {
-    next({ name: 'hermes.chat' })
-    return
+    next({ name: 'hermes.chat' });
+    return;
   }
 
-  next()
-})
+  next();
+});
 
-export default router
+export default router;

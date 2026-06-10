@@ -148,7 +148,7 @@ export default {
     disconnected: 'Disconnected',
     collapse: 'Collapse menu',
     expand: 'Expand menu',
-    updateTip: 'Run "hermes-web-ui update" in terminal to update',
+    updateTip: 'Run "Reins-web-ui update" in terminal to update',
     updateVersion: 'Upgrade to v{version}',
     reloadClientVersion: 'Reload for v{version}',
     updating: 'Updating...',
@@ -278,13 +278,13 @@ export default {
     contextEditDesc: 'Set context length limit for current model (in tokens)',
     contextEditPlaceholder: 'Enter context length',
     contextEditHint:
-      'Common values: 256k (Hermes default), 128k (GPT-4), 32k (GPT-3.5)',
+      'Common values: 256k (Reins default), 128k (GPT-4), 32k (GPT-3.5)',
     contextEditSave: 'Save',
     contextEditCancel: 'Cancel',
     contextEditInvalid: 'Please enter a valid context length',
     contextEditSuccess: 'Context length updated',
     contextEditFailed: 'Update failed',
-    emptyState: 'Start a conversation with Hermes Agent',
+    emptyState: 'Start a conversation with Reins Agent',
     cliEmptyState: 'Start a CLI chat session',
     outlineTitle: 'Conversation Outline',
     outlineEmpty: 'No conversation content',
@@ -335,14 +335,14 @@ export default {
     sessionScopeHint:
       'Chat shows Web UI/API Server sessions only. CLI, Telegram, Discord, Cron, and other channel sessions are read-only in History.',
     openHistory: 'Open History',
-    hermesHistory: 'Hermes History',
+    hermesHistory: 'Reins History',
     historyScopeHint:
-      'Read-only Hermes history sessions for the current profile, grouped by source.',
+      'Read-only Reins history sessions for the current profile, grouped by source.',
     noSessions: 'No sessions',
     searchTitle: 'Search Sessions',
     searchSubtitle: 'Search by title or message content',
     searchScope:
-      'Search scope: Web UI local session database only. Read-only Hermes history sessions are not included.',
+      'Search scope: Web UI local session database only. Read-only Reins history sessions are not included.',
     searchHint: 'Cmd/Ctrl+K',
     searchPlaceholder: 'Search sessions...',
     searchEmpty: 'Recent sessions',
@@ -627,7 +627,7 @@ export default {
     title: 'Plugins',
     refresh: 'Refresh',
     notice:
-      'Read-only inventory of discoverable Hermes plugin manifests. Discovery metadata is read without loading plugin code. Management actions stay in CLI for v1; changes take effect in new Hermes sessions.',
+      'Read-only inventory of discoverable Reins plugin manifests. Discovery metadata is read without loading plugin code. Management actions stay in CLI for v1; changes take effect in new Reins sessions.',
     loadFailed: 'Failed to load plugins',
     commandCopied: 'Command copied',
     searchPlaceholder: 'Search key, name, description, path...',
@@ -758,16 +758,16 @@ export default {
     copilotExpired: 'The authorization link has expired. Please retry.',
     copilotAddDetectedTitle: 'GitHub Copilot detected',
     copilotAddDetected:
-      'A GitHub Copilot OAuth token was detected on this machine. Click Add to enable Copilot in Hermes.',
-    copilotAddSourceEnv: 'Source: ~/.hermes/.env (COPILOT_GITHUB_TOKEN)',
+      'A GitHub Copilot OAuth token was detected on this machine. Click Add to enable Copilot in Reins.',
+    copilotAddSourceEnv: 'Source: ~/.Reins/.env (COPILOT_GITHUB_TOKEN)',
     copilotAddSourceGhCli: 'Source: gh CLI (gh auth token)',
     copilotAddSourceAppsJson: 'Source: VS Code Copilot extension (apps.json)',
     copilotDeleteHintEnv:
-      'This will clear COPILOT_GITHUB_TOKEN in ~/.hermes/.env. Other tools are not affected.',
+      'This will clear COPILOT_GITHUB_TOKEN in ~/.Reins/.env. Other tools are not affected.',
     copilotDeleteHintGhCli:
-      'Copilot will be hidden from Hermes. Your gh CLI login is not affected — `gh auth status` will still show you signed in.',
+      'Copilot will be hidden from Reins. Your gh CLI login is not affected — `gh auth status` will still show you signed in.',
     copilotDeleteHintAppsJson:
-      'Copilot will be hidden from Hermes. Your VS Code Copilot extension login is not affected.',
+      'Copilot will be hidden from Reins. Your VS Code Copilot extension login is not affected.',
     xaiLoginTitle: 'xAI Grok OAuth Login',
     xaiWaiting:
       'Complete authorization in the opened xAI page. This window will close automatically once approved.',
@@ -792,7 +792,7 @@ export default {
     aliasTitleFor: 'Display name for {model}',
     aliasPlaceholder: 'Leave empty to use original model ID',
     aliasHint:
-      'Display-only alias. Hermes still receives the canonical model ID.',
+      'Display-only alias. Reins still receives the canonical model ID.',
     aliasCanonical: 'Original ID: {model}',
     aliasUseOriginal: 'Use original ID',
     aliasManage: 'Display names',
@@ -801,7 +801,7 @@ export default {
     manageVisibleModels: 'Manage visible models',
     manageVisibleModelsFor: 'Manage visible models for {name}',
     visibilityHint:
-      'Only affects the Web UI model picker and Models page. Hermes CLI provider/model config is not rewritten; calls still use canonical model IDs.',
+      'Only affects the Web UI model picker and Models page. Reins CLI provider/model config is not rewritten; calls still use canonical model IDs.',
     visibilitySelectOne: 'Keep at least one visible model',
     visibilitySaved: 'Visible models saved',
     visibilitySaveFailed: 'Failed to save visible models',
@@ -841,12 +841,12 @@ export default {
     export: 'Export',
     rename: 'Rename',
     delete: 'Delete',
-    switchTo: 'Switch Hermes Profile',
+    switchTo: 'Switch Reins Profile',
     switchConfirm:
-      'This will run `hermes profile use {name}` and change the active Hermes CLI profile. Continue?',
-    switchSuccess: 'Hermes active profile switched to "{name}"',
+      'This will run `Reins profile use {name}` and change the active Reins CLI profile. Continue?',
+    switchSuccess: 'Reins active profile switched to "{name}"',
     switchFailed:
-      'Failed to switch Hermes profile. Gateway may need manual restart.',
+      'Failed to switch Reins profile. Gateway may need manual restart.',
     createSuccess: 'Profile "{name}" created',
     createFailed: 'Failed to create profile',
     renameSuccess: 'Profile renamed',
@@ -1243,7 +1243,7 @@ export default {
     waEnabled: 'Enable WhatsApp',
     waEnabledHint: 'Enable WhatsApp via QR code pairing',
     weixinToken: 'Weixin Token',
-    weixinTokenHint: 'From weixin CLI QR login (hermes weixin)',
+    weixinTokenHint: 'From weixin CLI QR login (Reins weixin)',
     accountId: 'Account ID',
     accountIdHint: 'Weixin account ID',
     qrLogin: 'QR Login',
@@ -1367,7 +1367,7 @@ export default {
   },
   skillsUsage: {
     title: 'Skills Usage',
-    subtitle: 'Track skill loads and edits from Hermes sessions',
+    subtitle: 'Track skill loads and edits from Reins sessions',
     refresh: 'Refresh',
     periodSelector: 'Skill usage period',
     periodLabel: '{days}d',
@@ -1473,11 +1473,11 @@ export default {
     new_0_6_3_1:
       'Bridge spinner status is no longer stored as model reasoning, preventing decorative thinking text from contaminating future context',
     new_0_6_3_2:
-      'History now includes controls to import Hermes CLI sessions into the Web UI local history with safer message normalization',
+      'History now includes controls to import Reins CLI sessions into the Web UI local history with safer message normalization',
     new_0_6_3_3:
       'Provider setup now supports editable built-in base URLs, LM Studio as a built-in provider, and live LM Studio /models discovery',
     new_0_6_3_4:
-      'OpenRouter requests sent through the Web UI bridge now include Hermes Web UI app attribution headers',
+      'OpenRouter requests sent through the Web UI bridge now include Reins Web UI app attribution headers',
     new_0_6_3_5:
       'The public auth status endpoint no longer exposes the first username to unauthenticated requests',
     new_0_6_3_6:
@@ -1503,7 +1503,7 @@ export default {
     new_0_6_2_9:
       'Bridge terminal environment refresh and stale pid cleanup are scoped more tightly, reducing stale runtime status in the UI',
     new_0_6_2_10:
-      'The default context length now follows the Hermes standard of 256,000 tokens',
+      'The default context length now follows the Reins standard of 256,000 tokens',
     new_0_5_31_1:
       "Harden Bridge broker restarts, fix final group-chat stream rendering, and add {'@'}all routing for group chat",
     new_0_5_31_2:
@@ -1533,7 +1533,7 @@ export default {
     new_0_5_34_1:
       'Normalize multimodal tool results while storing session and group-chat messages, avoiding base64 image payloads in replays',
     new_0_5_34_2:
-      'Persist custom Hermes models through backend-managed configuration and expose add/remove model endpoints',
+      'Persist custom Reins models through backend-managed configuration and expose add/remove model endpoints',
     new_0_5_34_3:
       'Keep Bridge final context usage and tool status updates accurate after runs complete',
     new_0_5_34_4:
@@ -1545,7 +1545,7 @@ export default {
     new_0_5_34_7:
       'Sync Web UI bundled skills into every Profile and log the target Profile for each injection',
     new_0_5_34_8:
-      'If Kanban fails on Windows, upgrade Hermes to pick up the latest kanban database migration fixes',
+      'If Kanban fails on Windows, upgrade Reins to pick up the latest kanban database migration fixes',
     new_0_5_35_1:
       'Bridge sessions can now run concurrently across different sessions while same-session runs stay serialized to preserve message order',
     new_0_5_35_2:
@@ -1563,11 +1563,11 @@ export default {
     new_0_5_35_8:
       'Polish the content preview drawer with a mobile close action, full-width mobile layout, 800px desktop width, and consistent text/Markdown backgrounds',
     new_0_6_0_1:
-      'Account- and Profile-scoped management now consistently protects sessions, models, usage, Kanban, jobs, uploads, media, and related Hermes APIs',
+      'Account- and Profile-scoped management now consistently protects sessions, models, usage, Kanban, jobs, uploads, media, and related Reins APIs',
     new_0_6_0_2:
       'Bundled media skills use the generated server token only for media endpoints and resolve fun-codex/xAI credentials from the requested Profile',
     new_0_6_0_3:
-      'Single chat and group chat now inject the current Hermes Profile into run instructions so skills can send X-Hermes-Profile',
+      'Single chat and group chat now inject the current Reins Profile into run instructions so skills can send X-Reins-Profile',
     new_0_6_0_4:
       'delegate_task subagent progress now streams into the chat UI with start, tool, progress, and completion updates',
     new_0_6_0_5:
@@ -1581,7 +1581,7 @@ export default {
     new_0_6_1_1:
       'Session lists now show every Profile available to the account unless a Profile filter is explicitly selected, and CLI start/stop/status no longer print the node:sqlite experimental warning',
     new_0_6_1_2:
-      'Clarify and confirmation replies now travel through the authenticated chat socket to the Hermes bridge, with response-path tests',
+      'Clarify and confirmation replies now travel through the authenticated chat socket to the Reins bridge, with response-path tests',
     new_0_6_1_3:
       'Navigation entries and chat session rows now use native links for open-in-new-tab, copy-link, and persistent collapsed sidebar behavior',
     new_0_6_1_4:

@@ -146,7 +146,7 @@ export default {
     disconnected: '未连接',
     collapse: '收起菜单',
     expand: '展开菜单',
-    updateTip: '在终端运行 "hermes-web-ui update" 即可更新',
+    updateTip: '在终端运行 "Reins-web-ui update" 即可更新',
     updateVersion: '升级版本 v{version}',
     reloadClientVersion: '刷新到 v{version}',
     updating: '正在更新...',
@@ -272,13 +272,13 @@ export default {
     contextEditTitle: '编辑上下文长度',
     contextEditDesc: '设置当前模型的上下文长度限制（token 数量）',
     contextEditPlaceholder: '请输入上下文长度',
-    contextEditHint: '常见值：256k (Hermes 默认), 128k (GPT-4), 32k (GPT-3.5)',
+    contextEditHint: '常见值：256k (Reins 默认), 128k (GPT-4), 32k (GPT-3.5)',
     contextEditSave: '保存',
     contextEditCancel: '取消',
     contextEditInvalid: '请输入有效的上下文长度',
     contextEditSuccess: '上下文长度已更新',
     contextEditFailed: '更新失败',
-    emptyState: '开始与 Hermes Agent 对话',
+    emptyState: '开始与 Reins Agent 对话',
     cliEmptyState: '开始 CLI 对话',
     outlineTitle: '会话大纲',
     outlineEmpty: '暂无会话内容',
@@ -328,12 +328,12 @@ export default {
     sessionScopeHint:
       '这里只显示当前会话；CLI、Telegram、Discord、Cron 等通道会话在历史中只读查看。',
     openHistory: '打开历史',
-    hermesHistory: 'Hermes 历史',
-    historyScopeHint: '这里按来源只读查看当前 profile 的 Hermes 历史会话。',
+    hermesHistory: 'Reins 历史',
+    historyScopeHint: '这里按来源只读查看当前 profile 的 Reins 历史会话。',
     noSessions: '暂无会话',
     searchTitle: '搜索会话',
     searchSubtitle: '按标题或消息内容搜索',
-    searchScope: '搜索范围：仅 Web UI 本地会话库；不包含只读 Hermes 历史会话。',
+    searchScope: '搜索范围：仅 Web UI 本地会话库；不包含只读 Reins 历史会话。',
     searchHint: 'Cmd/Ctrl+K',
     searchPlaceholder: '搜索会话...',
     searchEmpty: '最近会话',
@@ -618,7 +618,7 @@ export default {
     title: '插件',
     refresh: '刷新',
     notice:
-      '只读展示可发现的 Hermes 插件 manifest。发现元数据读取不会加载插件代码。v1 管理动作仍保留在 CLI，新 Hermes 会话生效。',
+      '只读展示可发现的 Reins 插件 manifest。发现元数据读取不会加载插件代码。v1 管理动作仍保留在 CLI，新 Reins 会话生效。',
     loadFailed: '加载插件失败',
     commandCopied: '命令已复制',
     searchPlaceholder: '搜索 key、名称、描述、路径...',
@@ -748,16 +748,16 @@ export default {
     copilotExpired: '授权链接已过期，请重试。',
     copilotAddDetectedTitle: '检测到 GitHub Copilot',
     copilotAddDetected:
-      '已在本机检测到 GitHub Copilot OAuth 凭证，点击「添加」即可在 Hermes 中启用 Copilot。',
-    copilotAddSourceEnv: '来源：~/.hermes/.env（COPILOT_GITHUB_TOKEN）',
+      '已在本机检测到 GitHub Copilot OAuth 凭证，点击「添加」即可在 Reins 中启用 Copilot。',
+    copilotAddSourceEnv: '来源：~/.Reins/.env（COPILOT_GITHUB_TOKEN）',
     copilotAddSourceGhCli: '来源：gh CLI（gh auth token）',
     copilotAddSourceAppsJson: '来源：VS Code Copilot 插件（apps.json）',
     copilotDeleteHintEnv:
-      '此操作会清除 ~/.hermes/.env 中的 COPILOT_GITHUB_TOKEN，不影响其他工具。',
+      '此操作会清除 ~/.Reins/.env 中的 COPILOT_GITHUB_TOKEN，不影响其他工具。',
     copilotDeleteHintGhCli:
-      'Copilot 将从 Hermes 列表移除。不会影响 gh CLI —— `gh auth status` 仍显示已登录。',
+      'Copilot 将从 Reins 列表移除。不会影响 gh CLI —— `gh auth status` 仍显示已登录。',
     copilotDeleteHintAppsJson:
-      'Copilot 将从 Hermes 列表移除。不会影响 VS Code Copilot 插件的登录。',
+      'Copilot 将从 Reins 列表移除。不会影响 VS Code Copilot 插件的登录。',
     xaiLoginTitle: 'xAI Grok OAuth 登录',
     xaiWaiting: '请在打开的 xAI 页面完成授权。授权完成后窗口会自动关闭。',
     xaiOpenLink: '打开 xAI 授权页',
@@ -780,7 +780,7 @@ export default {
     aliasTitle: '模型显示名',
     aliasTitleFor: '{model} 的显示名',
     aliasPlaceholder: '留空则使用原始模型 ID',
-    aliasHint: '仅修改 Web UI 显示名，发送给 Hermes 的仍是原始模型 ID。',
+    aliasHint: '仅修改 Web UI 显示名，发送给 Reins 的仍是原始模型 ID。',
     aliasCanonical: '原始 ID：{model}',
     aliasUseOriginal: '恢复原始 ID',
     aliasManage: '显示名',
@@ -789,7 +789,7 @@ export default {
     manageVisibleModels: '管理可见模型',
     manageVisibleModelsFor: '管理 {name} 可见模型',
     visibilityHint:
-      '仅影响 Web UI 的模型选择器和模型页展示，不会改写 Hermes CLI 的 provider/model 配置。实际调用仍使用原始模型 ID。',
+      '仅影响 Web UI 的模型选择器和模型页展示，不会改写 Reins CLI 的 provider/model 配置。实际调用仍使用原始模型 ID。',
     visibilitySelectOne: '至少保留一个可见模型',
     visibilitySaved: '可见模型已保存',
     visibilitySaveFailed: '保存可见模型失败',
@@ -821,11 +821,11 @@ export default {
     export: '导出',
     rename: '重命名',
     delete: '删除',
-    switchTo: '切换 Hermes Profile',
+    switchTo: '切换 Reins Profile',
     switchConfirm:
-      '将执行 `hermes profile use {name}` 并切换 Hermes CLI 的 active profile，是否继续？',
-    switchSuccess: 'Hermes active profile 已切换为 "{name}"',
-    switchFailed: '切换 Hermes Profile 失败，网关可能需要手动重启',
+      '将执行 `Reins profile use {name}` 并切换 Reins CLI 的 active profile，是否继续？',
+    switchSuccess: 'Reins active profile 已切换为 "{name}"',
+    switchFailed: '切换 Reins Profile 失败，网关可能需要手动重启',
     createSuccess: '配置 "{name}" 已创建',
     createFailed: '创建配置失败',
     renameSuccess: '配置已重命名',
@@ -1203,7 +1203,7 @@ export default {
     waEnabled: '启用 WhatsApp',
     waEnabledHint: '通过二维码配对启用 WhatsApp',
     weixinToken: '微信 Token',
-    weixinTokenHint: '通过 weixin CLI 扫码登录获取 (hermes weixin)',
+    weixinTokenHint: '通过 weixin CLI 扫码登录获取 (Reins weixin)',
     accountId: 'Account ID',
     accountIdHint: '微信 Account ID',
     qrLogin: '扫码登录',
@@ -1334,7 +1334,7 @@ export default {
   },
   skillsUsage: {
     title: '技能用量',
-    subtitle: '跟踪 Hermes 会话中的技能加载和编辑',
+    subtitle: '跟踪 Reins 会话中的技能加载和编辑',
     refresh: '刷新',
     periodSelector: '技能用量周期',
     periodLabel: '{days}天',
@@ -1437,11 +1437,11 @@ export default {
     new_0_6_3_1:
       'Bridge spinner 状态不再写入模型 reasoning，避免装饰性 thinking 文案污染后续上下文',
     new_0_6_3_2:
-      'History 新增 Hermes CLI 会话导入控制，并在导入时更安全地规范化消息结构',
+      'History 新增 Reins CLI 会话导入控制，并在导入时更安全地规范化消息结构',
     new_0_6_3_3:
       'Provider 配置支持编辑内置 base URL，新增 LM Studio 内置 Provider，并支持从 LM Studio /models 实时发现模型',
     new_0_6_3_4:
-      '通过 Web UI bridge 发起的 OpenRouter 请求会携带 Hermes Web UI 应用归因 headers',
+      '通过 Web UI bridge 发起的 OpenRouter 请求会携带 Reins Web UI 应用归因 headers',
     new_0_6_3_5: '公开 auth status 接口不再向未登录请求暴露第一个用户名',
     new_0_6_3_6:
       '钉钉设置新增 AI Card Template ID，并持久化为 DINGTALK_CARD_TEMPLATE_ID',
@@ -1461,7 +1461,7 @@ export default {
       'Clarify 弹窗输入框不再按 Enter 直接提交，已回复的 Clarify 也不会在切换会话后重复弹出',
     new_0_6_2_9:
       'Bridge 终端环境刷新和 stale pid 清理收敛到更准确的作用域，减少前端运行状态残留',
-    new_0_6_2_10: '默认上下文长度遵循 Hermes 规范，调整为 256,000 tokens',
+    new_0_6_2_10: '默认上下文长度遵循 Reins 规范，调整为 256,000 tokens',
     new_0_5_31_1:
       "增强 Bridge Broker 重启稳定性，修复群聊最终流式渲染，并新增群聊 {'@'}all 路由",
     new_0_5_31_2: '文件管理支持复制绝对路径，并修复移动端会话抽屉层级遮挡问题',
@@ -1489,7 +1489,7 @@ export default {
     new_0_5_34_1:
       '存储会话和群聊消息时会规范化多模态工具结果，避免 base64 图片污染回放内容',
     new_0_5_34_2:
-      '自定义 Hermes 模型改为由后端配置持久化，并新增添加/移除模型接口',
+      '自定义 Reins 模型改为由后端配置持久化，并新增添加/移除模型接口',
     new_0_5_34_3: '修复 Bridge 运行结束后的最终上下文用量和工具状态更新',
     new_0_5_34_4: '优化看板过滤、负责人展示、卡片操作和任务详情处理',
     new_0_5_34_5:
@@ -1499,7 +1499,7 @@ export default {
     new_0_5_34_7:
       'Web UI 内置 Skills 会同步注入到所有 Profile，并在日志中标明目标 Profile',
     new_0_5_34_8:
-      '如果 Windows 下看板功能异常，请升级 Hermes 以获取最新的看板数据库迁移修复',
+      '如果 Windows 下看板功能异常，请升级 Reins 以获取最新的看板数据库迁移修复',
     new_0_5_35_1:
       'Bridge 会话支持不同 session 并发运行，同一 session 仍保持串行，避免消息顺序错乱',
     new_0_5_35_2:
@@ -1517,11 +1517,11 @@ export default {
     new_0_5_35_8:
       '优化内容展示抽屉：移动端全宽并提供关闭入口，桌面端加宽到 800px，文本与 Markdown 背景保持一致',
     new_0_6_0_1:
-      '分账户、分 Profile 管理现在统一覆盖会话、模型、用量、看板、任务、上传、媒体以及相关 Hermes API',
+      '分账户、分 Profile 管理现在统一覆盖会话、模型、用量、看板、任务、上传、媒体以及相关 Reins API',
     new_0_6_0_2:
       '内置媒体 Skills 仅在媒体接口使用生成的服务端 token，并按请求的 Profile 读取 fun-codex/xAI 凭据',
     new_0_6_0_3:
-      '单聊和群聊都会向运行提示词注入当前 Hermes Profile，方便 Skills 请求时带上 X-Hermes-Profile',
+      '单聊和群聊都会向运行提示词注入当前 Reins Profile，方便 Skills 请求时带上 X-Reins-Profile',
     new_0_6_0_4:
       'delegate_task 的 subagent 进度会实时展示到聊天界面，包含开始、工具调用、进度和完成状态',
     new_0_6_0_5:
@@ -1535,7 +1535,7 @@ export default {
     new_0_6_1_1:
       '会话列表默认展示当前账户可用的全部 Profile；只有显式选择 Profile 过滤时才按 Profile 限定，同时 CLI start/stop/status 不再打印 node:sqlite 实验警告',
     new_0_6_1_2:
-      'Clarify 和确认回复现在会通过已鉴权的聊天 socket 传到 Hermes bridge，并补充了响应链路测试',
+      'Clarify 和确认回复现在会通过已鉴权的聊天 socket 传到 Reins bridge，并补充了响应链路测试',
     new_0_6_1_3:
       '导航项和聊天会话行改为原生链接，支持新标签打开、复制链接，并保留侧边栏折叠状态',
     new_0_6_1_4:

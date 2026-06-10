@@ -588,11 +588,13 @@ onMounted(() => {
             <span>{{ transactions.length }}</span>
           </div>
           <NDataTable
+            class="transaction-table"
             :columns="columns"
             :data="transactions"
             :loading="loading"
             :row-key="row => row.id"
             :pagination="{ pageSize: 12 }"
+            :scroll-x="860"
             size="small"
           />
         </section>
@@ -909,6 +911,22 @@ onMounted(() => {
   margin-bottom: 10px;
 }
 
+.transaction-table {
+  width: 100%;
+}
+
+.transaction-table :deep(.n-data-table-wrapper) {
+  -webkit-overflow-scrolling: touch;
+}
+
+.transaction-table :deep(.n-data-table__pagination) {
+  justify-content: flex-end;
+  margin: 12px 0 0;
+  overflow-x: auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
 :deep(.table-actions) {
   display: inline-flex;
   align-items: center;
@@ -1016,6 +1034,16 @@ onMounted(() => {
 
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .transaction-table :deep(.n-data-table__pagination) {
+    justify-content: center;
+  }
+
+  .transaction-table :deep(.n-pagination) {
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 6px;
   }
 }
 </style>

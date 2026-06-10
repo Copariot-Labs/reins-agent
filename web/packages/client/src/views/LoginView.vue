@@ -44,7 +44,7 @@ async function handlePasswordLogin() {
   try {
     const sessionToken = await loginWithPassword(username.value.trim(), password.value);
     setApiKey(sessionToken);
-    router.replace("/hermes/chat");
+    router.replace("/reins/chat");
   } catch (err: any) {
     if (err.status === 429 || err.status === 503) {
       errorMsg.value = t("login.tooManyAttempts");
