@@ -12,6 +12,8 @@ REINS_OWNED_COMMANDS = {
     "update",
     "migrate",
     "finance",
+    "computer",
+    "workmode",
     "debug-env",
     "web",
 }
@@ -92,6 +94,8 @@ Reins commands:
   reins migrate hermes
   reins update
   reins finance
+  reins computer
+  reins workmode
   reins web
   reins debug-env
 
@@ -174,6 +178,16 @@ def handle_reins_owned_command(argv: Sequence[str]) -> int:
         from reins.features.finance.cli import main as finance_main
 
         return finance_main(argv[1:])
+
+    if command == "computer":
+        from reins.features.computer.cli import main as computer_main
+
+        return computer_main(argv[1:])
+
+    if command == "workmode":
+        from reins.features.workmode.cli import main as workmode_main
+
+        return workmode_main(argv[1:])
 
     if command == "web":
         from reins.compat.web import run_web
