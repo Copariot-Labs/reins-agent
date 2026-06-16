@@ -1,11 +1,32 @@
 from __future__ import annotations
 
 from datetime import datetime
+import importlib.util
 from pathlib import Path
 
-from docx import Document
-
 from reins.api.home import get_reins_home
+
+
+class ArtifactDependencyError(RuntimeError):
+    pass
+
+
+def check_artifact_dependencies() -> dict[str, bool]:
+    return {
+        "python-docx": importlib.util.find_spec("docx") is not None,
+    }
+
+
+def _load_document_class():
+    try:
+        from docx import Document
+    except ImportError as exc:
+        raise ArtifactDependencyError(
+            "Missing dependency: python-docx. Install Reins with project dependencies "
+            "before running Office workmode tasks."
+        ) from exc
+
+    return Document
 
 
 def get_artifact_dir() -> Path:
@@ -16,6 +37,7 @@ def get_artifact_dir() -> Path:
 
 def generate_demo_docx(title: str, body: str) -> Path:
     path = get_artifact_dir() / f"report-{datetime.now().strftime('%Y%m%d-%H%M%S')}.docx"
+    Document = _load_document_class()
 
     doc = Document()
     doc.add_heading(title, level=1)

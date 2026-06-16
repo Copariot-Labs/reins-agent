@@ -4,12 +4,23 @@ import argparse
 import json
 from collections.abc import Sequence
 
-from reins.features.computer.desktop import get_desktop_backend
-
 
 def _print(result: dict) -> int:
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result.get("ok", False) else 1
+
+
+def _error_result(exc: Exception, *, action: str | None = None) -> dict:
+    result = {
+        "ok": False,
+        "error_type": type(exc).__name__,
+        "error": str(exc),
+    }
+
+    if action:
+        result["action"] = action
+
+    return result
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -37,28 +48,41 @@ def main(argv: Sequence[str] | None = None) -> int:
     hotkey_parser.add_argument("keys", nargs="+")
 
     args = parser.parse_args(list(argv or []))
-    desktop = get_desktop_backend()
 
-    if args.command == "doctor":
-        return _print(desktop.doctor())
+    if not args.command:
+        parser.print_help()
+        return 0
 
-    if args.command == "screenshot":
-        return _print(desktop.screenshot())
+    try:
+        from reins.features.computer.desktop import get_desktop_backend
 
-    if args.command == "open":
-        return _print(desktop.open_url(args.url, app=args.app))
+        desktop = get_desktop_backend()
+    except Exception as exc:
+        return _print(_error_result(exc, action=args.command))
 
-    if args.command == "open-file":
-        return _print(desktop.open_file(args.path, app=args.app))
+    try:
+        if args.command == "doctor":
+            return _print(desktop.doctor())
 
-    if args.command == "activate":
-        return _print(desktop.activate_app(args.app))
+        if args.command == "screenshot":
+            return _print(desktop.screenshot())
 
-    if args.command == "type":
-        return _print(desktop.type_text(args.text))
+        if args.command == "open":
+            return _print(desktop.open_url(args.url, app=args.app))
 
-    if args.command == "hotkey":
-        return _print(desktop.hotkey(*args.keys))
+        if args.command == "open-file":
+            return _print(desktop.open_file(args.path, app=args.app))
+
+        if args.command == "activate":
+            return _print(desktop.activate_app(args.app))
+
+        if args.command == "type":
+            return _print(desktop.type_text(args.text))
+
+        if args.command == "hotkey":
+            return _print(desktop.hotkey(*args.keys))
+    except Exception as exc:
+        return _print(_error_result(exc, action=args.command))
 
     parser.print_help()
     return 0
