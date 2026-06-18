@@ -36,6 +36,11 @@ const router = createRouter({
       component: () => import('@/views/hermes/JobsView.vue'),
     },
     {
+      path: '/reins/workmode',
+      name: 'hermes.workmode',
+      component: () => import('@/views/hermes/WorkModeView.vue'),
+    },
+    {
       path: '/reins/kanban',
       name: 'hermes.kanban',
       component: () => import('@/views/hermes/KanbanView.vue'),

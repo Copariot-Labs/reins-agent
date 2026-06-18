@@ -72,6 +72,7 @@ def run_web(argv: Sequence[str] | None = None) -> int:
 
     env = os.environ.copy()
     env["REINS_HOME"] = str(reins_home)
+    env["REINS_BIN"] = reins_bin
     env["HERMES_HOME"] = str(reins_home)
     env["HERMES_BIN"] = reins_bin
     env["HERMES_WEB_UI_HOME"] = str(reins_home / "web-ui")
@@ -87,6 +88,7 @@ def run_web(argv: Sequence[str] | None = None) -> int:
     print(f"Project root:                 {project_root}")
     print(f"Web root:                     {web_root}")
     print(f"REINS_HOME:                   {env['REINS_HOME']}")
+    print(f"REINS_BIN:                    {env['REINS_BIN']}")
     print(f"HERMES_HOME:                  {env['HERMES_HOME']}")
     print(f"HERMES_BIN:                   {env['HERMES_BIN']}")
     print(f"HERMES_WEB_UI_HOME:           {env['HERMES_WEB_UI_HOME']}")

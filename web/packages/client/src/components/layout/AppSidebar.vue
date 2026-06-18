@@ -173,7 +173,7 @@ function handleLogout() {
           </RouteLinkItem> -->
 
       <!-- Agent -->
-      <!-- <div class="nav-group">
+      <div class="nav-group">
         <div class="nav-group-label" @click="toggleGroup('agent')">
           <span>{{ groupLabel("Agent") }}</span>
           <svg class="nav-group-arrow" :class="{ collapsed: isGroupCollapsed('agent') }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -181,7 +181,16 @@ function handleLogout() {
           </svg>
         </div>
         <div v-show="!isGroupCollapsed('agent')" class="nav-group-items">
-          <RouteLinkItem class="nav-item" :to="{ name: 'hermes.jobs' }" :active="selectedKey === 'hermes.jobs'">
+          <RouteLinkItem class="nav-item" :to="{ name: 'hermes.workmode' }" :active="selectedKey === 'hermes.workmode'">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 5a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
+              <path d="M8 12h8" />
+              <path d="M8 16h5" />
+              <path d="m15 9 2 2-2 2" />
+            </svg>
+            <span>{{ t("sidebar.workmode") }}</span>
+          </RouteLinkItem>
+          <!-- <RouteLinkItem class="nav-item" :to="{ name: 'hermes.jobs' }" :active="selectedKey === 'hermes.jobs'">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
               <line x1="16" y1="2" x2="16" y2="6" />
@@ -240,9 +249,9 @@ function handleLogout() {
               <path d="M16.95 7.05l2.83-2.83" />
             </svg>
             <span>{{ t("sidebar.models") }}</span>
-          </RouteLinkItem>
+          </RouteLinkItem> -->
         </div>
-      </div> -->
+      </div>
 
       <!-- Monitoring -->
       <div class="nav-group">

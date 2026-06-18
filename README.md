@@ -10,6 +10,7 @@ The `vendor/hermes-agent/` directory is treated as upstream source. Do not modif
 - Isolated Reins data directory under `~/.reins` by default.
 - Optional migration from an existing `~/.hermes` directory.
 - Local finance module with natural-language transaction parsing, SQLite storage, reports, CSV export, and Hermes-compatible plugin tools.
+- Work Mode execution surface for backend-first agent work, streamed narration, visible desktop actions, and artifact/source summaries.
 - Web dashboard in `web/`, including a Finance section for summaries, recent transactions, tables, and CSV export.
 
 ## Repository Layout
@@ -94,6 +95,7 @@ reins about
 reins migrate hermes
 reins update
 reins finance --help
+reins workmode --help
 reins web
 reins debug-env
 ```
@@ -177,6 +179,29 @@ reins plugins enable reins-finance
 
 The installed plugin exposes finance parsing, recording, listing, and summary tools to the Hermes runtime.
 
+## Work Mode
+
+Work Mode follows the community assistant reference pattern: backend execution first, visible desktop behavior only where useful, streamed status events, and final artifact/source reporting.
+
+Run a task from the CLI:
+
+```bash
+reins workmode run "generate an operations report" --mode work
+reins workmode run "generate an operations report" --mode headless
+```
+
+Check local dependencies and artifact paths:
+
+```bash
+reins workmode doctor
+```
+
+The Web UI exposes the same event stream at:
+
+```text
+/#/reins/workmode
+```
+
 ## Web UI
 
 Start the Web UI through Reins:
@@ -216,7 +241,7 @@ npm test
 The Web UI includes a Finance dashboard at:
 
 ```text
-/hermes/finance
+/#/reins/finance
 ```
 
 It reads from the Reins finance database, displays monthly totals and transactions, and exports CSV data through the dashboard.
