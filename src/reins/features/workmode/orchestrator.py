@@ -15,10 +15,13 @@ from reins.features.workmode.intake.parser import ResidentIntakeParser
 from reins.features.workmode.intake.router import route_issue
 
 # DB LAYER
-from reins.features.workmode.db import save_case, save_event, save_artifact
+from reins.features.workmode.db import save_artifact, save_case, save_event
 
 # HERMES PLANNER
 from reins.features.workmode.hermes_planner import try_build_hermes_plan
+
+# WORKER ROUTING
+from reins.features.workmode.workers import run_worker
 
 
 StepWorker = Callable[[WorkStep, WorkExecutionState], AsyncIterator[WorkEvent]]
@@ -27,25 +30,30 @@ StepWorker = Callable[[WorkStep, WorkExecutionState], AsyncIterator[WorkEvent]]
 class WorkModeOrchestrator:
     # MAIN ENTRY
     async def run(self, message: str, mode: str = "work") -> AsyncIterator[WorkEvent]:
-        # INIT
         task_id = str(uuid4())
         policy = get_mode_policy(mode)
 
-        # INTAKE LAYER
+        # P2: INTAKE
         parser = ResidentIntakeParser()
         issue = parser.parse(message)
 
         workflow = route_issue(issue)
         path = choose_execution_path(issue.description)
 
-        # PLAN
-        # HERMES PLANNER WITH SAFE FALLBACK
-        hermes_error = None
+        intake = {
+            "case_id": issue.case_id,
+            "issue_type": issue.issue_type,
+            "priority": issue.priority,
+            "location": issue.location,
+            "workflow": workflow,
+        }
 
+        # P5: HERMES PLANNER WITH SAFE FALLBACK
         plan, hermes_error = try_build_hermes_plan(
             issue.description,
             policy=policy,
             path=path,
+            intake=intake,
         )
 
         if plan is None:
@@ -63,17 +71,9 @@ class WorkModeOrchestrator:
             plan_id=plan.id,
         )
 
-        intake = {
-            "case_id": issue.case_id,
-            "issue_type": issue.issue_type,
-            "priority": issue.priority,
-            "location": issue.location,
-            "workflow": workflow,
-        }
-
         state.scratch["intake"] = intake
 
-        now = datetime.now(timezone.utc).isoformat()
+        created_at = datetime.now(timezone.utc).isoformat()
 
         # SAVE CASE CREATE
         save_case(
@@ -85,8 +85,8 @@ class WorkModeOrchestrator:
                 "location": issue.location,
                 "workflow": workflow,
                 "status": "running",
-                "created_at": now,
-                "updated_at": now,
+                "created_at": created_at,
+                "updated_at": created_at,
             }
         )
 
@@ -96,8 +96,7 @@ class WorkModeOrchestrator:
             Persist event to SQLite.
 
             Important:
-            Persistence should never break the live WorkMode stream.
-            If DB logging fails, the user-facing task should still continue.
+            DB persistence should never break the live WorkMode stream.
             """
             try:
                 save_event(
@@ -109,7 +108,7 @@ class WorkModeOrchestrator:
             except Exception:
                 pass
 
-        # TASK START EVENT
+        # TASK STARTED
         event = WorkEvent(
             type="task_started",
             task_id=task_id,
@@ -124,6 +123,10 @@ class WorkModeOrchestrator:
                 "started_at": datetime.now(timezone.utc).isoformat(),
             },
         )
+        persist(event)
+        yield event
+
+        # HERMES FALLBACK EVENT
         if hermes_error:
             event = WorkEvent(
                 type="work.plan.fallback",
@@ -137,30 +140,35 @@ class WorkModeOrchestrator:
             persist(event)
             yield event
 
-        # PLAN STARTED EVENT
+        # PLAN STARTED
         event = WorkEvent(
             type="work.plan.started",
             task_id=task_id,
             message="Planning started",
-            data={},
+            data={
+                "planner": plan.planner,
+            },
         )
         persist(event)
         yield event
 
-        # PLAN COMPLETED EVENT
+        # PLAN COMPLETED
         event = WorkEvent(
             type="work.plan.completed",
             task_id=task_id,
             message="Plan created",
-            data={"plan": plan.to_dict()},
+            data={
+                "plan": plan.to_dict(),
+            },
         )
         persist(event)
         yield event
 
-        # EXECUTION SUMMARY
+        # SUMMARY
         summary = {
             "task_id": task_id,
             "status": "running",
+            "planner": plan.planner,
             "artifacts": [],
             "sources": [],
             "failures": [],
@@ -168,12 +176,16 @@ class WorkModeOrchestrator:
 
         # EXECUTION LOOP
         for step in plan.steps:
-            # STEP START
+            # STEP STARTED
             event = WorkEvent(
                 type="work.step.started",
                 task_id=task_id,
                 message=f"Running step: {step.title}",
-                data={"step_id": step.id},
+                data={
+                    "step_id": step.id,
+                    "step_kind": step.kind,
+                    "worker": step.worker,
+                },
             )
             persist(event)
             yield event
@@ -188,6 +200,7 @@ class WorkModeOrchestrator:
                 failure = {
                     "step_id": step.id,
                     "step_title": step.title,
+                    "step_kind": step.kind,
                     "error_type": type(exc).__name__,
                     "error": str(exc),
                 }
@@ -216,6 +229,7 @@ class WorkModeOrchestrator:
                 message=f"Finished step: {step.title}",
                 data={
                     "step_id": step.id,
+                    "step_kind": step.kind,
                     "result": result,
                 },
             )
@@ -232,14 +246,22 @@ class WorkModeOrchestrator:
                         case_id=issue.case_id,
                         artifact=artifact,
                     )
-                except Exception:
+                except Exception as exc:
                     failure = {
                         "step_id": step.id,
                         "step_title": step.title,
+                        "step_kind": step.kind,
                         "error_type": "ArtifactSaveError",
-                        "error": "Artifact was created but could not be saved to the artifact registry.",
+                        "error": str(exc),
                     }
                     summary["failures"].append(failure)
+
+            # SOURCE TRACKING
+            if isinstance(result, dict) and result.get("sources"):
+                sources = result["sources"]
+
+                if isinstance(sources, list):
+                    summary["sources"].extend(sources)
 
         # FINAL STATUS
         final_status = "completed" if not summary["failures"] else "failed"
@@ -255,12 +277,12 @@ class WorkModeOrchestrator:
                 "location": issue.location,
                 "workflow": workflow,
                 "status": final_status,
-                "created_at": now,
+                "created_at": created_at,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
         )
 
-        # FINAL EVENT
+        # TASK FINISHED
         event = WorkEvent(
             type="task_finished",
             task_id=task_id,
@@ -277,32 +299,4 @@ class WorkModeOrchestrator:
 
     # STEP EXECUTOR
     async def _run_step(self, step: WorkStep, state: WorkExecutionState):
-        # OFFICE GENERATION
-        if step.kind == "office_generate":
-            intake = state.scratch["intake"]
-
-            artifact = {
-                "type": "docx",
-                "title": "Resident Case Report",
-                "case_id": intake["case_id"],
-                "issue_type": intake["issue_type"],
-                "priority": intake["priority"],
-                "location": intake["location"],
-                "content": state.message,
-            }
-
-            return {"artifact": artifact}
-
-        # BACKEND DEFAULT
-        if step.kind == "backend_only":
-            return {
-                "ok": True,
-                "input": state.message,
-                "output": f"Processed: {state.message}",
-            }
-
-        # DEFAULT FALLBACK
-        return {
-            "ok": True,
-            "step": step.id,
-        }
+        return await run_worker(step, state)

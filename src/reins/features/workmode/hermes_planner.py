@@ -13,6 +13,10 @@ class HermesPlannerError(Exception):
 ALLOWED_STEP_KINDS = {
     "backend_only",
     "office_generate",
+    "browser_source",
+    "desktop_capture",
+    "wechat_prepare",
+    "confirmation_gate",
 }
 
 
