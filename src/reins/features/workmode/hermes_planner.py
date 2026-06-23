@@ -1,22 +1,33 @@
 from __future__ import annotations
 
-import json
-import os
-import subprocess
-from dataclasses import asdict
 from typing import Any
 
 from reins.features.workmode.planner import WorkPlan, WorkStep
+from reins.features.workmode.vendor_hermes import call_vendor_hermes_planner
 
 
 class HermesPlannerError(Exception):
     pass
 
 
+ALLOWED_STEP_KINDS = {
+    "backend_only",
+    "office_generate",
+}
+
+
 def _make_step(raw: dict[str, Any]) -> WorkStep:
+    if not isinstance(raw, dict):
+        raise HermesPlannerError("Hermes step must be a JSON object.")
+
+    kind = str(raw.get("kind") or "backend_only")
+
+    if kind not in ALLOWED_STEP_KINDS:
+        raise HermesPlannerError(f"Unsupported Hermes step kind: {kind}")
+
     return WorkStep(
-        id=str(raw.get("id") or raw.get("kind") or "step"),
-        kind=str(raw.get("kind") or "backend_only"),
+        id=str(raw.get("id") or kind),
+        kind=kind,
         title=str(raw.get("title") or "Untitled step"),
         worker=str(raw.get("worker") or "workmode.backend"),
         description=str(raw.get("description") or ""),
@@ -32,11 +43,22 @@ def _validate_plan_dict(raw: dict[str, Any]) -> None:
     if not isinstance(raw, dict):
         raise HermesPlannerError("Hermes planner output is not a JSON object.")
 
-    if not raw.get("steps"):
+    steps = raw.get("steps")
+
+    if not isinstance(steps, list):
+        raise HermesPlannerError("Hermes planner steps must be a list.")
+
+    if not steps:
         raise HermesPlannerError("Hermes planner output has no steps.")
 
-    if not isinstance(raw["steps"], list):
-        raise HermesPlannerError("Hermes planner steps must be a list.")
+    for step in steps:
+        if not isinstance(step, dict):
+            raise HermesPlannerError("Each Hermes step must be a JSON object.")
+
+        kind = str(step.get("kind") or "backend_only")
+
+        if kind not in ALLOWED_STEP_KINDS:
+            raise HermesPlannerError(f"Unsupported Hermes step kind: {kind}")
 
 
 def build_plan_from_hermes_dict(
@@ -58,7 +80,7 @@ def build_plan_from_hermes_dict(
         summary_for_user=str(
             raw.get("summary_for_user")
             or raw.get("summary")
-            or "Hermes generated a plan."
+            or "Hermes generated a WorkMode plan."
         ),
         steps=steps,
         risk_flags=list(raw.get("risk_flags") or []),
@@ -67,62 +89,29 @@ def build_plan_from_hermes_dict(
     )
 
 
-def call_hermes_planner(message: str, *, mode: str) -> dict[str, Any]:
-    """
-    Calls Hermes planner if REINS_HERMES_PLANNER_CMD is configured.
-
-    Example env:
-    REINS_HERMES_PLANNER_CMD="python -m reins.vendor.hermes_planner"
-    """
-
-    cmd = os.environ.get("REINS_HERMES_PLANNER_CMD")
-
-    if not cmd:
-        raise HermesPlannerError("REINS_HERMES_PLANNER_CMD is not configured.")
-
-    payload = {
-        "message": message,
-        "mode": mode,
-    }
-
-    proc = subprocess.run(
-        cmd,
-        input=json.dumps(payload),
-        text=True,
-        shell=True,
-        capture_output=True,
-        timeout=30,
-    )
-
-    if proc.returncode != 0:
-        raise HermesPlannerError(
-            f"Hermes planner failed with exit code {proc.returncode}: {proc.stderr}"
-        )
-
-    try:
-        return json.loads(proc.stdout)
-    except json.JSONDecodeError as exc:
-        raise HermesPlannerError(f"Hermes planner returned invalid JSON: {exc}") from exc
-
-
 def try_build_hermes_plan(
     message: str,
     *,
     policy,
     path,
+    intake: dict[str, Any] | None = None,
 ) -> tuple[WorkPlan | None, dict[str, Any] | None]:
     """
     Safe Hermes planner wrapper.
 
+    This must never crash WorkMode.
+
     Returns:
     - (WorkPlan, None) if Hermes succeeds
     - (None, error_dict) if Hermes fails
-
-    This must never crash WorkMode.
     """
 
     try:
-        raw = call_hermes_planner(message, mode=policy.mode)
+        raw = call_vendor_hermes_planner(
+            message,
+            mode=policy.mode,
+            intake=intake,
+        )
 
         plan = build_plan_from_hermes_dict(
             raw,
