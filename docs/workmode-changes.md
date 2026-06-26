@@ -1,6 +1,6 @@
 # WorkMode Changes
 
-Date: 2026-06-24
+Date: 2026-06-26
 
 This document records the WorkMode changes made in the Reins project. The `community-ass-demo` project was used only as a reference for behavior and philosophy: backend-first execution, visible event streaming, persisted proof, and operator-friendly summaries. The implementation below is Reins-native.
 
@@ -53,6 +53,8 @@ WorkMode now treats the project philosophy as the routing contract:
 - Added deterministic GitHub profile URL inference, including `visit github sshatil` -> `https://github.com/sshatil`.
 - Added web-search URL inference, so search tasks can open browser source evidence.
 - Added desktop-app intent detection, so app/window tasks route to desktop proof instead of browser or backend fallback.
+- Added a safe WorkMode proof media endpoint for screenshots, HTML snapshots, Office files, and other persisted proof under the WorkMode storage directory.
+- Added the WorkMode Theater UI so live runs and replayed history have a central visual proof surface.
 
 ## Worker Registry Changes
 
@@ -242,6 +244,22 @@ Non-headless WorkMode now presents key outputs instead of silently finishing:
 - Best-effort screenshots are captured after visible presentation when the operating system allows it.
 
 If the OS blocks window control or screenshots, WorkMode keeps the artifact/source path in the audit trail and records the presentation failure as action metadata.
+
+## Theater UI And Proof Media
+
+The web UI now has a middle Theater panel that renders WorkMode proof as the run progresses or when a saved case is replayed:
+
+- Browser screenshots render directly in the Theater.
+- Browser HTML snapshots render inside a sandboxed iframe.
+- Office artifacts and other saved files expose an authenticated open link.
+- OCR results, desktop/browser actions, sources, and failures appear as selectable proof items.
+- The Theater rail de-duplicates proof items from events and final summaries, so browser pages, sources, screenshots, and desktop actions do not create repeated clutter.
+
+The server exposes proof files through:
+
+- `GET /api/hermes/workmode/media?path=<absolute-proof-path>`
+
+The endpoint only serves files inside `<REINS_HOME>/workmode` or `~/.reins/workmode`, resolves real paths before serving, rejects paths outside the proof directory, and limits served file size through `WORKMODE_MEDIA_MAX_BYTES` with a 50 MB default.
 
 ## WeChat Approval Path
 

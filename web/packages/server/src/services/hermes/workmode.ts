@@ -1,5 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { once } from 'events'
+import { readFile, realpath, stat } from 'fs/promises'
+import { homedir } from 'os'
+import { basename, extname, isAbsolute, join, relative, resolve } from 'path'
 import { PassThrough } from 'stream'
 import { logger } from '../logger'
 
@@ -53,7 +56,37 @@ export interface WorkModeConfirmationResult {
   result?: Record<string, unknown>
 }
 
+export interface WorkModeMedia {
+  data: Buffer
+  mime: string
+  fileName: string
+  path: string
+  size: number
+}
+
 const WORKMODE_MODES = new Set<WorkModeName>(['work', 'demo', 'headless'])
+const MAX_WORKMODE_MEDIA_SIZE = parseInt(process.env.WORKMODE_MEDIA_MAX_BYTES || '', 10) || 50 * 1024 * 1024
+
+const WORKMODE_MIME_MAP: Record<string, string> = {
+  '.css': 'text/css; charset=utf-8',
+  '.csv': 'text/csv; charset=utf-8',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.gif': 'image/gif',
+  '.htm': 'text/html; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.jpeg': 'image/jpeg',
+  '.jpg': 'image/jpeg',
+  '.json': 'application/json; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8',
+  '.pdf': 'application/pdf',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.txt': 'text/plain; charset=utf-8',
+  '.webp': 'image/webp',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+}
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -61,6 +94,71 @@ function nowIso(): string {
 
 function resolveReinsBin(): string {
   return process.env.REINS_BIN?.trim() || process.env.HERMES_BIN?.trim() || 'reins'
+}
+
+function reinsHomeCandidates(): string[] {
+  const candidates = [
+    process.env.REINS_HOME?.trim(),
+    join(homedir(), '.reins'),
+  ].filter((value): value is string => Boolean(value))
+
+  return [...new Set(candidates.map(value => resolve(value)))]
+}
+
+async function realpathIfExists(path: string): Promise<string> {
+  try {
+    return await realpath(path)
+  } catch {
+    return resolve(path)
+  }
+}
+
+function isPathInside(path: string, root: string): boolean {
+  const rel = relative(root, path)
+  return rel === '' || (!!rel && !rel.startsWith('..') && !isAbsolute(rel))
+}
+
+function workModeMimeType(filePath: string): string {
+  return WORKMODE_MIME_MAP[extname(filePath).toLowerCase()] || 'application/octet-stream'
+}
+
+async function validateWorkModeMediaPath(filePath: string): Promise<string> {
+  const cleaned = String(filePath || '').trim()
+  if (!cleaned) throw Object.assign(new Error('WorkMode media path is required'), { code: 'missing_path' })
+  if (!isAbsolute(cleaned)) throw Object.assign(new Error('WorkMode media path must be absolute'), { code: 'invalid_path' })
+
+  const requested = resolve(cleaned)
+  const fileRealPath = await realpath(requested)
+  const roots = await Promise.all(
+    reinsHomeCandidates().map(home => realpathIfExists(join(home, 'workmode'))),
+  )
+
+  if (!roots.some(root => isPathInside(fileRealPath, root))) {
+    throw Object.assign(new Error('WorkMode media path is outside the proof directory'), { code: 'invalid_path' })
+  }
+
+  return fileRealPath
+}
+
+export async function getWorkModeMedia(filePath: string): Promise<WorkModeMedia> {
+  const safePath = await validateWorkModeMediaPath(filePath)
+  const fileStat = await stat(safePath)
+
+  if (!fileStat.isFile()) {
+    throw Object.assign(new Error('WorkMode media path is not a file'), { code: 'not_found' })
+  }
+
+  if (fileStat.size > MAX_WORKMODE_MEDIA_SIZE) {
+    throw Object.assign(new Error(`WorkMode media file is too large: ${fileStat.size} bytes`), { code: 'file_too_large' })
+  }
+
+  return {
+    data: await readFile(safePath),
+    mime: workModeMimeType(safePath),
+    fileName: basename(safePath),
+    path: safePath,
+    size: fileStat.size,
+  }
 }
 
 function event(type: string, message: string, data: Record<string, unknown> = {}): WorkModeEvent {

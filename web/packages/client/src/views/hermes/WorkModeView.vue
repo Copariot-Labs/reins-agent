@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import {
   approveWorkModeConfirmation,
   getWorkModeCase,
+  getWorkModeMediaUrl,
   listWorkModeCases,
   rejectWorkModeConfirmation,
   runWorkModeStream,
@@ -35,6 +36,19 @@ interface FeedItem {
   tone: string
 }
 
+interface TheaterItem {
+  id: string
+  kind: 'image' | 'html' | 'artifact' | 'source' | 'ocr' | 'action' | 'failure'
+  title: string
+  detail: string
+  path?: string
+  mediaUrl?: string
+  externalUrl?: string
+  text?: string
+  tone?: string
+  raw?: Record<string, any>
+}
+
 type RunStatus = 'idle' | 'running' | 'completed' | 'failed' | 'pending_confirmation' | 'rejected'
 type StepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'blocked'
 type WorkStage = 'idle' | 'planning' | 'executing' | 'presenting' | 'completed' | 'failed' | 'cancelled' | 'blocked' | 'rejected'
@@ -55,6 +69,7 @@ const historyItems = ref<WorkModeCaseSummary[]>([])
 const historyLoading = ref(false)
 const selectedCaseId = ref('')
 const confirmationBusyId = ref('')
+const selectedTheaterId = ref('')
 
 const modeOptions = computed(() => [
   { label: t('workmode.modes.work'), value: 'work' as const },
@@ -204,6 +219,142 @@ const proofCount = computed(() => (
   pendingConfirmations.value.length
 ))
 
+const theaterItems = computed<TheaterItem[]>(() => {
+  const items: TheaterItem[] = []
+  const seen = new Set<string>()
+  const summary = finalSummary.value || {}
+
+  recordList(summary.browser_pages).forEach((page) => {
+    const title = itemTitle(page, t('workmode.fallbacks.source'))
+    const detail = String(page.url || page.title || '')
+    addProofFile(items, seen, {
+      path: page.screenshot,
+      kind: 'image',
+      title: title || t('workmode.fallbacks.screenshot'),
+      detail,
+      raw: page,
+    })
+    addProofFile(items, seen, {
+      path: page.html,
+      kind: 'html',
+      title: title || t('workmode.fallbacks.html'),
+      detail,
+      raw: page,
+    })
+  })
+
+  sources.value.forEach((source) => {
+    const title = itemTitle(source, t('workmode.fallbacks.source'))
+    const detail = String(source.url || source.summary || source.title || '')
+    addProofFile(items, seen, {
+      path: source.screenshot,
+      kind: 'image',
+      title,
+      detail,
+      raw: source,
+    })
+    addProofFile(items, seen, {
+      path: source.html,
+      kind: 'html',
+      title,
+      detail,
+      raw: source,
+    })
+
+    const url = externalUrl(source.url)
+    if (url) {
+      pushTheaterItem(items, seen, {
+        kind: 'source',
+        title,
+        detail: url,
+        externalUrl: url,
+        raw: source,
+      })
+    }
+  })
+
+  recordList(summary.screenshots).forEach((screenshot, index) => {
+    addProofFile(items, seen, {
+      path: screenshot.path || screenshot.url || screenshot.file || screenshot,
+      kind: 'image',
+      title: itemTitle(screenshot, `${t('workmode.fallbacks.screenshot')} ${index + 1}`),
+      detail: itemPath(screenshot) || `${t('workmode.fallbacks.screenshot')} ${index + 1}`,
+      raw: screenshot,
+    })
+  })
+
+  desktopActions.value.forEach((action) => {
+    const title = itemTitle(action, t('workmode.fallbacks.action'))
+    addProofFile(items, seen, {
+      path: action.screenshot,
+      kind: 'image',
+      title,
+      detail: itemPath(action),
+      raw: action,
+      tone: action.ok === false ? 'failed' : 'default',
+    })
+    addProofFile(items, seen, {
+      path: action.html,
+      kind: 'html',
+      title,
+      detail: itemPath(action),
+      raw: action,
+      tone: action.ok === false ? 'failed' : 'default',
+    })
+    pushTheaterItem(items, seen, {
+      kind: 'action',
+      title,
+      detail: itemPath(action) || formatJson(action),
+      externalUrl: externalUrl(action.url),
+      text: action.error ? String(action.error) : '',
+      raw: action,
+      tone: action.ok === false ? 'failed' : 'default',
+    })
+  })
+
+  artifacts.value.forEach((artifact) => {
+    const path = itemPath(artifact)
+    if (!path) return
+    addProofFile(items, seen, {
+      path,
+      kind: isImagePath(path) ? 'image' : isHtmlPath(path) ? 'html' : 'artifact',
+      title: itemTitle(artifact, t('workmode.fallbacks.artifact')),
+      detail: String(artifact.summary || path),
+      raw: artifact,
+    })
+  })
+
+  recordList(summary.ocr).forEach((ocr, index) => {
+    pushTheaterItem(items, seen, {
+      kind: 'ocr',
+      title: itemTitle(ocr, `${t('workmode.fallbacks.ocr')} ${index + 1}`),
+      detail: String(ocr.path || ocr.image || ocr.text || ''),
+      text: String(ocr.text || ocr.error || formatJson(ocr)),
+      raw: ocr,
+      tone: ocr.ok === false ? 'failed' : 'default',
+    })
+  })
+
+  failures.value.forEach((failure, index) => {
+    pushTheaterItem(items, seen, {
+      kind: 'failure',
+      title: itemTitle(failure, `${t('workmode.fallbacks.failure')} ${index + 1}`),
+      detail: String(failure.error || failure.message || failure.step_id || ''),
+      text: String(failure.error || failure.message || formatJson(failure)),
+      raw: failure,
+      tone: 'failed',
+    })
+  })
+
+  return items
+})
+
+const activeTheaterItem = computed<TheaterItem | null>(() => {
+  const selected = theaterItems.value.find(item => item.id === selectedTheaterId.value)
+  if (selected) return selected
+  return theaterItems.value.find(item => item.kind === 'image' || item.kind === 'html') || theaterItems.value[0] || null
+})
+
 const completedStepCount = computed(() => steps.value.filter(step => stepStatus(step) === 'completed').length)
 
 const progressPercent = computed(() => {
@@ -322,6 +473,108 @@ function eventTone(type: string): string {
   if (type.includes('started')) return 'started'
   if (type.includes('confirmation')) return 'warning'
   return 'default'
+}
+
+function recordList(value: unknown): Record<string, any>[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item) => {
+      if (item && typeof item === 'object') return item as Record<string, any>
+      if (typeof item === 'string') return { path: item }
+      return null
+    })
+    .filter((item): item is Record<string, any> => Boolean(item))
+}
+
+function hashString(value: string): number {
+  let hash = 0
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash) + value.charCodeAt(index)
+    hash |= 0
+  }
+  return Math.abs(hash)
+}
+
+function stringPath(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function fileExt(path: string): string {
+  const cleanPath = path.split(/[?#]/)[0]
+  const dotIndex = cleanPath.lastIndexOf('.')
+  return dotIndex >= 0 ? cleanPath.slice(dotIndex).toLowerCase() : ''
+}
+
+function isImagePath(path: string): boolean {
+  return ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'].includes(fileExt(path))
+}
+
+function isHtmlPath(path: string): boolean {
+  return ['.html', '.htm'].includes(fileExt(path))
+}
+
+function externalUrl(value: unknown): string {
+  const text = stringPath(value)
+  return /^https?:\/\//i.test(text) ? text : ''
+}
+
+function isLocalProofPath(path: string): boolean {
+  return path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)
+}
+
+function mediaUrlForPath(path: string): string {
+  const cleanPath = stringPath(path)
+  if (!cleanPath || !isLocalProofPath(cleanPath)) return ''
+  return getWorkModeMediaUrl(cleanPath)
+}
+
+function pushTheaterItem(
+  items: TheaterItem[],
+  seen: Set<string>,
+  item: Omit<TheaterItem, 'id'>,
+) {
+  const detail = String(item.detail || item.path || item.externalUrl || item.text || '').trim()
+  const key = `${item.kind}:${item.path || item.externalUrl || detail || item.title}`
+  if (seen.has(key)) return
+  seen.add(key)
+  items.push({
+    ...item,
+    id: `${item.kind}-${items.length}-${hashString(key)}`,
+    detail,
+  })
+}
+
+function addProofFile(
+  items: TheaterItem[],
+  seen: Set<string>,
+  input: {
+    path?: unknown
+    kind?: TheaterItem['kind']
+    title?: string
+    detail?: string
+    raw?: Record<string, any>
+    tone?: string
+  },
+) {
+  const path = stringPath(input.path)
+  if (!path) return
+  const localMediaUrl = mediaUrlForPath(path)
+  const kind = input.kind || (isImagePath(path) ? 'image' : isHtmlPath(path) ? 'html' : 'artifact')
+
+  pushTheaterItem(items, seen, {
+    kind,
+    title: input.title || t('workmode.fallbacks.artifact'),
+    detail: input.detail || path,
+    path,
+    mediaUrl: localMediaUrl,
+    externalUrl: externalUrl(path),
+    raw: input.raw,
+    tone: input.tone,
+  })
+}
+
+function selectTheaterItem(item: TheaterItem) {
+  selectedTheaterId.value = item.id
 }
 
 function formatTime(value: string): string {
@@ -446,6 +699,7 @@ async function loadHistoryCase(caseId: string) {
     finalSummary.value = summaryFromReplay(replayEvents, replay.artifacts || [], replay.case)
     submittedTask.value = replay.case?.message || ''
     selectedCaseId.value = caseId
+    selectedTheaterId.value = ''
     errorText.value = ''
     message.success(t('workmode.messages.historyLoaded'))
     void scrollFeed()
@@ -518,6 +772,7 @@ async function runTask() {
   finalSummary.value = null
   errorText.value = ''
   selectedCaseId.value = ''
+  selectedTheaterId.value = ''
   void scrollFeed()
 
   try {
@@ -684,6 +939,91 @@ onMounted(() => {
               <span>{{ t('workmode.labels.stage') }}: {{ stageLabels[currentStage] }}</span>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section class="theater-pane">
+        <div class="theater-head">
+          <div>
+            <span class="topbar-eyebrow">{{ t('workmode.labels.visual') }}</span>
+            <h3>{{ t('workmode.panels.theater') }}</h3>
+          </div>
+          <NTag
+            size="small"
+            :type="activeTheaterItem?.tone === 'failed' ? 'error' : theaterItems.length ? 'info' : 'default'"
+          >
+            {{ theaterItems.length }}
+          </NTag>
+        </div>
+
+        <div class="theater-stage">
+          <template v-if="activeTheaterItem">
+            <div class="theater-frame-meta">
+              <strong>{{ activeTheaterItem.title }}</strong>
+              <span>{{ activeTheaterItem.detail || activeTheaterItem.kind }}</span>
+            </div>
+
+            <img
+              v-if="activeTheaterItem.kind === 'image' && activeTheaterItem.mediaUrl"
+              class="theater-image"
+              :src="activeTheaterItem.mediaUrl"
+              :alt="activeTheaterItem.title"
+            />
+            <iframe
+              v-else-if="activeTheaterItem.kind === 'html' && activeTheaterItem.mediaUrl"
+              class="theater-frame"
+              sandbox=""
+              :src="activeTheaterItem.mediaUrl"
+              :title="activeTheaterItem.title"
+            ></iframe>
+            <div v-else class="theater-document" :class="`tone-${activeTheaterItem.tone || 'default'}`">
+              <strong>{{ activeTheaterItem.kind }}</strong>
+              <p v-if="activeTheaterItem.text">{{ activeTheaterItem.text }}</p>
+              <p v-else>{{ activeTheaterItem.detail || formatJson(activeTheaterItem.raw || {}) }}</p>
+            </div>
+
+            <div class="theater-actions">
+              <a
+                v-if="activeTheaterItem.mediaUrl"
+                :href="activeTheaterItem.mediaUrl"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {{ t('workmode.actions.open') }}
+              </a>
+              <a
+                v-else-if="activeTheaterItem.externalUrl"
+                :href="activeTheaterItem.externalUrl"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {{ t('workmode.actions.open') }}
+              </a>
+              <button
+                type="button"
+                :disabled="!activeTheaterItem.detail"
+                @click="copyText(activeTheaterItem.detail)"
+              >
+                {{ t('common.copy') }}
+              </button>
+            </div>
+          </template>
+          <div v-else class="theater-empty">{{ t('workmode.states.noTheater') }}</div>
+        </div>
+
+        <div v-if="theaterItems.length" class="theater-rail">
+          <button
+            v-for="item in theaterItems"
+            :key="item.id"
+            type="button"
+            class="theater-thumb"
+            :class="{ active: activeTheaterItem?.id === item.id, failed: item.tone === 'failed' }"
+            @click="selectTheaterItem(item)"
+          >
+            <span>{{ item.kind }}</span>
+            <strong>{{ item.title }}</strong>
+            <small>{{ item.detail }}</small>
+          </button>
         </div>
       </section>
 
@@ -1063,13 +1403,14 @@ onMounted(() => {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(420px, 1fr) minmax(340px, 430px);
+  grid-template-columns: minmax(340px, 0.95fr) minmax(420px, 1.05fr) minmax(320px, 390px);
   gap: 14px;
   padding: 14px;
   overflow: hidden;
 }
 
 .operator-pane,
+.theater-pane,
 .evidence-pane {
   min-height: 0;
   min-width: 0;
@@ -1082,6 +1423,251 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.theater-pane {
+  border: 1px solid var(--wm-border);
+  border-radius: $radius-sm;
+  background: var(--wm-surface);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.theater-head {
+  min-height: 54px;
+  padding: 10px 12px;
+  border-bottom: 1px solid $border-light;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+
+  div {
+    min-width: 0;
+  }
+
+  h3 {
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 15px;
+    font-weight: 700;
+  }
+}
+
+.theater-stage {
+  flex: 1;
+  min-height: 260px;
+  background: var(--wm-soft);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.theater-frame-meta {
+  min-height: 46px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--wm-border);
+  background: var(--wm-surface);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  flex-shrink: 0;
+
+  strong,
+  span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  strong {
+    font-size: 13px;
+  }
+
+  span {
+    color: var(--wm-muted);
+    font-family: $font-code;
+    font-size: 11px;
+  }
+}
+
+.theater-image,
+.theater-frame {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.theater-image {
+  object-fit: contain;
+  background: #101318;
+}
+
+.theater-frame {
+  border: 0;
+  background: #fff;
+}
+
+.theater-document {
+  flex: 1;
+  min-height: 0;
+  margin: 12px;
+  padding: 14px;
+  border: 1px solid var(--wm-border);
+  border-radius: $radius-sm;
+  background: var(--wm-surface);
+  color: var(--wm-secondary);
+  overflow: auto;
+
+  &.tone-failed {
+    border-color: rgba(var(--error-rgb), 0.5);
+    color: var(--error);
+  }
+
+  strong {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--wm-text);
+    font-size: 12px;
+    text-transform: uppercase;
+  }
+
+  p {
+    margin: 0;
+    font-family: $font-code;
+    font-size: 12px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+}
+
+.theater-actions {
+  min-height: 40px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--wm-border);
+  background: var(--wm-surface);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+
+  a,
+  button {
+    height: 27px;
+    padding: 0 9px;
+    border: 1px solid var(--wm-border);
+    border-radius: $radius-sm;
+    background: var(--wm-surface);
+    color: var(--wm-secondary);
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  a:hover,
+  button:hover:not(:disabled) {
+    color: var(--wm-text);
+    border-color: var(--wm-muted);
+  }
+
+  button:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+}
+
+.theater-empty {
+  flex: 1;
+  min-height: 260px;
+  padding: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--wm-muted);
+  text-align: center;
+  font-size: 12px;
+}
+
+.theater-rail {
+  max-height: 174px;
+  padding: 8px;
+  border-top: 1px solid $border-light;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.theater-thumb {
+  width: 100%;
+  min-height: 54px;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: $radius-sm;
+  background: transparent;
+  color: var(--wm-text);
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  text-align: left;
+
+  &:hover,
+  &.active {
+    background: var(--wm-soft);
+    border-color: var(--wm-border);
+  }
+
+  &.failed {
+    border-color: rgba(var(--error-rgb), 0.32);
+  }
+
+  span {
+    grid-row: 1 / -1;
+    align-self: start;
+    justify-self: start;
+    max-width: 58px;
+    padding: 2px 5px;
+    border: 1px solid var(--wm-border);
+    border-radius: $radius-sm;
+    color: var(--wm-muted);
+    font-size: 10px;
+    text-transform: uppercase;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  strong,
+  small {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  strong {
+    font-size: 12px;
+  }
+
+  small {
+    color: var(--wm-muted);
+    font-family: $font-code;
+    font-size: 11px;
+  }
 }
 
 .feed-scroll {
@@ -1667,6 +2253,10 @@ onMounted(() => {
     min-height: 620px;
   }
 
+  .theater-pane {
+    min-height: 520px;
+  }
+
   .evidence-pane {
     overflow: visible;
   }
@@ -1704,6 +2294,10 @@ onMounted(() => {
 
   .operator-pane {
     min-height: 560px;
+  }
+
+  .theater-pane {
+    min-height: 460px;
   }
 
   .feed-scroll {

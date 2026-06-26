@@ -172,6 +172,7 @@ export default {
       refresh: '刷新',
       approve: '确认',
       reject: '拒绝',
+      open: '打开',
     },
     form: {
       task: '任务',
@@ -209,6 +210,7 @@ export default {
       failures: '失败',
       history: '历史',
       confirmations: '确认',
+      theater: '剧场',
     },
     labels: {
       project: 'Reins Agent',
@@ -217,6 +219,7 @@ export default {
       proof: '证据',
       latest: '最新',
       progress: '进度',
+      visual: '可视证据',
     },
     roles: {
       operator: '操作员',
@@ -248,10 +251,16 @@ export default {
       noTask: '暂无运行中的工作任务。',
       noHistory: '暂无保存的运行记录',
       noConfirmations: '暂无待确认动作',
+      noTheater: '暂无可视证据',
     },
     fallbacks: {
       artifact: '产物',
       source: '来源',
+      screenshot: '截图',
+      html: 'HTML 快照',
+      ocr: 'OCR 结果',
+      action: '动作',
+      failure: '失败',
     },
     stepStatus: {
       pending: '等待',

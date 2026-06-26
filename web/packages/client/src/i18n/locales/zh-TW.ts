@@ -171,6 +171,7 @@ export default {
       refresh: '重新整理',
       approve: '確認',
       reject: '拒絕',
+      open: '開啟',
     },
     form: {
       task: '任務',
@@ -208,6 +209,7 @@ export default {
       failures: '失敗',
       history: '歷史',
       confirmations: '確認',
+      theater: '劇場',
     },
     labels: {
       project: 'Reins Agent',
@@ -216,6 +218,7 @@ export default {
       proof: '證據',
       latest: '最新',
       progress: '進度',
+      visual: '可視證據',
     },
     roles: {
       operator: '操作員',
@@ -247,10 +250,16 @@ export default {
       noTask: '暫無執行中的工作任務。',
       noHistory: '暫無保存的執行記錄',
       noConfirmations: '暫無待確認動作',
+      noTheater: '暫無可視證據',
     },
     fallbacks: {
       artifact: '產物',
       source: '來源',
+      screenshot: '截圖',
+      html: 'HTML 快照',
+      ocr: 'OCR 結果',
+      action: '動作',
+      failure: '失敗',
     },
     stepStatus: {
       pending: '等待',

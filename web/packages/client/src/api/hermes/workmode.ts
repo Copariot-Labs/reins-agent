@@ -158,6 +158,20 @@ export async function getWorkModeCase(caseId: string): Promise<WorkModeCaseRepla
   )
 }
 
+export function getWorkModeMediaUrl(filePath: string): string {
+  const path = String(filePath || '').trim()
+  if (!path) return ''
+
+  const params = new URLSearchParams({ path })
+  const profileName = getActiveProfileName()
+  const apiKey = getApiKey()
+
+  if (profileName) params.set('profile', profileName)
+  if (apiKey) params.set('token', apiKey)
+
+  return `${getBaseUrlValue()}/api/hermes/workmode/media?${params.toString()}`
+}
+
 export async function approveWorkModeConfirmation(caseId: string, confirmationId: string): Promise<WorkModeConfirmationResult> {
   return await jsonRequest<WorkModeConfirmationResult>(
     `/api/hermes/workmode/cases/${encodeURIComponent(caseId)}/confirmations/${encodeURIComponent(confirmationId)}/approve`,

@@ -176,6 +176,7 @@ export default {
       refresh: 'Refresh',
       approve: 'Approve',
       reject: 'Reject',
+      open: 'Open',
     },
     form: {
       task: 'Task',
@@ -213,6 +214,7 @@ export default {
       failures: 'Failures',
       history: 'History',
       confirmations: 'Confirmations',
+      theater: 'Theater',
     },
     labels: {
       project: 'Reins Agent',
@@ -221,6 +223,7 @@ export default {
       proof: 'Proof',
       latest: 'Latest',
       progress: 'Progress',
+      visual: 'Visual proof',
     },
     roles: {
       operator: 'Operator',
@@ -252,10 +255,16 @@ export default {
       noTask: 'No work task is running.',
       noHistory: 'No saved runs',
       noConfirmations: 'No pending confirmations',
+      noTheater: 'No visual proof yet',
     },
     fallbacks: {
       artifact: 'Artifact',
       source: 'Source',
+      screenshot: 'Screenshot',
+      html: 'HTML snapshot',
+      ocr: 'OCR result',
+      action: 'Action',
+      failure: 'Failure',
     },
     stepStatus: {
       pending: 'Pending',

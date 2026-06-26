@@ -2,6 +2,7 @@ import Router from '@koa/router'
 import {
   approveWorkModeConfirmation,
   getWorkModeCase,
+  getWorkModeMedia,
   listWorkModeCases,
   normalizeWorkModeRunRequest,
   rejectWorkModeConfirmation,
@@ -56,6 +57,37 @@ workModeRoutes.get('/api/hermes/workmode/cases/:caseId', async (ctx) => {
     ctx.body = replay
   } catch (err: any) {
     handleError(ctx, err)
+  }
+})
+
+workModeRoutes.get('/api/hermes/workmode/media', async (ctx) => {
+  try {
+    const media = await getWorkModeMedia(String(ctx.query.path || ''))
+    const encodedFileName = encodeURIComponent(media.fileName)
+
+    ctx.set('Content-Type', media.mime)
+    ctx.set('Content-Length', String(media.size))
+    ctx.set('Content-Disposition', `inline; filename="${encodedFileName}"; filename*=UTF-8''${encodedFileName}`)
+    ctx.set('Cache-Control', 'private, max-age=60')
+
+    if (media.mime.startsWith('text/html')) {
+      ctx.set('Content-Security-Policy', "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline';")
+    }
+
+    ctx.body = media.data
+  } catch (err: any) {
+    const statusMap: Record<string, number> = {
+      missing_path: 400,
+      invalid_path: 400,
+      not_found: 404,
+      ENOENT: 404,
+      file_too_large: 413,
+    }
+    ctx.status = statusMap[String(err?.code || '')] || 500
+    ctx.body = {
+      error: err?.message || 'WorkMode media request failed',
+      code: err?.code || 'unknown',
+    }
   }
 })
 
