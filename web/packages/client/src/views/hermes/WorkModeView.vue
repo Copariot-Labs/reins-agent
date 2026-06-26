@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { NButton, NInput, NTag, useMessage } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import {
+  approveWorkModeConfirmation,
+  getWorkModeCase,
+  listWorkModeCases,
+  rejectWorkModeConfirmation,
   runWorkModeStream,
+  type WorkModeCaseSummary,
   type WorkModeEvent,
   type WorkModeName,
 } from '@/api/hermes/workmode'
@@ -30,9 +35,9 @@ interface FeedItem {
   tone: string
 }
 
-type RunStatus = 'idle' | 'running' | 'completed' | 'failed'
+type RunStatus = 'idle' | 'running' | 'completed' | 'failed' | 'pending_confirmation' | 'rejected'
 type StepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'blocked'
-type WorkStage = 'idle' | 'planning' | 'executing' | 'presenting' | 'completed' | 'failed' | 'cancelled'
+type WorkStage = 'idle' | 'planning' | 'executing' | 'presenting' | 'completed' | 'failed' | 'cancelled' | 'blocked' | 'rejected'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -46,6 +51,10 @@ const finalSummary = ref<Record<string, any> | null>(null)
 const errorText = ref('')
 const abortController = ref<AbortController | null>(null)
 const feedRef = ref<HTMLElement | null>(null)
+const historyItems = ref<WorkModeCaseSummary[]>([])
+const historyLoading = ref(false)
+const selectedCaseId = ref('')
+const confirmationBusyId = ref('')
 
 const modeOptions = computed(() => [
   { label: t('workmode.modes.work'), value: 'work' as const },
@@ -64,6 +73,8 @@ const statusLabels = computed<Record<RunStatus, string>>(() => ({
   running: t('workmode.status.running'),
   completed: t('workmode.status.completed'),
   failed: t('workmode.status.failed'),
+  pending_confirmation: t('workmode.status.pendingConfirmation'),
+  rejected: t('workmode.status.rejected'),
 }))
 
 const stageLabels = computed<Record<WorkStage, string>>(() => ({
@@ -74,6 +85,8 @@ const stageLabels = computed<Record<WorkStage, string>>(() => ({
   completed: t('workmode.stage.completed'),
   failed: t('workmode.stage.failed'),
   cancelled: t('workmode.stage.cancelled'),
+  blocked: t('workmode.stage.blocked'),
+  rejected: t('workmode.stage.rejected'),
 }))
 
 function lastEventOf(types: string[]): WorkModeEvent | null {
@@ -90,12 +103,16 @@ const status = computed<RunStatus>(() => {
   if (!terminalEvent.value && events.value.length === 0) return 'idle'
   if (terminalEvent.value?.type === 'task_failed') return 'failed'
   if (finalSummary.value?.status === 'failed') return 'failed'
+  if (finalSummary.value?.status === 'pending_confirmation') return 'pending_confirmation'
+  if (finalSummary.value?.status === 'rejected') return 'rejected'
   return 'completed'
 })
 
 const statusTagType = computed(() => {
   if (status.value === 'completed') return 'success'
   if (status.value === 'failed') return 'error'
+  if (status.value === 'pending_confirmation') return 'warning'
+  if (status.value === 'rejected') return 'warning'
   if (status.value === 'running') return 'info'
   return 'default'
 })
@@ -121,6 +138,8 @@ const routeLabel = computed(() => {
 const currentStage = computed<WorkStage>(() => {
   if (events.value.some(event => event.type === 'work.stream.cancelled')) return 'cancelled'
   if (status.value === 'failed') return 'failed'
+  if (status.value === 'pending_confirmation') return 'blocked'
+  if (status.value === 'rejected') return 'rejected'
   if (status.value === 'completed') return 'completed'
 
   const latest = events.value[events.value.length - 1]
@@ -162,12 +181,27 @@ const failures = computed<Record<string, any>[]>(() => {
     .map(event => event.data)
 })
 
+const pendingConfirmations = computed<Record<string, any>[]>(() => {
+  const summaryConfirmations = finalSummary.value?.pending_confirmations
+  if (Array.isArray(summaryConfirmations) && summaryConfirmations.length > 0) return summaryConfirmations
+  return events.value
+    .filter(event => event.type === 'confirmation_required')
+    .map(event => event.data?.confirmation)
+    .filter((confirmation): confirmation is Record<string, any> => confirmation && typeof confirmation === 'object')
+})
+
 const latestEvent = computed(() => events.value[events.value.length - 1] || null)
+
+const currentCaseLabel = computed(() => {
+  if (selectedCaseId.value) return selectedCaseId.value.slice(0, 8)
+  return '-'
+})
 
 const proofCount = computed(() => (
   artifacts.value.length +
   sources.value.length +
-  desktopActions.value.length
+  desktopActions.value.length +
+  pendingConfirmations.value.length
 ))
 
 const completedStepCount = computed(() => steps.value.filter(step => stepStatus(step) === 'completed').length)
@@ -214,6 +248,7 @@ function stepEventId(event: WorkModeEvent): string | null {
   if (step && typeof step === 'object' && typeof (step as Record<string, any>).id === 'string') {
     return (step as Record<string, any>).id
   }
+  if (typeof event.data?.step_id === 'string') return event.data.step_id
   return null
 }
 
@@ -224,6 +259,7 @@ function stepStatus(step: WorkStep): StepStatus {
     if (stepEventId(event) !== step.id) continue
     if (event.type === 'work.step.started') current = 'running'
     if (event.type === 'work.step.completed') current = 'completed'
+    if (event.type === 'work.step.blocked') current = 'blocked'
     if (event.type === 'work.step.failed') {
       const result = event.data?.result
       if (result && typeof result === 'object' && (result as Record<string, any>).status === 'blocked') {
@@ -255,9 +291,18 @@ function stepStatusTagType(value: StepStatus) {
   return 'default'
 }
 
+function caseStatusTagType(value?: string | null) {
+  if (value === 'completed') return 'success'
+  if (value === 'failed') return 'error'
+  if (value === 'pending_confirmation') return 'warning'
+  if (value === 'rejected') return 'warning'
+  if (value === 'running') return 'info'
+  return 'default'
+}
+
 function eventRole(type: string): FeedItem['role'] {
   if (type.includes('failed') || type.includes('stderr')) return 'system'
-  if (type === 'artifact_created' || type === 'source_opened' || type.includes('action')) return 'system'
+  if (type === 'artifact_created' || type === 'source_opened' || type === 'confirmation_required' || type.includes('action')) return 'system'
   return 'assistant'
 }
 
@@ -266,6 +311,7 @@ function eventTitle(type: string): string {
   if (type.startsWith('work.step')) return t('workmode.panels.steps')
   if (type === 'artifact_created') return t('workmode.panels.artifacts')
   if (type === 'source_opened') return t('workmode.panels.sources')
+  if (type === 'confirmation_required') return t('workmode.panels.confirmations')
   if (type.includes('failed')) return t('workmode.panels.failures')
   return t('workmode.roles.assistant')
 }
@@ -286,6 +332,11 @@ function formatTime(value: string): string {
     minute: '2-digit',
     second: '2-digit',
   }).format(date)
+}
+
+function formatCaseTime(value?: string | null): string {
+  if (!value) return ''
+  return formatTime(value)
 }
 
 function itemTitle(item: Record<string, any>, fallback: string): string {
@@ -316,6 +367,8 @@ function handleEvent(event: WorkModeEvent) {
   events.value.push(event)
   if (event.type === 'task_finished') {
     finalSummary.value = event.data
+    const caseId = event.data?.intake?.case_id
+    if (typeof caseId === 'string') selectedCaseId.value = caseId
   }
   void scrollFeed()
 }
@@ -335,6 +388,120 @@ function streamFinishedWithFailure(): boolean {
   return terminalEvent.value?.type === 'task_failed' || summary?.status === 'failed'
 }
 
+function streamFinishedWithPendingConfirmation(): boolean {
+  const summary = finalSummary.value as Record<string, any> | null
+  return summary?.status === 'pending_confirmation'
+}
+
+function normalizeReplayEvents(rawEvents: any[] | undefined): WorkModeEvent[] {
+  if (!Array.isArray(rawEvents)) return []
+  return rawEvents
+    .filter(event => event && typeof event.type === 'string')
+    .map(event => ({
+      type: String(event.type),
+      message: String(event.message || event.type),
+      task_id: typeof event.task_id === 'string' ? event.task_id : null,
+      data: event.data && typeof event.data === 'object' ? event.data : {},
+      created_at: String(event.created_at || new Date().toISOString()),
+    }))
+}
+
+function summaryFromReplay(
+  rawEvents: WorkModeEvent[],
+  replayArtifacts: Record<string, any>[] = [],
+  replayCase: WorkModeCaseSummary | null | undefined = null,
+): Record<string, any> | null {
+  const finished = [...rawEvents].reverse().find(event => event.type === 'task_finished')
+  if (finished?.data && typeof finished.data === 'object') {
+    const data = { ...finished.data }
+    if (!Array.isArray(data.artifacts) && replayArtifacts.length) data.artifacts = replayArtifacts
+    if (replayCase?.status) data.status = replayCase.status
+    return data
+  }
+  if (!rawEvents.length && !replayArtifacts.length) return null
+  return {
+    status: replayCase?.status || 'completed',
+    artifacts: replayArtifacts,
+  }
+}
+
+async function refreshHistory() {
+  historyLoading.value = true
+  try {
+    historyItems.value = await listWorkModeCases(20)
+  } catch (err: any) {
+    message.error(err?.message || t('workmode.messages.historyLoadFailed'))
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+async function loadHistoryCase(caseId: string) {
+  if (running.value || !caseId) return
+  historyLoading.value = true
+  try {
+    const replay = await getWorkModeCase(caseId)
+    const replayEvents = normalizeReplayEvents(replay.events)
+    events.value = replayEvents
+    finalSummary.value = summaryFromReplay(replayEvents, replay.artifacts || [], replay.case)
+    submittedTask.value = replay.case?.message || ''
+    selectedCaseId.value = caseId
+    errorText.value = ''
+    message.success(t('workmode.messages.historyLoaded'))
+    void scrollFeed()
+  } catch (err: any) {
+    message.error(err?.message || t('workmode.messages.historyLoadFailed'))
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+async function reloadSelectedCase() {
+  if (selectedCaseId.value) {
+    await loadHistoryCase(selectedCaseId.value)
+  } else {
+    await refreshHistory()
+  }
+}
+
+async function approveConfirmation(confirmation: Record<string, any>) {
+  const confirmationId = String(confirmation.id || '')
+  if (!selectedCaseId.value || !confirmationId || confirmationBusyId.value) return
+  confirmationBusyId.value = confirmationId
+  try {
+    const result = await approveWorkModeConfirmation(selectedCaseId.value, confirmationId)
+    if (result.ok) {
+      message.success(t('workmode.messages.confirmationApproved'))
+    } else {
+      message.error(result.error || result.result?.error || t('workmode.messages.confirmationFailed'))
+    }
+    await reloadSelectedCase()
+  } catch (err: any) {
+    message.error(err?.message || t('workmode.messages.confirmationFailed'))
+  } finally {
+    confirmationBusyId.value = ''
+  }
+}
+
+async function rejectConfirmation(confirmation: Record<string, any>) {
+  const confirmationId = String(confirmation.id || '')
+  if (!selectedCaseId.value || !confirmationId || confirmationBusyId.value) return
+  confirmationBusyId.value = confirmationId
+  try {
+    const result = await rejectWorkModeConfirmation(selectedCaseId.value, confirmationId)
+    if (result.ok) {
+      message.success(t('workmode.messages.confirmationRejected'))
+    } else {
+      message.error(result.error || t('workmode.messages.confirmationFailed'))
+    }
+    await reloadSelectedCase()
+  } catch (err: any) {
+    message.error(err?.message || t('workmode.messages.confirmationFailed'))
+  } finally {
+    confirmationBusyId.value = ''
+  }
+}
+
 async function runTask() {
   const input = taskText.value.trim()
   if (!input) {
@@ -350,6 +517,7 @@ async function runTask() {
   events.value = []
   finalSummary.value = null
   errorText.value = ''
+  selectedCaseId.value = ''
   void scrollFeed()
 
   try {
@@ -361,11 +529,14 @@ async function runTask() {
       },
     )
 
-    if (streamFinishedWithFailure()) {
+    if (streamFinishedWithPendingConfirmation()) {
+      message.warning(t('workmode.messages.confirmationRequired'))
+    } else if (streamFinishedWithFailure()) {
       message.error(t('workmode.messages.finishedWithFailure'))
     } else {
       message.success(t('workmode.messages.finished'))
     }
+    void refreshHistory()
   } catch (err: any) {
     if (err?.name === 'AbortError') {
       pushLocalEvent('work.stream.cancelled', t('workmode.messages.cancelled'))
@@ -389,6 +560,10 @@ function useExample(example: string) {
   if (running.value) return
   taskText.value = example
 }
+
+onMounted(() => {
+  void refreshHistory()
+})
 </script>
 
 <template>
@@ -513,6 +688,97 @@ function useExample(example: string) {
       </section>
 
       <aside class="evidence-pane">
+        <section class="evidence-card history-card">
+          <div class="card-head">
+            <h3>{{ t('workmode.panels.history') }}</h3>
+            <div class="card-actions">
+              <span>{{ currentCaseLabel }}</span>
+              <NButton size="tiny" quaternary :loading="historyLoading" @click="refreshHistory">
+                {{ t('workmode.actions.refresh') }}
+              </NButton>
+            </div>
+          </div>
+          <div v-if="historyItems.length" class="history-list">
+            <button
+              v-for="item in historyItems"
+              :key="item.case_id"
+              type="button"
+              class="history-row"
+              :class="{ active: selectedCaseId === item.case_id }"
+              :disabled="running || historyLoading"
+              @click="loadHistoryCase(item.case_id)"
+            >
+              <span class="history-main">
+                <strong>{{ item.message || item.case_id }}</strong>
+                <small>{{ item.issue_type || item.workflow || item.case_id }}</small>
+              </span>
+              <span class="history-meta">
+                <NTag size="tiny" :type="caseStatusTagType(item.status)">
+                  {{ item.status || t('workmode.status.idle') }}
+                </NTag>
+                <small>{{ formatCaseTime(item.updated_at || item.created_at) }}</small>
+              </span>
+            </button>
+          </div>
+          <div v-else class="empty-state">{{ t('workmode.states.noHistory') }}</div>
+        </section>
+
+        <section class="evidence-card confirmation-card" :class="{ attention: pendingConfirmations.length }">
+          <div class="card-head">
+            <h3>{{ t('workmode.panels.confirmations') }}</h3>
+            <span>{{ pendingConfirmations.length }}</span>
+          </div>
+          <div v-if="pendingConfirmations.length" class="confirmation-list">
+            <div
+              v-for="(confirmation, index) in pendingConfirmations"
+              :key="String(confirmation.id || index)"
+              class="confirmation-row"
+            >
+              <div class="confirmation-top">
+                <strong>{{ confirmation.target || confirmation.action }}</strong>
+                <NTag size="tiny" type="warning">
+                  {{ confirmation.status || t('workmode.status.pendingConfirmation') }}
+                </NTag>
+              </div>
+              <div class="confirmation-meta">
+                <span>{{ confirmation.channel || '-' }}</span>
+                <span>{{ confirmation.action || '-' }}</span>
+                <span>{{ confirmation.risk || '-' }}</span>
+              </div>
+              <pre v-if="confirmation.payload?.message">{{ confirmation.payload.message }}</pre>
+              <button
+                type="button"
+                class="copy-inline"
+                :disabled="!confirmation.payload?.message"
+                @click="copyText(String(confirmation.payload?.message || ''))"
+              >
+                {{ t('common.copy') }}
+              </button>
+              <div class="confirmation-actions">
+                <NButton
+                  size="tiny"
+                  type="primary"
+                  :disabled="!selectedCaseId || confirmation.status === 'sent'"
+                  :loading="confirmationBusyId === confirmation.id"
+                  @click="approveConfirmation(confirmation)"
+                >
+                  {{ t('workmode.actions.approve') }}
+                </NButton>
+                <NButton
+                  size="tiny"
+                  tertiary
+                  :disabled="!selectedCaseId"
+                  :loading="confirmationBusyId === confirmation.id"
+                  @click="rejectConfirmation(confirmation)"
+                >
+                  {{ t('workmode.actions.reject') }}
+                </NButton>
+              </div>
+            </div>
+          </div>
+          <div v-else class="empty-state">{{ t('workmode.states.noConfirmations') }}</div>
+        </section>
+
         <section class="evidence-card progress-card">
           <div class="card-head">
             <h3>{{ t('workmode.labels.progress') }}</h3>
@@ -1004,6 +1270,188 @@ function useExample(example: string) {
     font-size: 12px;
     white-space: nowrap;
   }
+}
+
+.card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+
+  span {
+    max-width: 84px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.history-list {
+  max-height: 240px;
+  overflow: auto;
+  padding: 6px;
+}
+
+.history-row {
+  width: 100%;
+  min-height: 54px;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: $radius-sm;
+  background: transparent;
+  color: var(--wm-text);
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+
+  &:hover:not(:disabled),
+  &.active {
+    background: var(--wm-soft);
+    border-color: var(--wm-border);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.62;
+  }
+}
+
+.history-main,
+.history-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.history-main {
+  strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+  }
+
+  small {
+    color: var(--wm-muted);
+    font-size: 11px;
+  }
+}
+
+.history-meta {
+  align-items: flex-end;
+
+  small {
+    color: var(--wm-muted);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+}
+
+.confirmation-card.attention {
+  border-color: rgba(var(--warning-rgb), 0.5);
+}
+
+.confirmation-list {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.confirmation-row {
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid $border-light;
+  border-radius: $radius-sm;
+  background: var(--wm-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+
+  pre {
+    max-height: 140px;
+    margin: 0;
+    padding: 8px;
+    border: 1px solid var(--wm-border);
+    border-radius: $radius-sm;
+    background: var(--wm-surface);
+    color: var(--wm-secondary);
+    font-family: $font-code;
+    font-size: 11px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow: auto;
+  }
+}
+
+.confirmation-top {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+
+  strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+  }
+}
+
+.confirmation-meta {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+
+  span {
+    max-width: 100%;
+    padding: 2px 6px;
+    border: 1px solid var(--wm-border);
+    border-radius: $radius-sm;
+    color: var(--wm-muted);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.copy-inline {
+  align-self: flex-end;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--wm-border);
+  border-radius: $radius-sm;
+  background: var(--wm-surface);
+  color: var(--wm-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+
+  &:hover:not(:disabled) {
+    color: var(--wm-text);
+    border-color: var(--wm-muted);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+}
+
+.confirmation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .progress-card {

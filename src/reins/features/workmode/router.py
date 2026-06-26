@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from enum import Enum
 
+from reins.features.workmode.desktop_resolver import is_desktop_app_intent
+from reins.features.workmode.url_resolver import is_browser_intent
+
 
 class ExecutionPath(str, Enum):
     BACKEND_ONLY = "backend_only"
@@ -24,10 +27,16 @@ def choose_execution_path(message: str) -> ExecutionPath:
     if any(word in text for word in ["login", "portal", "form", "submit", "网页", "浏览器", "表单"]):
         return ExecutionPath.BROWSER
 
+    if is_browser_intent(message):
+        return ExecutionPath.BROWSER
+
+    if is_desktop_app_intent(message):
+        return ExecutionPath.DESKTOP
+
     if any(word in text for word in ["screenshot", "desktop", "window", "屏幕", "窗口"]):
         return ExecutionPath.DESKTOP
 
-    if any(word in text for word in ["search", "summarize", "generate", "draft", "查询", "总结", "生成"]):
+    if any(word in text for word in ["summarize", "generate", "draft", "总结", "生成"]):
         return ExecutionPath.BACKEND_WITH_PRESENTATION
 
     return ExecutionPath.BACKEND_ONLY

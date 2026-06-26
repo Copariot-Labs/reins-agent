@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 import importlib.util
 from pathlib import Path
+import shutil
 
 from reins.api.home import get_reins_home
 
@@ -12,8 +13,24 @@ class ArtifactDependencyError(RuntimeError):
 
 
 def check_artifact_dependencies() -> dict[str, bool]:
+    playwright_browser = False
+
+    if importlib.util.find_spec("playwright") is not None:
+        try:
+            from playwright.sync_api import sync_playwright
+
+            with sync_playwright() as p:
+                playwright_browser = Path(p.chromium.executable_path).exists()
+        except Exception:
+            playwright_browser = False
+
     return {
         "python-docx": importlib.util.find_spec("docx") is not None,
+        "playwright": importlib.util.find_spec("playwright") is not None,
+        "playwright-chromium": playwright_browser,
+        "pillow": importlib.util.find_spec("PIL") is not None,
+        "pytesseract": importlib.util.find_spec("pytesseract") is not None,
+        "tesseract": shutil.which("tesseract") is not None,
     }
 
 

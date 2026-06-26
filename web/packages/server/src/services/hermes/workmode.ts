@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
+import { once } from 'events'
 import { PassThrough } from 'stream'
 import { logger } from '../logger'
 
@@ -20,6 +21,36 @@ export interface WorkModeEvent {
 export interface WorkModeStream {
   stream: PassThrough
   cancel: () => void
+}
+
+export interface WorkModeCaseSummary {
+  case_id: string
+  message?: string | null
+  issue_type?: string | null
+  priority?: string | null
+  location?: string | null
+  workflow?: string | null
+  status?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface WorkModeCaseReplay {
+  ok: boolean
+  error?: string
+  case_id?: string
+  case?: WorkModeCaseSummary | null
+  events?: Record<string, unknown>[]
+  artifacts?: Record<string, unknown>[]
+}
+
+export interface WorkModeConfirmationResult {
+  ok: boolean
+  error?: string
+  case_id?: string
+  confirmation_id?: string
+  status?: string
+  result?: Record<string, unknown>
 }
 
 const WORKMODE_MODES = new Set<WorkModeName>(['work', 'demo', 'headless'])
@@ -112,6 +143,79 @@ function killChild(child: ChildProcessWithoutNullStreams): void {
   } catch (err) {
     logger.warn(err, 'Failed to cancel Reins workmode process')
   }
+}
+
+async function runJsonCommand<T = Record<string, unknown>>(args: string[]): Promise<T> {
+  const bin = resolveReinsBin()
+  const child = spawn(bin, args, {
+    env: { ...process.env },
+    windowsHide: true,
+  })
+
+  let stdout = ''
+  let stderr = ''
+
+  child.stdout.setEncoding('utf8')
+  child.stderr.setEncoding('utf8')
+  child.stdout.on('data', (chunk: string) => {
+    stdout += chunk
+  })
+  child.stderr.on('data', (chunk: string) => {
+    stderr += chunk
+  })
+
+  const closePromise = once(child, 'close') as Promise<[number | null, NodeJS.Signals | null]>
+  const errorPromise = once(child, 'error').then(([err]) => {
+    throw err as Error
+  })
+  const [code, signal] = await Promise.race([closePromise, errorPromise])
+
+  try {
+    const payload = JSON.parse(stdout) as T
+    if (code !== 0 && (!payload || typeof payload !== 'object')) {
+      throw new Error(stderr.trim() || `Reins workmode command failed with code ${code ?? signal ?? 'unknown'}`)
+    }
+    return payload
+  } catch (err: any) {
+    if (code !== 0) {
+      throw new Error(stderr.trim() || `Reins workmode command failed with code ${code ?? signal ?? 'unknown'}`)
+    }
+    throw new Error(`Failed to parse Reins workmode JSON output: ${err?.message || err}`)
+  }
+}
+
+export async function listWorkModeCases(limit = 25): Promise<{ ok: boolean, cases: WorkModeCaseSummary[] }> {
+  const safeLimit = Math.max(1, Math.min(Math.trunc(limit) || 25, 100))
+  const payload = await runJsonCommand<{ ok?: boolean, cases?: unknown }>(['workmode', 'cases', '--limit', String(safeLimit)])
+  const cases = Array.isArray(payload.cases) ? payload.cases as WorkModeCaseSummary[] : []
+  return {
+    ok: payload.ok !== false,
+    cases,
+  }
+}
+
+export async function getWorkModeCase(caseId: string): Promise<WorkModeCaseReplay> {
+  const cleanCaseId = String(caseId || '').trim()
+  if (!cleanCaseId) throw new Error('Work mode case id is required')
+  return await runJsonCommand<WorkModeCaseReplay>(['workmode', 'replay', cleanCaseId])
+}
+
+export async function approveWorkModeConfirmation(caseId: string, confirmationId: string): Promise<WorkModeConfirmationResult> {
+  const cleanCaseId = String(caseId || '').trim()
+  const cleanConfirmationId = String(confirmationId || '').trim()
+  if (!cleanCaseId) throw new Error('Work mode case id is required')
+  if (!cleanConfirmationId) throw new Error('Work mode confirmation id is required')
+  return await runJsonCommand<WorkModeConfirmationResult>(['workmode', 'approve', cleanCaseId, cleanConfirmationId])
+}
+
+export async function rejectWorkModeConfirmation(caseId: string, confirmationId: string, reason = ''): Promise<WorkModeConfirmationResult> {
+  const cleanCaseId = String(caseId || '').trim()
+  const cleanConfirmationId = String(confirmationId || '').trim()
+  if (!cleanCaseId) throw new Error('Work mode case id is required')
+  if (!cleanConfirmationId) throw new Error('Work mode confirmation id is required')
+  const args = ['workmode', 'reject', cleanCaseId, cleanConfirmationId]
+  if (reason.trim()) args.push('--reason', reason.trim())
+  return await runJsonCommand<WorkModeConfirmationResult>(args)
 }
 
 export function startWorkModeRun(input: WorkModeRunRequest): WorkModeStream {

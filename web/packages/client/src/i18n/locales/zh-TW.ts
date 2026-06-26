@@ -168,6 +168,9 @@ export default {
     actions: {
       run: '執行',
       stop: '停止',
+      refresh: '重新整理',
+      approve: '確認',
+      reject: '拒絕',
     },
     form: {
       task: '任務',
@@ -186,6 +189,8 @@ export default {
       running: '執行中',
       completed: '已完成',
       failed: '失敗',
+      pendingConfirmation: '等待確認',
+      rejected: '已拒絕',
     },
     stats: {
       events: '事件',
@@ -201,6 +206,8 @@ export default {
       sources: '來源',
       actions: '動作',
       failures: '失敗',
+      history: '歷史',
+      confirmations: '確認',
     },
     labels: {
       project: 'Reins Agent',
@@ -223,6 +230,8 @@ export default {
       completed: '完成',
       failed: '失敗',
       cancelled: '已取消',
+      blocked: '等待確認',
+      rejected: '已拒絕',
     },
     badges: {
       visible: '可見',
@@ -236,6 +245,8 @@ export default {
       noActions: '暫無桌面動作',
       noFailures: '暫無失敗',
       noTask: '暫無執行中的工作任務。',
+      noHistory: '暫無保存的執行記錄',
+      noConfirmations: '暫無待確認動作',
     },
     fallbacks: {
       artifact: '產物',
@@ -254,6 +265,12 @@ export default {
       finishedWithFailure: '工作模式執行結束，但存在失敗',
       cancelled: '工作模式執行已取消',
       failed: '工作模式執行失敗',
+      historyLoaded: '已載入工作模式歷史',
+      historyLoadFailed: '載入工作模式歷史失敗',
+      confirmationRequired: '動作正在等待操作員確認',
+      confirmationApproved: '已確認',
+      confirmationRejected: '已拒絕',
+      confirmationFailed: '確認操作失敗',
     },
   },
 

@@ -103,13 +103,24 @@ Return a JSON object with this exact shape:
   "version": 1
 }}
 
-Allowed step kinds for P5:
+Allowed step kinds:
 - backend_only
 - office_generate
+- artifact_present
+- browser_source
+- desktop_capture
+- ocr
+- wechat_prepare
+- confirmation_gate
 
 Rules:
 - If the task is a resident repair, complaint, safety issue, or service request, prefer office_generate.
+- If the task includes an explicit URL, domain, link, website, portal, GitHub profile, browser page, or web source, use browser_source and put the target in step.metadata.url when known.
+- If the user asks to search, research, look up, or Google something on the web, use browser_source so source evidence can be shown.
+- If the task requires a screenshot, desktop proof, window capture, app launch, app focus, or opening a desktop application, use desktop_capture and put the application name in step.metadata.app_name when known.
+- If the task asks for WeChat message preparation, use wechat_prepare followed by confirmation_gate.
 - If the task is simple text processing, use backend_only.
+- Prefer backend_only only when no browser, Office, desktop, OCR, or WeChat evidence is needed.
 - Keep the plan short.
 - Do not invent unsupported step kinds.
 - Do not execute the task.

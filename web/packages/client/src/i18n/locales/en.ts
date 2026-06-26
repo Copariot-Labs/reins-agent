@@ -173,6 +173,9 @@ export default {
     actions: {
       run: 'Run',
       stop: 'Stop',
+      refresh: 'Refresh',
+      approve: 'Approve',
+      reject: 'Reject',
     },
     form: {
       task: 'Task',
@@ -191,6 +194,8 @@ export default {
       running: 'Running',
       completed: 'Completed',
       failed: 'Failed',
+      pendingConfirmation: 'Waiting for confirmation',
+      rejected: 'Rejected',
     },
     stats: {
       events: 'Events',
@@ -206,6 +211,8 @@ export default {
       sources: 'Sources',
       actions: 'Actions',
       failures: 'Failures',
+      history: 'History',
+      confirmations: 'Confirmations',
     },
     labels: {
       project: 'Reins Agent',
@@ -228,6 +235,8 @@ export default {
       completed: 'Completed',
       failed: 'Failed',
       cancelled: 'Cancelled',
+      blocked: 'Waiting',
+      rejected: 'Rejected',
     },
     badges: {
       visible: 'visible',
@@ -241,6 +250,8 @@ export default {
       noActions: 'No desktop actions',
       noFailures: 'No failures',
       noTask: 'No work task is running.',
+      noHistory: 'No saved runs',
+      noConfirmations: 'No pending confirmations',
     },
     fallbacks: {
       artifact: 'Artifact',
@@ -259,6 +270,12 @@ export default {
       finishedWithFailure: 'Work mode run finished with failures',
       cancelled: 'Work mode run cancelled',
       failed: 'Work mode run failed',
+      historyLoaded: 'Work mode history loaded',
+      historyLoadFailed: 'Failed to load work mode history',
+      confirmationRequired: 'Action is waiting for operator confirmation',
+      confirmationApproved: 'Confirmation approved',
+      confirmationRejected: 'Confirmation rejected',
+      confirmationFailed: 'Confirmation action failed',
     },
   },
 

@@ -20,6 +20,36 @@ export interface WorkModeStreamOptions {
   onEvent: (event: WorkModeEvent) => void
 }
 
+export interface WorkModeCaseSummary {
+  case_id: string
+  message?: string | null
+  issue_type?: string | null
+  priority?: string | null
+  location?: string | null
+  workflow?: string | null
+  status?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface WorkModeCaseReplay {
+  ok: boolean
+  error?: string
+  case_id?: string
+  case?: WorkModeCaseSummary | null
+  events?: WorkModeEvent[]
+  artifacts?: Record<string, any>[]
+}
+
+export interface WorkModeConfirmationResult {
+  ok: boolean
+  error?: string
+  case_id?: string
+  confirmation_id?: string
+  status?: string
+  result?: Record<string, any>
+}
+
 function authHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -98,4 +128,49 @@ export async function runWorkModeStream(
 
   buffer += decoder.decode()
   consumeSseBuffer(buffer, options.onEvent, true)
+}
+
+async function jsonRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(`${getBaseUrlValue()}${path}`, {
+    ...init,
+    headers: authHeaders(),
+    body: init.body,
+  })
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    throw new Error(`API Error ${response.status}: ${text || response.statusText}`)
+  }
+
+  return await response.json() as T
+}
+
+export async function listWorkModeCases(limit = 25): Promise<WorkModeCaseSummary[]> {
+  const payload = await jsonRequest<{ ok: boolean, cases: WorkModeCaseSummary[] }>(
+    `/api/hermes/workmode/cases?limit=${encodeURIComponent(String(limit))}`,
+  )
+  return Array.isArray(payload.cases) ? payload.cases : []
+}
+
+export async function getWorkModeCase(caseId: string): Promise<WorkModeCaseReplay> {
+  return await jsonRequest<WorkModeCaseReplay>(
+    `/api/hermes/workmode/cases/${encodeURIComponent(caseId)}`,
+  )
+}
+
+export async function approveWorkModeConfirmation(caseId: string, confirmationId: string): Promise<WorkModeConfirmationResult> {
+  return await jsonRequest<WorkModeConfirmationResult>(
+    `/api/hermes/workmode/cases/${encodeURIComponent(caseId)}/confirmations/${encodeURIComponent(confirmationId)}/approve`,
+    { method: 'POST' },
+  )
+}
+
+export async function rejectWorkModeConfirmation(caseId: string, confirmationId: string, reason = ''): Promise<WorkModeConfirmationResult> {
+  return await jsonRequest<WorkModeConfirmationResult>(
+    `/api/hermes/workmode/cases/${encodeURIComponent(caseId)}/confirmations/${encodeURIComponent(confirmationId)}/reject`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    },
+  )
 }

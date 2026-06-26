@@ -54,10 +54,17 @@ def _decode_artifact(row: sqlite3.Row) -> dict[str, Any]:
     """
     artifact = dict(row)
 
-    # Current P3 stores artifact content as text.
-    # If later content becomes JSON, this will decode it automatically.
     if "content" in artifact:
         artifact["content"] = _decode_json(artifact.get("content"))
+        if isinstance(artifact["content"], dict):
+            artifact = {
+                **artifact["content"],
+                "id": artifact.get("id"),
+                "case_id": artifact.get("case_id"),
+                "created_at": artifact.get("created_at"),
+                "db_type": artifact.get("type"),
+                "db_title": artifact.get("title"),
+            }
 
     return artifact
 

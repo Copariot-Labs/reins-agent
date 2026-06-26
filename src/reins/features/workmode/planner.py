@@ -4,8 +4,10 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 from uuid import uuid4
 
+from reins.features.workmode.desktop_resolver import infer_desktop_app_name
 from reins.features.workmode.policy import ModePolicy
 from reins.features.workmode.router import ExecutionPath
+from reins.features.workmode.url_resolver import infer_url_from_message
 
 
 @dataclass(frozen=True)
@@ -109,6 +111,7 @@ def _build_steps(message: str, *, policy: ModePolicy, path: ExecutionPath) -> li
             if visible_action
             else "Keep browser work headless and record the task in the audit stream."
         )
+        url = infer_url_from_message(message)
 
         return [
             WorkStep(
@@ -118,6 +121,7 @@ def _build_steps(message: str, *, policy: ModePolicy, path: ExecutionPath) -> li
                 worker="workmode.browser",
                 description=description,
                 visible_action=visible_action,
+                metadata={"url": url} if url else {},
             )
         ]
 
@@ -145,14 +149,28 @@ def _build_steps(message: str, *, policy: ModePolicy, path: ExecutionPath) -> li
         ]
 
     if path == ExecutionPath.DESKTOP:
+        app_name = infer_desktop_app_name(message)
+        metadata = {"app_name": app_name} if app_name else {}
+        title = (
+            f"Open {app_name} and capture proof"
+            if app_name and visible_action
+            else "Capture desktop state"
+        )
+        description = (
+            "Open the requested desktop application and capture visible proof."
+            if app_name and visible_action
+            else "Capture desktop evidence for the current task."
+        )
+
         return [
             WorkStep(
                 id="desktop-capture",
                 kind="desktop_capture",
-                title="Capture desktop state",
+                title=title,
                 worker="workmode.desktop",
-                description="Capture desktop evidence for the current task.",
+                description=description,
                 visible_action=visible_action,
+                metadata=metadata,
                 expected_artifacts=["screenshot"],
             )
         ]

@@ -1,9 +1,10 @@
 import sqlite3
-from pathlib import Path
 from datetime import datetime, timezone
 import json
 
-DB_PATH = Path.home() / ".reins" / "workmode.db"
+from reins.api.home import get_reins_home
+
+DB_PATH = get_reins_home() / "workmode.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
@@ -96,6 +97,11 @@ def save_event(case_id: str, event_type: str, message: str, data: dict):
 def save_artifact(case_id: str, artifact: dict):
     init_db()
     conn = get_conn()
+    content = artifact.get("content")
+    if isinstance(content, str):
+        content_value = json.dumps({**artifact, "content": content}, ensure_ascii=False)
+    else:
+        content_value = json.dumps(artifact, ensure_ascii=False)
 
     conn.execute("""
     INSERT INTO artifacts (case_id, type, title, content, created_at)
@@ -104,7 +110,7 @@ def save_artifact(case_id: str, artifact: dict):
         case_id,
         artifact.get("type"),
         artifact.get("title"),
-        artifact.get("content"),
+        content_value,
         datetime.now(timezone.utc).isoformat()
     ))
 
