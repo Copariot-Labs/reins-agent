@@ -211,6 +211,10 @@ def build_search_url(query: str) -> str:
     return f"https://www.google.com/search?q={quote_plus(query.strip())}"
 
 
+def infer_search_query_from_message(message: str) -> str:
+    return _infer_search_query(message.strip())
+
+
 def _infer_search_query(text: str) -> str:
     patterns = [
         r"\b(?:search|look up|lookup|research|google|find online)\s+(?:for\s+)?(.+)$",

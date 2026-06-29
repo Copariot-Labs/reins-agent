@@ -5,7 +5,12 @@ from typing import Any
 from reins.features.workmode.desktop_resolver import infer_desktop_app_name, is_desktop_app_intent
 from reins.features.workmode.planner import WorkPlan, WorkStep
 from reins.features.workmode.router import ExecutionPath
-from reins.features.workmode.url_resolver import infer_url_from_message, is_browser_intent
+from reins.features.workmode.url_resolver import (
+    infer_search_query_from_message,
+    infer_url_from_message,
+    is_browser_intent,
+    is_web_search_intent,
+)
 from reins.features.workmode.vendor_hermes import call_vendor_hermes_planner
 
 # 🔥 NEW: strict contract
@@ -143,19 +148,28 @@ def _repair_steps(
             )
         ]
 
+    search_intent = is_web_search_intent(message)
     url = infer_url_from_message(message)
     for step in steps:
         if step.kind == "browser_source":
             metadata = dict(step.metadata)
-            if url and not metadata.get("url"):
+            if search_intent:
+                metadata["research"] = True
+                metadata.setdefault("query", infer_search_query_from_message(message))
+                metadata.setdefault("max_sources", 3)
+            elif url and not metadata.get("url"):
                 metadata["url"] = url
             return [
                 WorkStep(
                     id=step.id,
                     kind="browser_source",
-                    title=step.title or "Open browser evidence",
+                    title=step.title or ("Research web sources" if search_intent else "Open browser evidence"),
                     worker="workmode.browser",
-                    description=step.description or "Open a browser source for operator verification.",
+                    description=step.description or (
+                        "Search, open source pages, and save browser research proof."
+                        if search_intent
+                        else "Open a browser source for operator verification."
+                    ),
                     visible_action=policy.visible_actions,
                     requires_confirmation=False,
                     expected_artifacts=step.expected_artifacts,
@@ -168,11 +182,19 @@ def _repair_steps(
         WorkStep(
             id="browser-source",
             kind="browser_source",
-            title="Open browser evidence",
+            title="Research web sources" if search_intent else "Open browser evidence",
             worker="workmode.browser",
-            description="Open the requested website and save browser evidence for verification.",
+            description=(
+                "Search, open source pages, and save browser research proof."
+                if search_intent
+                else "Open the requested website and save browser evidence for verification."
+            ),
             visible_action=policy.visible_actions,
-            metadata={"url": url} if url else {},
+            metadata=(
+                {"research": True, "query": infer_search_query_from_message(message), "max_sources": 3}
+                if search_intent
+                else ({"url": url} if url else {})
+            ),
         )
     ]
 

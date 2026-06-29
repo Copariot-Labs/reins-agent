@@ -7,7 +7,11 @@ from uuid import uuid4
 from reins.features.workmode.desktop_resolver import infer_desktop_app_name
 from reins.features.workmode.policy import ModePolicy
 from reins.features.workmode.router import ExecutionPath
-from reins.features.workmode.url_resolver import infer_url_from_message
+from reins.features.workmode.url_resolver import (
+    infer_search_query_from_message,
+    infer_url_from_message,
+    is_web_search_intent,
+)
 
 
 @dataclass(frozen=True)
@@ -111,7 +115,22 @@ def _build_steps(message: str, *, policy: ModePolicy, path: ExecutionPath) -> li
             if visible_action
             else "Keep browser work headless and record the task in the audit stream."
         )
-        url = infer_url_from_message(message)
+        metadata: dict[str, Any] = {}
+        if is_web_search_intent(message):
+            metadata = {
+                "research": True,
+                "query": infer_search_query_from_message(message),
+                "max_sources": 3,
+            }
+            title = "Research web sources" if visible_action else "Research web sources headlessly"
+            description = (
+                "Search the web, open source pages, and save proof for operator verification."
+                if visible_action
+                else "Search the web, read source pages, and save proof in the audit trail."
+            )
+        else:
+            url = infer_url_from_message(message)
+            metadata = {"url": url} if url else {}
 
         return [
             WorkStep(
@@ -121,7 +140,7 @@ def _build_steps(message: str, *, policy: ModePolicy, path: ExecutionPath) -> li
                 worker="workmode.browser",
                 description=description,
                 visible_action=visible_action,
-                metadata={"url": url} if url else {},
+                metadata=metadata,
             )
         ]
 

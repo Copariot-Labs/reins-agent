@@ -1,7 +1,5 @@
 # WorkMode Changes
 
-Date: 2026-06-26
-
 This document records the WorkMode changes made in the Reins project. The `community-ass-demo` project was used only as a reference for behavior and philosophy: backend-first execution, visible event streaming, persisted proof, and operator-friendly summaries. The implementation below is Reins-native.
 
 ## Goal
@@ -55,6 +53,8 @@ WorkMode now treats the project philosophy as the routing contract:
 - Added desktop-app intent detection, so app/window tasks route to desktop proof instead of browser or backend fallback.
 - Added a safe WorkMode proof media endpoint for screenshots, HTML snapshots, Office files, and other persisted proof under the WorkMode storage directory.
 - Added the WorkMode Theater UI so live runs and replayed history have a central visual proof surface.
+- Added a Browser Research layer for search/research intents: search page proof, candidate ranking, source deep-reading, per-source screenshots/HTML, and markdown/json research artifacts.
+- Added configurable browser selection for WorkMode, including system Chrome/Edge detection and a dedicated persistent Reins browser profile for login-required sites.
 
 ## Worker Registry Changes
 
@@ -148,6 +148,7 @@ Browser work now uses Playwright's async API:
 
 - `src/reins/features/workmode/workers/browser/engine.py`
 - `src/reins/features/workmode/workers/browser/worker.py`
+- `src/reins/features/workmode/workers/browser/research.py`
 
 For a browser task, WorkMode can now:
 
@@ -167,6 +168,31 @@ Browser/profile/search tasks are now routed before execution through determinist
 
 When the user asks for a web search and no explicit URL exists, WorkMode builds a browser search URL and captures browser proof from that source page.
 
+For research/search intents, WorkMode now uses the Browser Research layer instead of stopping at a single search-page screenshot. The layer:
+
+- opens a search page through Playwright,
+- saves search-page screenshot and HTML proof,
+- extracts and ranks candidate result links,
+- opens top candidate sources,
+- saves per-source screenshots and HTML snapshots,
+- extracts readable page text and deterministic key facts,
+- writes a markdown research report and JSON research payload,
+- returns source records to the WorkMode summary so the Theater UI can render the evidence.
+
+Direct URL, website, and profile visits still use the lighter browser snapshot path unless a step explicitly sets `metadata.research`.
+
+WorkMode browser selection is now configurable through environment variables:
+
+- `WORKMODE_BROWSER=chrome|edge|chromium|default`
+- `WORKMODE_BROWSER_USE_SYSTEM=1` to prefer installed Chrome/Edge over bundled Playwright Chromium
+- `WORKMODE_BROWSER_CHANNEL=chrome|msedge|bundled`
+- `WORKMODE_BROWSER_EXECUTABLE=/path/to/browser`
+- `WORKMODE_BROWSER_PERSISTENT=1` to reuse a login-capable browser profile
+- `WORKMODE_BROWSER_PROFILE_DIR=/path/to/profile`
+- `WORKMODE_BROWSER_HEADLESS=1|0`
+
+The recommended login-required setup is installed Chrome plus a dedicated Reins profile, not the user's active personal Chrome profile. By default, visible WorkMode browser runs prefer an installed system browser when available and use `<REINS_HOME>/workmode/browser-profile` as the persistent profile directory.
+
 The browser worker now emits:
 
 - `browser_action`
@@ -174,6 +200,7 @@ The browser worker now emits:
 - `source_opened`
 - saved HTML
 - saved PNG screenshot
+- research report artifacts for search/research tasks
 
 ## OCR Flow
 

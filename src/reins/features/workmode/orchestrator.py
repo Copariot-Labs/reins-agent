@@ -82,6 +82,7 @@ class WorkModeOrchestrator:
             "artifacts": [],
             "screenshots": [],
             "browser_pages": [],
+            "research": [],
             "desktop_actions": [],
             "ocr": [],
             "sources": [],
@@ -235,6 +236,9 @@ class WorkModeOrchestrator:
                 if result.get("browser"):
                     summary["browser_pages"].append(result["browser"])
 
+                if result.get("research"):
+                    summary["research"].append(result["research"])
+
                 if result.get("sources"):
                     for source in result["sources"]:
                         summary["sources"].append(source)
@@ -301,6 +305,7 @@ class WorkModeOrchestrator:
         summary["finished_at"] = datetime.now(timezone.utc).isoformat()
         summary["artifact_count"] = len(summary["artifacts"])
         summary["source_count"] = len(summary["sources"])
+        summary["research_count"] = len(summary["research"])
         summary["desktop_action_count"] = len(summary["desktop_actions"])
         summary["failure_count"] = len(summary["failures"])
         summary["pending_confirmation_count"] = len(summary["pending_confirmations"])

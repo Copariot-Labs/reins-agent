@@ -116,7 +116,7 @@ Allowed step kinds:
 Rules:
 - If the task is a resident repair, complaint, safety issue, or service request, prefer office_generate.
 - If the task includes an explicit URL, domain, link, website, portal, GitHub profile, browser page, or web source, use browser_source and put the target in step.metadata.url when known.
-- If the user asks to search, research, look up, or Google something on the web, use browser_source so source evidence can be shown.
+- If the user asks to search, research, look up, or Google something on the web, use browser_source with step.metadata.research=true, step.metadata.query, and step.metadata.max_sources=3 so source evidence can be shown.
 - If the task requires a screenshot, desktop proof, window capture, app launch, app focus, or opening a desktop application, use desktop_capture and put the application name in step.metadata.app_name when known.
 - If the task asks for WeChat message preparation, use wechat_prepare followed by confirmation_gate.
 - If the task is simple text processing, use backend_only.
