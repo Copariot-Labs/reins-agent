@@ -14,6 +14,7 @@ EventType = Literal[
     "work.plan.completed",
     "work.plan.fallback",
     "work.step.started",
+    "work.step.progress",
     "work.step.completed",
     "work.step.blocked",
     "work.step.failed",

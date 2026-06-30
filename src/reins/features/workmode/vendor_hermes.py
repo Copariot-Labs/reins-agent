@@ -115,6 +115,7 @@ Allowed step kinds:
 
 Rules:
 - If the task is a resident repair, complaint, safety issue, or service request, prefer office_generate.
+- If the task asks for Word/DOCX, Excel/XLSX, PowerPoint/PPTX, spreadsheet, workbook, ledger, report, document, slides, or presentation, use office_generate and set step.metadata.artifact_format to docx, xlsx, or pptx.
 - If the task includes an explicit URL, domain, link, website, portal, GitHub profile, browser page, or web source, use browser_source and put the target in step.metadata.url when known.
 - If the user asks to search, research, look up, or Google something on the web, use browser_source with step.metadata.research=true, step.metadata.query, and step.metadata.max_sources=3 so source evidence can be shown.
 - If the task requires a screenshot, desktop proof, window capture, app launch, app focus, or opening a desktop application, use desktop_capture and put the application name in step.metadata.app_name when known.
@@ -147,6 +148,23 @@ def call_vendor_hermes_planner(
     - capture stdout
     - extract JSON plan
     """
+    prompt = _build_planner_prompt(
+        message,
+        mode=mode,
+        intake=intake,
+    )
+
+    return call_vendor_hermes_json(prompt)
+
+
+def call_vendor_hermes_json(prompt: str) -> dict[str, Any]:
+    """
+    Call Hermes with a caller-owned prompt and parse the JSON object response.
+
+    Unlike call_vendor_hermes_planner(), this does not wrap the prompt in the
+    WorkMode planning contract. Use this for content-writing or other JSON
+    sub-tasks where Hermes should execute the prompt, not plan the prompt.
+    """
 
     try:
         from reins.compat.env import prepare_env
@@ -164,12 +182,6 @@ def call_vendor_hermes_planner(
         apply_bootstrap()
     except Exception as exc:
         raise VendorHermesError(f"Hermes bootstrap failed: {exc}") from exc
-
-    prompt = _build_planner_prompt(
-        message,
-        mode=mode,
-        intake=intake,
-    )
 
     old_argv = sys.argv[:]
 

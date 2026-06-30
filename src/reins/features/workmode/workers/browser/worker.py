@@ -53,12 +53,20 @@ async def _run_research(step: WorkStep, state: WorkExecutionState) -> WorkerResu
     visible = bool(step.visible_action and state.mode_policy.visible_actions)
     query = _research_query(step, state)
 
+    async def progress(progress_message: str, data: dict) -> None:
+        await state.emit_progress(progress_message, data={
+            **data,
+            "worker": "browser_source",
+            "query": query,
+        })
+
     result = await run_browser_research(
         query=query,
         case_id=case_id,
         visible=visible,
         max_sources=int(step.metadata.get("max_sources") or 3),
         hold_ms=max(state.mode_policy.key_action_preview_ms, 1500 if visible else 500),
+        progress=progress,
     )
 
     search_page = result.get("search_page") if isinstance(result.get("search_page"), dict) else {}
@@ -152,12 +160,30 @@ async def run(step: WorkStep, state: WorkExecutionState) -> WorkerResult:
     url = _resolve_url(step, state)
     visible = bool(step.visible_action and state.mode_policy.visible_actions)
 
+    await state.emit_progress("Opening browser source.", data={
+        "worker": "browser_source",
+        "stage": "browser.source.opening",
+        "url": url,
+        "visible": visible,
+    })
+
     result = await capture_page_snapshot(
         url=url,
         case_id=case_id,
         visible=visible,
         hold_ms=max(state.mode_policy.key_action_preview_ms, 1500 if visible else 500),
     )
+
+    await state.emit_progress("Browser source proof captured." if result.get("ok") else "Browser source proof failed.", data={
+        "worker": "browser_source",
+        "stage": "browser.source.proof",
+        "url": result.get("url") or url,
+        "title": result.get("title"),
+        "screenshot": result.get("screenshot"),
+        "html": result.get("html"),
+        "ok": bool(result.get("ok")),
+        "error": result.get("error"),
+    })
 
     context_update = {
         "last_url": result.get("url"),

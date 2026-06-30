@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import json
 import os
 import re
+from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 
@@ -19,6 +20,7 @@ from reins.features.workmode.workers.browser.engine import (
 MAX_ERROR_CHARS = 700
 MAX_SOURCE_TEXT_CHARS = 12000
 DEFAULT_MAX_SOURCES = 3
+ProgressCallback = Callable[[str, dict[str, Any]], Awaitable[None]]
 
 BLOCKED_HOST_PARTS = {
     "bing.com",
@@ -369,6 +371,16 @@ async def _save_page_proof(page: Any, output_dir: Any, label: str) -> dict[str, 
     }
 
 
+async def _progress(
+    callback: ProgressCallback | None,
+    message: str,
+    **data: Any,
+) -> None:
+    if callback is None:
+        return
+    await callback(message, data)
+
+
 async def run_browser_research(
     query: str,
     case_id: str,
@@ -376,6 +388,7 @@ async def run_browser_research(
     visible: bool = False,
     max_sources: int = DEFAULT_MAX_SOURCES,
     hold_ms: int = 1500,
+    progress: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     try:
         from playwright.async_api import async_playwright
@@ -395,6 +408,7 @@ async def run_browser_research(
     search_page: dict[str, Any] | None = None
 
     try:
+        await _progress(progress, "Opening browser for web research.", stage="browser.opening", query=query, url=search_url)
         async with async_playwright() as p:
             session: BrowserSession | None = None
             try:
@@ -411,12 +425,14 @@ async def run_browser_research(
                 context = session.context
                 page = await context.new_page()
 
+                await _progress(progress, "Opening search results page.", stage="browser.search.opening", query=query, url=search_url)
                 await page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
                 await page.wait_for_timeout(max(hold_ms, 500))
                 if visible:
                     await page.mouse.wheel(0, 650)
                     await page.wait_for_timeout(350)
 
+                await _progress(progress, "Saving search page proof.", stage="browser.search.proof", query=query, url=search_url)
                 search_proof = await _save_page_proof(page, output_dir, "search-results")
                 screenshots.append(search_proof["screenshot"])
                 search_title = await page.title()
@@ -437,10 +453,28 @@ async def run_browser_research(
                     raw_candidates if isinstance(raw_candidates, list) else [],
                     limit=max(max_sources * 3, 8),
                 )
+                await _progress(
+                    progress,
+                    f"Ranked {len(candidates)} candidate sources.",
+                    stage="browser.candidates.ranked",
+                    query=query,
+                    candidate_count=len(candidates),
+                )
 
-                for candidate in candidates[:max(1, max_sources)]:
+                selected_candidates = candidates[:max(1, max_sources)]
+                for index, candidate in enumerate(selected_candidates, start=1):
                     source_page = await context.new_page()
                     try:
+                        await _progress(
+                            progress,
+                            f"Reading source {index}/{len(selected_candidates)}: {candidate.get('title') or candidate.get('url')}",
+                            stage="browser.source.reading",
+                            query=query,
+                            current=index,
+                            total=len(selected_candidates),
+                            url=candidate.get("url"),
+                            title=candidate.get("title"),
+                        )
                         await source_page.goto(candidate["url"], wait_until="domcontentloaded", timeout=30000)
                         await source_page.wait_for_timeout(max(hold_ms // 2, 500))
                         if visible:
@@ -452,6 +486,19 @@ async def run_browser_research(
                         text = await _page_text(source_page)
                         title = _squash_text(await source_page.title() or candidate["title"], 220)
                         analysis = analyze_source_text(query, {**candidate, "title": title}, text)
+                        await _progress(
+                            progress,
+                            f"Saved source proof: {title or candidate.get('url')}",
+                            stage="browser.source.proof",
+                            query=query,
+                            current=index,
+                            total=len(selected_candidates),
+                            url=candidate.get("url"),
+                            title=title,
+                            screenshot=proof.get("screenshot"),
+                            html=proof.get("html"),
+                            relevance_score=analysis.get("relevance_score"),
+                        )
                         sources.append({
                             **candidate,
                             **analysis,
@@ -466,6 +513,17 @@ async def run_browser_research(
                             **candidate,
                             "error": _error_text(exc),
                         })
+                        await _progress(
+                            progress,
+                            f"Skipped source after open/read failure: {candidate.get('title') or candidate.get('url')}",
+                            stage="browser.source.failed",
+                            query=query,
+                            current=index,
+                            total=len(selected_candidates),
+                            url=candidate.get("url"),
+                            title=candidate.get("title"),
+                            error=_error_text(exc),
+                        )
                     finally:
                         await source_page.close()
             finally:
@@ -474,6 +532,14 @@ async def run_browser_research(
 
         status = "completed" if sources else "insufficient_sources"
         briefing = _build_briefing(query, sources)
+        await _progress(
+            progress,
+            "Browser research report is being written.",
+            stage="browser.report.writing",
+            query=query,
+            source_count=len(sources),
+            status=status,
+        )
         payload = {
             "ok": True,
             "kind": "browser_research",

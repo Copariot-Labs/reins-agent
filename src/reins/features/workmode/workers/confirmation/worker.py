@@ -12,6 +12,12 @@ from reins.features.workmode.workers.types import WorkerResult
 async def run(step: WorkStep, state: WorkExecutionState) -> WorkerResult:
     dispatch = state.scratch.get("pending_dispatch") or {}
     action = str(step.metadata.get("action") or dispatch.get("action") or "confirm_action")
+    await state.emit_progress("Creating operator confirmation request.", data={
+        "worker": "confirmation_gate",
+        "stage": "confirmation.creating",
+        "action": action,
+        "target": dispatch.get("target") or step.metadata.get("target"),
+    })
     confirmation = {
         "id": dispatch.get("id") or str(uuid4()),
         "action": action,
@@ -32,6 +38,14 @@ async def run(step: WorkStep, state: WorkExecutionState) -> WorkerResult:
         ],
     }
     state.scratch.setdefault("pending_confirmations", []).append(confirmation)
+
+    await state.emit_progress("Operator confirmation is required before continuing.", data={
+        "worker": "confirmation_gate",
+        "stage": "confirmation.required",
+        "confirmation_id": confirmation["id"],
+        "action": action,
+        "target": confirmation["target"],
+    })
 
     return {
         "ok": True,

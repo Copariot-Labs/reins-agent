@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 from uuid import uuid4
 
+from reins.features.workmode.artifacts import infer_office_artifact_format
 from reins.features.workmode.desktop_resolver import infer_desktop_app_name
 from reins.features.workmode.policy import ModePolicy
 from reins.features.workmode.router import ExecutionPath
@@ -80,6 +81,7 @@ def _build_steps(message: str, *, policy: ModePolicy, path: ExecutionPath) -> li
     }
 
     if path == ExecutionPath.OFFICE:
+        artifact_format = infer_office_artifact_format(message)
         present_title = "Present Office artifact" if visible_action else "Record Office artifact"
         present_description = (
             "Open the generated document for operator verification."
@@ -94,7 +96,8 @@ def _build_steps(message: str, *, policy: ModePolicy, path: ExecutionPath) -> li
                 title="Generate Office artifact",
                 worker="workmode.office",
                 description="Generate the document in the backend.",
-                expected_artifacts=["docx"],
+                expected_artifacts=[artifact_format],
+                metadata={"artifact_format": artifact_format},
             ),
             WorkStep(
                 id="office-present",
@@ -104,7 +107,7 @@ def _build_steps(message: str, *, policy: ModePolicy, path: ExecutionPath) -> li
                 description=present_description,
                 visible_action=visible_action,
                 depends_on=["office-generate"],
-                metadata={"artifact_kind": "docx"},
+                metadata={"artifact_kind": artifact_format},
             ),
         ]
 

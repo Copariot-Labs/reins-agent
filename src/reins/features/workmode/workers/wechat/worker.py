@@ -22,6 +22,12 @@ async def run(step: WorkStep, state: WorkExecutionState) -> WorkerResult:
     intake = state.scratch.get("intake", {})
     target = str(step.metadata.get("target") or _guess_target(state.message))
 
+    await state.emit_progress("Preparing WeChat dispatch draft.", data={
+        "worker": "wechat_prepare",
+        "stage": "wechat.prepare",
+        "target": target,
+    })
+
     draft_message = (
         "Resident issue update:\n"
         f"- Case ID: {intake.get('case_id')}\n"
@@ -46,6 +52,14 @@ async def run(step: WorkStep, state: WorkExecutionState) -> WorkerResult:
         "verification_required": ["operator_confirmation", "ocr_chat_title_before_send"],
     }
     state.scratch["pending_dispatch"] = dispatch
+
+    await state.emit_progress("WeChat dispatch draft is ready for confirmation.", data={
+        "worker": "wechat_prepare",
+        "stage": "wechat.prepare.completed",
+        "target": target,
+        "dispatch_id": dispatch["id"],
+        "requires_confirmation": True,
+    })
 
     return {
         "ok": True,

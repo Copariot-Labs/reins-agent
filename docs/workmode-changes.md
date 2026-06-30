@@ -55,6 +55,12 @@ WorkMode now treats the project philosophy as the routing contract:
 - Added the WorkMode Theater UI so live runs and replayed history have a central visual proof surface.
 - Added a Browser Research layer for search/research intents: search page proof, candidate ranking, source deep-reading, per-source screenshots/HTML, and markdown/json research artifacts.
 - Added configurable browser selection for WorkMode, including system Chrome/Edge detection and a dedicated persistent Reins browser profile for login-required sites.
+- Added the Desktop Window Layer for app/window discovery, app open/focus, window focus, move/resize, and screenshot proof after visible desktop actions.
+- Added the Desktop Vision layer for screenshot capture, region cropping, OCR, expected-text verification, and shared failure metadata.
+- Added live `work.step.progress` events so long-running workers can stream mid-step status to the WorkMode UI and future main-chat integration.
+- Added a main-chat WorkMode command entry point that streams WorkMode progress into the normal Hermes chat timeline.
+- Added a format-aware Office layer for Word/DOCX, Excel/XLSX, and PowerPoint/PPTX artifacts instead of forcing every Office request into a hardcoded DOCX.
+- Added `PyYAML` as a Python dependency because the Hermes wrapper imports `yaml` during planner bootstrap.
 
 ## Worker Registry Changes
 
@@ -97,6 +103,8 @@ This fixes failures where plans emitted `artifact_present`, `backend_process`, o
 - Failed steps emit `work.step.failed`.
 - Hard failures emit `task_failed` before the final `task_finished`.
 - Final `task_finished` data is flattened and also includes nested `summary`.
+- Workers can now emit mid-step progress through `WorkExecutionState.emit_progress()`.
+- The orchestrator drains worker progress while the worker is still running and streams it as `work.step.progress`.
 
 The final event now includes fields such as:
 
@@ -123,22 +131,66 @@ The final event now includes fields such as:
 
 This keeps the payload compatible with the WorkMode web UI and still gives backend consumers a nested summary object.
 
+Live progress events now appear before a step completes, for example:
+
+- browser: opening search, saving search proof, ranking candidates, reading source `1/3`, saving source proof,
+- desktop: opening app/window/path, moving or capturing proof, OCR verification,
+- Office: generating artifact, opening artifact for verification,
+- WeChat: drafting dispatch, creating confirmation request,
+- backend: processing and recording result.
+
 ## Office Artifact Flow
 
-`office_generate` now creates a real DOCX file through:
+`office_generate` now creates real Office files through:
 
 - `src/reins/features/workmode/artifacts.py`
 - `src/reins/features/workmode/workers/office/worker.py`
+- `src/reins/features/workmode/workers/office/content_writer.py`
+
+The Office layer now follows the project philosophy directly:
+
+- the backend writes the actual content,
+- deterministic renderers create the file,
+- WorkMode emits progress while authoring and saving,
+- `artifact_present` opens the generated file when the active mode allows visible Office windows,
+- the artifact path, type, content summary, and presentation proof are saved for replay.
+
+Supported output formats:
+
+- Word / DOCX through `python-docx`,
+- Excel / XLSX through `openpyxl`,
+- PowerPoint / PPTX through `python-pptx`.
+
+The requested format is inferred from the user prompt, Hermes planner metadata, or expected artifacts. Examples:
+
+- "write a resident notice" -> DOCX,
+- "create an Excel repair ledger" -> XLSX,
+- "prepare PowerPoint slides for the staff meeting" -> PPTX.
+
+The content writer asks Hermes for a structured artifact contract, not a fixed template. It can return:
+
+- `artifact_format`
+- `title`
+- `body`
+- `document_kind`
+- `missing_fields`
+- `sheets` for Excel
+- `slides` for PowerPoint
+
+Office content writing now uses a raw Hermes JSON content call instead of the WorkMode planner call. This matters because the planner call wraps input in a planning prompt, so using it for document authoring could leak step titles/descriptions such as "Draft and produce..." into the generated document. Planner metadata is treated only as internal routing context.
+
+If Hermes content generation is unavailable, the fallback writer now creates a business-ready draft for common artifact families such as resident notices, applications, reports, ledgers, and slide decks. It does not copy the user's raw command or the planner step description into the artifact body.
 
 The generated artifact includes:
 
-- `kind: "docx"`
-- `type: "docx"`
+- `kind` / `type` matching `docx`, `xlsx`, or `pptx`
+- `artifact_format`
 - `title`
 - `path`
 - `summary`
 - intake metadata
 - step metadata
+- source count and writer metadata
 
 The `artifact_present` step records the latest artifact instead of failing.
 
@@ -208,6 +260,22 @@ The OCR worker crash was fixed by moving result-dependent context updates after 
 
 OCR-specific work still requires the native `tesseract` binary. The Python packages alone are not enough.
 
+The OCR worker now uses the shared Desktop Vision layer:
+
+- `src/reins/features/workmode/desktop_vision.py`
+
+OCR steps can now read a provided image path or capture the current desktop when no image path is supplied. Step metadata can include:
+
+- `image_path`, `path`, or `source`
+- `capture_desktop`
+- `region`, `rect`, or `crop`
+- `expected_text`, `contains`, or `verify_contains`
+- `match_mode: all|any`
+- `language` / `lang`
+- `config`
+
+The result includes the extracted text, verification status, screenshots, crop proof, and desktop action metadata so the Theater UI can show both the visual evidence and the validation result.
+
 ## Storage Changes
 
 WorkMode storage now respects Reins home configuration:
@@ -272,6 +340,64 @@ Non-headless WorkMode now presents key outputs instead of silently finishing:
 
 If the OS blocks window control or screenshots, WorkMode keeps the artifact/source path in the audit trail and records the presentation failure as action metadata.
 
+## Desktop Window Layer
+
+WorkMode now has a shared desktop window layer:
+
+- `src/reins/features/workmode/desktop_window.py`
+
+The layer is the central entry point for visible desktop behavior. It supports:
+
+- platform capability reporting,
+- screen rectangle lookup,
+- visible app launch,
+- file and URL open,
+- app focus,
+- window-title focus,
+- best-effort move/resize,
+- active-window lookup,
+- window listing,
+- screenshot proof after key actions.
+
+The `desktop_capture` worker now uses this layer instead of a one-off app opener. It records every desktop operation as a structured `desktop_action`, captures screenshots for Theater, and writes a proof manifest. The same layer is also used by file and URL presentation, so Office artifacts and browser source pages follow the same visible proof contract.
+
+Supported platform behavior is best effort:
+
+- macOS uses `open`, `osascript`, and `screencapture`.
+- Linux uses `xdg-open`, `wmctrl`, `xdotool`, and screenshot tools when available.
+- Windows uses `cmd /c start`, PowerShell, and `PIL.ImageGrab` screenshot support.
+
+If a platform blocks Accessibility, screen recording, or window-control permissions, WorkMode records the failure as action metadata instead of pretending success.
+
+## Desktop Vision Layer
+
+WorkMode now has a shared vision and verification layer:
+
+- `src/reins/features/workmode/desktop_vision.py`
+
+The layer supports:
+
+- best-effort desktop screenshot capture,
+- region cropping from screenshots,
+- OCR through the existing OCR engine,
+- expected text verification with `all` or `any` matching,
+- reusable screenshot/crop proof paths,
+- structured failure metadata for missing screenshots, crop failures, OCR dependency failures, and text-verification failures.
+
+The `desktop_capture` worker can now optionally run OCR verification by setting step metadata such as `ocr: true`, `expected_text`, or `region`. When expected text is provided, the desktop step fails closed if the screenshot OCR does not prove the requested text is visible.
+
+The WeChat approval executor now uses this same layer before sending:
+
+- activate/focus WeChat through the desktop window layer,
+- search the target,
+- capture a screenshot,
+- OCR the screenshot,
+- verify the target text,
+- paste and send only if the target verification passes,
+- capture post-send proof and write a proof manifest.
+
+This keeps WeChat aligned with the project philosophy: real UI work is allowed only after confirmation and screen-state verification.
+
 ## Theater UI And Proof Media
 
 The web UI now has a middle Theater panel that renders WorkMode proof as the run progresses or when a saved case is replayed:
@@ -287,6 +413,27 @@ The server exposes proof files through:
 - `GET /api/hermes/workmode/media?path=<absolute-proof-path>`
 
 The endpoint only serves files inside `<REINS_HOME>/workmode` or `~/.reins/workmode`, resolves real paths before serving, rejects paths outside the proof directory, and limits served file size through `WORKMODE_MEDIA_MAX_BYTES` with a 50 MB default.
+
+## Main Chat WorkMode Entry
+
+The Hermes main chat can now start WorkMode directly through slash-style commands:
+
+- `/workmode visit github sshatil`
+- `/workmode demo summarize this request`
+- `/workmode headless generate an operations report`
+- `reins workmode run "visit github sshatil"`
+
+The chat store detects these commands before the normal Hermes run path, starts the existing WorkMode SSE stream, and renders a live command timeline in the current chat. The stream uses the same stop control as normal chat runs through an `AbortController`.
+
+The chat timeline shows:
+
+- task start and planning events,
+- per-step start/progress/completion events,
+- failure or confirmation-required events,
+- proof media links from WorkMode screenshots and artifacts,
+- a final assistant summary when the task finishes.
+
+This is currently a UI-level bridge into WorkMode. The next hardening step is to persist WorkMode command and summary messages into the Hermes conversation store so later normal chat turns can use the WorkMode result as long-term chat context after refresh.
 
 ## WeChat Approval Path
 
@@ -308,6 +455,8 @@ If activation, clipboard access, screenshot capture, OCR, or target verification
 `workmode doctor` now checks:
 
 - `python-docx`
+- `openpyxl`
+- `python-pptx`
 - `playwright`
 - `playwright-chromium`
 - `pillow`
@@ -320,11 +469,15 @@ At the time of verification, Chromium was available, but native `tesseract` was 
 
 `pyproject.toml` now includes:
 
+- `python-docx>=1.1`
+- `openpyxl>=3.1`
+- `python-pptx>=0.6.23`
 - `playwright>=1.49`
 - `pillow>=10.0`
 - `pytesseract>=0.3`
+- `PyYAML>=6.0.1`
 
-These support browser proof and OCR-related WorkMode steps.
+These support Office artifacts, browser proof, OCR-related WorkMode steps, and Hermes planner bootstrap.
 
 ## Verified Scenarios
 

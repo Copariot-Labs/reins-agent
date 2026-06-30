@@ -14,7 +14,7 @@ dist/
 .eggs/
 pip-wheel-metadata/
 
-community-ass-demo
+# community-ass-demo
 
 # uv
 uv.lock

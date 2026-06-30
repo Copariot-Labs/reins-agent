@@ -13,7 +13,7 @@ async def _run(message: str, mode: str) -> int:
     exit_code = 0
 
     async for event in orchestrator.run(message, mode=mode):
-        print(event.to_json())
+        print(event.to_json(), flush=True)
 
         if event.type == "task_failed":
             exit_code = 1

@@ -24,6 +24,9 @@ class WorkExecutionState:
     observations: list[Observation] = field(default_factory=list)
     browser_session: Any = None
     desktop_session: Any = None
+    progress_queue: Any = None
+    current_step_id: str | None = None
+    current_step_kind: str | None = None
 
     # ARTIFACT HANDLERS
     def add_artifact(self, artifact: dict[str, Any]) -> None:
@@ -43,3 +46,19 @@ class WorkExecutionState:
             if kind is None or artifact.get("kind") == kind:
                 return artifact
         return None
+
+    async def emit_progress(
+        self,
+        message: str,
+        *,
+        event_type: str = "work.step.progress",
+        data: dict[str, Any] | None = None,
+    ) -> None:
+        if self.progress_queue is None:
+            return
+        payload = {
+            "type": event_type,
+            "message": message,
+            "data": dict(data or {}),
+        }
+        await self.progress_queue.put(payload)

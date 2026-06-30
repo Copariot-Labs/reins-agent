@@ -6,8 +6,9 @@ import subprocess
 import time
 from typing import Any
 
-from reins.features.workmode.proof import capture_desktop_screenshot
-from reins.features.workmode.workers.ocr.engine import extract_text_from_image
+from reins.features.workmode.desktop_vision import DesktopVisionLayer
+from reins.features.workmode.desktop_window import DesktopWindowLayer
+from reins.features.workmode.proof import write_proof_manifest
 
 
 def _run_applescript(script: str, timeout: int = 10) -> dict[str, Any]:
@@ -105,16 +106,85 @@ def _key_code_macos(code: int, *, command: bool = False, timeout: int = 10) -> d
     return _run_applescript(script, timeout=timeout)
 
 
-def _ocr_latest_screenshot(case_id: str, label: str) -> tuple[dict[str, Any], dict[str, Any]]:
-    screenshot = capture_desktop_screenshot(case_id=case_id, label=label)
-    if not screenshot.get("ok") or not screenshot.get("path"):
-        return screenshot, {
-            "ok": False,
-            "error": screenshot.get("error") or "No screenshot available for OCR.",
-        }
+def _append_vision_result(result: dict[str, Any], vision_result: dict[str, Any]) -> None:
+    result.setdefault("vision", []).append(vision_result)
 
-    ocr = extract_text_from_image(str(screenshot["path"]))
-    return screenshot, ocr
+    ocr = vision_result.get("ocr")
+    if isinstance(ocr, dict):
+        result.setdefault("ocr", []).append({
+            **ocr,
+            "verification": vision_result.get("verification"),
+            "vision_kind": vision_result.get("kind"),
+        })
+
+    for path in vision_result.get("screenshots") or []:
+        if path and path not in result.setdefault("screenshots", []):
+            result["screenshots"].append(str(path))
+
+    for action in vision_result.get("actions") or []:
+        if isinstance(action, dict):
+            result.setdefault("desktop_actions", []).append(action)
+
+
+def _screenshot_proofs(result: dict[str, Any]) -> list[dict[str, Any]]:
+    proofs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for path in result.get("screenshots") or []:
+        if not path or path in seen:
+            continue
+        seen.add(str(path))
+        proofs.append({
+            "ok": True,
+            "kind": "screenshot",
+            "path": str(path),
+            "source": "wechat_ui",
+        })
+    return proofs
+
+
+def _append_required_action(
+    result: dict[str, Any],
+    action: dict[str, Any],
+    *,
+    status: str,
+    error: str,
+) -> bool:
+    result.setdefault("desktop_actions", []).append(action)
+    if action.get("ok") is False:
+        result.update({
+            "status": status,
+            "error": action.get("error") or action.get("stderr") or error,
+        })
+        return False
+    return True
+
+
+def _activate_wechat_with_desktop_layer(case_id: str) -> dict[str, Any]:
+    layer = DesktopWindowLayer(case_id=case_id, visible=True, hold_seconds=0.6)
+    actions: list[dict[str, Any]] = []
+
+    for app_name in ("WeChat", "微信"):
+        opened = layer.open_app(app_name, proof_label="wechat-activate")
+        actions.append(opened)
+        if opened.get("ok"):
+            focused = layer.focus_app(app_name, proof_label="wechat-focus")
+            actions.append(focused)
+            return {
+                "ok": True,
+                "app": app_name,
+                "method": "desktop_window_layer",
+                "desktop_actions": actions,
+            }
+
+    fallback = _activate_wechat_macos()
+    actions.append({"kind": "wechat_activate_fallback", **fallback})
+    return {
+        "ok": bool(fallback.get("ok")),
+        "app": fallback.get("app"),
+        "method": fallback.get("method") or "fallback",
+        "desktop_actions": actions,
+        "error": fallback.get("error"),
+    }
 
 
 def send_wechat_message_after_confirmation(
@@ -136,6 +206,7 @@ def send_wechat_message_after_confirmation(
         "desktop_actions": [],
         "screenshots": [],
         "ocr": [],
+        "vision": [],
     }
 
     if not target or not draft_message:
@@ -152,8 +223,15 @@ def send_wechat_message_after_confirmation(
         })
         return result
 
-    activate = _activate_wechat_macos()
-    result["desktop_actions"].append({"kind": "wechat_activate", **activate})
+    activate = _activate_wechat_with_desktop_layer(case_id)
+    result["desktop_actions"].extend(activate.get("desktop_actions") or [])
+    result["desktop_actions"].append({
+        "kind": "wechat_activate",
+        "ok": bool(activate.get("ok")),
+        "app": activate.get("app"),
+        "method": activate.get("method"),
+        "error": activate.get("error"),
+    })
     if not activate.get("ok"):
         result.update({"status": "activation_failed", "error": activate.get("error")})
         return result
@@ -164,25 +242,50 @@ def send_wechat_message_after_confirmation(
         result.update({"status": "clipboard_failed", "error": clipboard.get("error")})
         return result
 
-    result["desktop_actions"].append({"kind": "wechat_search_shortcut", **_keystroke_macos("f", command=True)})
+    if not _append_required_action(
+        result,
+        {"kind": "wechat_search_shortcut", **_keystroke_macos("f", command=True)},
+        status="keyboard_failed",
+        error="Unable to open WeChat search.",
+    ):
+        return result
     time.sleep(0.4)
-    result["desktop_actions"].append({"kind": "wechat_paste_target", **_keystroke_macos("v", command=True)})
+    if not _append_required_action(
+        result,
+        {"kind": "wechat_paste_target", **_keystroke_macos("v", command=True)},
+        status="keyboard_failed",
+        error="Unable to paste the WeChat target.",
+    ):
+        return result
     time.sleep(0.4)
-    result["desktop_actions"].append({"kind": "wechat_open_target", **_key_code_macos(36)})
+    if not _append_required_action(
+        result,
+        {"kind": "wechat_open_target", **_key_code_macos(36)},
+        status="keyboard_failed",
+        error="Unable to open the WeChat target chat.",
+    ):
+        return result
     time.sleep(1.2)
 
-    screenshot, ocr = _ocr_latest_screenshot(case_id, "wechat-target")
-    result["ocr"].append(ocr)
-    if screenshot.get("ok") and screenshot.get("path"):
-        result["screenshots"].append(str(screenshot["path"]))
+    vision = DesktopVisionLayer(case_id=case_id, visible=True, hold_seconds=0.5)
+    target_vision = vision.capture_and_ocr(
+        label="wechat-target",
+        expected_text=target,
+        match_mode="all",
+    )
+    _append_vision_result(result, target_vision)
 
-    ocr_text = str(ocr.get("text") or "")
-    if not ocr.get("ok") or target.lower() not in ocr_text.lower():
+    verification = target_vision.get("verification") if isinstance(target_vision.get("verification"), dict) else {}
+    if not target_vision.get("ok") or not verification.get("ok"):
         result.update({
             "status": "verification_failed",
             "error": "OCR could not verify the WeChat chat target. Message was not sent.",
             "verification_required": confirmation.get("verification_required"),
         })
+        result["proof_manifest"] = write_proof_manifest(
+            case_id=case_id,
+            proofs=_screenshot_proofs(result),
+        )
         return result
 
     clipboard = _set_clipboard(draft_message)
@@ -191,19 +294,39 @@ def send_wechat_message_after_confirmation(
         result.update({"status": "clipboard_failed", "error": clipboard.get("error")})
         return result
 
-    result["desktop_actions"].append({"kind": "wechat_paste_message", **_keystroke_macos("v", command=True)})
+    if not _append_required_action(
+        result,
+        {"kind": "wechat_paste_message", **_keystroke_macos("v", command=True)},
+        status="keyboard_failed",
+        error="Unable to paste the WeChat message.",
+    ):
+        return result
     time.sleep(0.5)
-    result["desktop_actions"].append({"kind": "wechat_send_message", **_key_code_macos(36)})
+    if not _append_required_action(
+        result,
+        {"kind": "wechat_send_message", **_key_code_macos(36)},
+        status="keyboard_failed",
+        error="Unable to send the WeChat message.",
+    ):
+        return result
     time.sleep(0.8)
 
-    after_screenshot, after_ocr = _ocr_latest_screenshot(case_id, "wechat-sent")
-    result["ocr"].append(after_ocr)
-    if after_screenshot.get("ok") and after_screenshot.get("path"):
-        result["screenshots"].append(str(after_screenshot["path"]))
+    after_vision = vision.capture_and_ocr(
+        label="wechat-sent",
+        expected_text=target,
+        match_mode="all",
+    )
+    _append_vision_result(result, after_vision)
+    if not after_vision.get("ok"):
+        result["proof_warning"] = after_vision.get("error") or "Post-send proof capture did not verify cleanly."
 
     result.update({
         "ok": True,
-        "status": "sent",
+        "status": "sent" if not result.get("proof_warning") else "sent_with_proof_warning",
         "sent": True,
+        "proof_manifest": write_proof_manifest(
+            case_id=case_id,
+            proofs=_screenshot_proofs(result),
+        ),
     })
     return result
