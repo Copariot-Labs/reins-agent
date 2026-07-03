@@ -4,6 +4,7 @@
  */
 
 import type { Server, Socket } from 'socket.io'
+import { basename } from 'path'
 import { getSystemPrompt } from '../../../lib/llm-prompt'
 import { getSession, createSession, addMessage, updateSession, updateSessionStats } from '../../../db/hermes/session-store'
 import { updateUsage } from '../../../db/hermes/usage-store'
@@ -30,6 +31,7 @@ import type { ContentBlock, QueuedRun, SessionState } from './types'
 import type { ChatMessage } from '../../../lib/context-compressor'
 import { resolveBridgeRunModelConfig, type RunModelGroup } from './model-config'
 import { filterBridgeToolCallMarkupDelta, flushPendingToolCallMarkup } from './bridge-delta'
+import { mayNeedArtifactPreprocess, preprocessArtifactChatMessage, type ArtifactChatPreprocessResult } from '../artifacts'
 
 const BRIDGE_USAGE_FLUSH_DELAY_MS = 200
 
@@ -312,6 +314,21 @@ export async function handleBridgeRun(
     }
   }
 
+  if (!skipUserMessage && displayRole === 'user' && typeof input === 'string') {
+    const artifactHandled = await maybeHandleArtifactChatRun({
+      input: actualInputStr,
+      sessionId: session_id,
+      profile,
+      state,
+      runMarker,
+      emit,
+      sessionMap,
+      socket,
+      dequeueNextQueuedRun,
+    })
+    if (artifactHandled) return
+  }
+
   const history = await buildCompressedHistory(
     session_id, profile,
     '',
@@ -457,6 +474,257 @@ export async function handleBridgeRun(
     })
     if (queueLen > 0) dequeueNextQueuedRun(socket, session_id)
   }
+}
+
+async function maybeHandleArtifactChatRun(args: {
+  input: string
+  sessionId: string
+  profile: string
+  state: SessionState
+  runMarker: string
+  emit: (event: string, payload: any) => void
+  sessionMap: Map<string, SessionState>
+  socket: Socket
+  dequeueNextQueuedRun: (socket: Socket, sessionId: string, fallbackProfile?: string) => void
+}): Promise<boolean> {
+  if (!mayNeedArtifactPreprocess(args.input)) return false
+
+  const runId = `artifact_run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+  const toolCallId = `artifact_tool_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+  args.state.runId = runId
+
+  pushState(args.sessionMap, args.sessionId, 'run.started', {
+    event: 'run.started',
+    run_id: runId,
+    queue_length: args.state.queue.length || 0,
+  })
+  args.emit('run.started', {
+    event: 'run.started',
+    run_id: runId,
+    queue_length: args.state.queue.length || 0,
+  })
+
+  const startedTool = recordBridgeToolStarted(
+    args.state,
+    args.sessionId,
+    args.runMarker,
+    'create_artifact',
+    { prompt: args.input },
+    toolCallId,
+  )
+  const startedPayload = {
+    event: 'tool.started',
+    run_id: runId,
+    tool_call_id: startedTool.id,
+    tool: startedTool.name,
+    name: startedTool.name,
+    arguments: startedTool.arguments,
+    preview: 'Generating structured content and writing the artifact file',
+  }
+  pushState(args.sessionMap, args.sessionId, 'tool.started', startedPayload)
+  args.emit('tool.started', startedPayload)
+
+  let result: ArtifactChatPreprocessResult
+  try {
+    result = await preprocessArtifactChatMessage(args.input)
+  } catch (err) {
+    result = {
+      handled: true,
+      message: err instanceof Error ? err.message : String(err),
+      exit_code: 1,
+      artifact: null,
+    }
+  }
+
+  await finishArtifactChatRun(args, result.handled ? result : {
+    handled: true,
+    message: 'The artifact request could not be handled.',
+    exit_code: 1,
+    artifact: null,
+  }, { runId, toolCallId: startedTool.id, toolName: startedTool.name })
+  return true
+}
+
+async function finishArtifactChatRun(args: {
+  input: string
+  sessionId: string
+  profile: string
+  state: SessionState
+  runMarker: string
+  emit: (event: string, payload: any) => void
+  sessionMap: Map<string, SessionState>
+  socket: Socket
+  dequeueNextQueuedRun: (socket: Socket, sessionId: string, fallbackProfile?: string) => void
+}, result: ArtifactChatPreprocessResult, runInfo: { runId: string; toolCallId: string; toolName: string }): Promise<void> {
+  const failed = result.exit_code !== 0
+  let output = failed ? (result.message || '') : formatArtifactAssistantMessage(result)
+
+  const completedTool = recordBridgeToolCompleted(
+    args.state,
+    args.sessionId,
+    args.runMarker,
+    runInfo.toolName,
+    {
+      tool_call_id: runInfo.toolCallId,
+      result: artifactToolResult(result, failed),
+      is_error: failed,
+    },
+  )
+  const completedPayload = {
+    event: 'tool.completed',
+    run_id: runInfo.runId,
+    tool_call_id: completedTool.id,
+    tool: runInfo.toolName,
+    name: runInfo.toolName,
+    output: completedTool.output,
+    duration: completedTool.duration,
+    error: failed || undefined,
+  }
+  pushState(args.sessionMap, args.sessionId, 'tool.completed', completedPayload)
+  args.emit('tool.completed', completedPayload)
+
+  if (!failed) {
+    if (!output.trim()) {
+      const artifact = result.artifact || {}
+      const path = typeof artifact.path === 'string' ? artifact.path : ''
+      const title = typeof artifact.title === 'string' ? artifact.title : 'Artifact'
+      const kind = typeof artifact.kind === 'string' ? artifact.kind : 'artifact'
+      output = [
+        'Artifact created successfully.',
+        `Title: ${title}`,
+        `Type: ${kind}`,
+        path ? `Path: ${path}` : '',
+      ].filter(Boolean).join('\n')
+    }
+
+    args.state.messages.push({
+      id: args.state.messages.length + 1,
+      session_id: args.sessionId,
+      runMarker: args.runMarker,
+      role: 'assistant',
+      content: output,
+      timestamp: Math.floor(Date.now() / 1000),
+      finish_reason: 'stop',
+    })
+    addMessage({
+      session_id: args.sessionId,
+      role: 'assistant',
+      content: output,
+      timestamp: Math.floor(Date.now() / 1000),
+    })
+    args.emit('message.delta', {
+      event: 'message.delta',
+      run_id: runInfo.runId,
+      delta: output,
+      output,
+    })
+  }
+
+  updateSessionStats(args.sessionId)
+  const usage = await calcAndUpdateUsage(args.sessionId, args.state, args.emit)
+  updateUsage(args.sessionId, {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    profile: args.profile,
+  })
+
+  const queueRemaining = args.state.queue.length
+  args.state.isWorking = queueRemaining > 0
+  args.state.isAborting = false
+  args.state.profile = queueRemaining > 0 ? (args.state.queue[0]?.profile || args.profile) : undefined
+  args.state.source = queueRemaining > 0 ? args.state.queue[0]?.source : args.state.source
+  args.state.runId = undefined
+  args.state.activeRunMarker = undefined
+  args.state.events = []
+
+  if (failed) {
+    args.emit('run.failed', {
+      event: 'run.failed',
+      run_id: runInfo.runId,
+      error: output || 'Artifact creation failed',
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      queue_remaining: queueRemaining,
+    })
+  } else {
+    args.emit('run.completed', {
+      event: 'run.completed',
+      run_id: runInfo.runId,
+      output,
+      result: {
+        artifact: result.artifact || null,
+      },
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      queue_remaining: queueRemaining,
+    })
+  }
+
+  if (queueRemaining > 0 && !args.state.activeRunMarker) {
+    const nextQueuedRun = args.state.queue[0]
+    args.state.isWorking = true
+    args.state.profile = nextQueuedRun.profile || args.profile
+    args.state.source = nextQueuedRun.source
+    args.dequeueNextQueuedRun(args.socket, args.sessionId)
+  } else if (!args.state.activeRunMarker) {
+    args.state.isWorking = false
+    args.state.profile = undefined
+  }
+}
+
+function escapeMarkdownLinkText(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/\]/g, '\\]')
+}
+
+function markdownLocalFileHref(path: string): string {
+  return encodeURI(path)
+    .replace(/\(/g, '%28')
+    .replace(/\)/g, '%29')
+    .replace(/#/g, '%23')
+}
+
+function artifactDisplayName(artifact: Record<string, unknown>): string {
+  const path = typeof artifact.path === 'string' ? artifact.path : ''
+  return typeof artifact.file_name === 'string' && artifact.file_name.trim()
+    ? artifact.file_name.trim()
+    : path
+      ? basename(path)
+      : 'artifact'
+}
+
+function formatArtifactAssistantMessage(result: ArtifactChatPreprocessResult): string {
+  const artifact = result.artifact || {}
+  const path = typeof artifact.path === 'string' ? artifact.path : ''
+  const title = typeof artifact.title === 'string' && artifact.title.trim()
+    ? artifact.title.trim()
+    : 'Artifact'
+  const kind = typeof artifact.kind === 'string' && artifact.kind.trim()
+    ? artifact.kind.trim().toUpperCase()
+    : 'ARTIFACT'
+
+  if (!path) return result.message || 'Artifact created successfully.'
+
+  const fileName = artifactDisplayName(artifact)
+  return [
+    'Artifact created successfully.',
+    '',
+    `- Title: ${title}`,
+    `- Type: ${kind}`,
+    '',
+    'Download:',
+    `[${escapeMarkdownLinkText(fileName)}](${markdownLocalFileHref(path)})`,
+    '',
+    `- Path: \`${path}\``,
+  ].join('\n')
+}
+
+function artifactToolResult(result: ArtifactChatPreprocessResult, failed: boolean): string {
+  const artifact = result.artifact || null
+  return JSON.stringify({
+    ok: !failed,
+    message: result.message,
+    artifact,
+  }, null, 2)
 }
 
 async function refreshFinalContextUsage(args: {

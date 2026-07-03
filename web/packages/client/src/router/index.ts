@@ -37,8 +37,7 @@ const router = createRouter({
     },
     {
       path: '/reins/workmode',
-      name: 'hermes.workmode',
-      component: () => import('@/views/hermes/WorkModeView.vue'),
+      redirect: { name: 'hermes.chat' },
     },
     {
       path: '/reins/kanban',

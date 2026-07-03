@@ -35,6 +35,8 @@ const syncBridgeReasoningToMessageMock = vi.fn()
 const recordBridgeToolStartedMock = vi.fn()
 const recordBridgeToolCompletedMock = vi.fn()
 const resolveBridgeRunModelConfigMock = vi.fn()
+const mayNeedArtifactPreprocessMock = vi.fn()
+const preprocessArtifactChatMessageMock = vi.fn()
 
 vi.mock('../../packages/server/src/lib/llm-prompt', () => ({
   getSystemPrompt: getSystemPromptMock,
@@ -87,6 +89,11 @@ vi.mock('../../packages/server/src/services/hermes/run-chat/model-config', () =>
   resolveBridgeRunModelConfig: resolveBridgeRunModelConfigMock,
 }))
 
+vi.mock('../../packages/server/src/services/hermes/artifacts', () => ({
+  mayNeedArtifactPreprocess: mayNeedArtifactPreprocessMock,
+  preprocessArtifactChatMessage: preprocessArtifactChatMessageMock,
+}))
+
 function makeSocket() {
   return {
     connected: true,
@@ -119,6 +126,18 @@ describe('bridge run final context usage', () => {
     getSystemPromptMock.mockReturnValue('system prompt')
     getSessionMock.mockReturnValue({ id: 'session-1', profile: 'default', model: '', provider: '' })
     resolveBridgeRunModelConfigMock.mockResolvedValue({ model: 'gpt-test', provider: 'openai' })
+    mayNeedArtifactPreprocessMock.mockReturnValue(false)
+    preprocessArtifactChatMessageMock.mockResolvedValue({ handled: false, message: '', exit_code: 0, artifact: null })
+    recordBridgeToolStartedMock.mockReturnValue({
+      id: 'artifact-tool-1',
+      name: 'create_artifact',
+      arguments: '{"prompt":"create a maintenance report document"}',
+    })
+    recordBridgeToolCompletedMock.mockReturnValue({
+      id: 'artifact-tool-1',
+      output: '{"ok":true}',
+      duration: 0.2,
+    })
     buildCompressedHistoryMock.mockResolvedValue([{ role: 'user', content: 'previous' }])
     buildDbHistoryMock.mockResolvedValue([
       { role: 'user', content: 'hello' },
@@ -194,6 +213,92 @@ describe('bridge run final context usage', () => {
       outputTokens: 7,
       contextTokens: 12345,
     }))
+  })
+
+  it('handles artifact chat messages without starting the agent bridge', async () => {
+    const emit = vi.fn()
+    const nsp = makeNamespace(emit)
+    const socket = makeSocket()
+    const state = makeState()
+    const sessionMap = new Map([['session-1', state]])
+    const artifact = {
+      id: 'artifact-1',
+      title: 'Maintenance Report',
+      kind: 'docx',
+      path: '/tmp/maintenance-report.docx',
+    }
+    mayNeedArtifactPreprocessMock.mockReturnValueOnce(true)
+    preprocessArtifactChatMessageMock.mockResolvedValueOnce({
+      handled: true,
+      message: 'Artifact created successfully.\nPath: /tmp/maintenance-report.docx',
+      exit_code: 0,
+      artifact,
+    })
+    addMessageMock.mockReturnValue(42)
+    const bridge = {
+      chat: vi.fn(),
+      contextEstimate: vi.fn(),
+      streamOutput: vi.fn(),
+    } as any
+
+    const { handleBridgeRun } = await import('../../packages/server/src/services/hermes/run-chat/handle-bridge-run')
+    await handleBridgeRun(
+      nsp,
+      socket,
+      { input: 'create a maintenance report document', session_id: 'session-1' },
+      'default',
+      sessionMap,
+      bridge,
+      false,
+      vi.fn(),
+      vi.fn(),
+    )
+
+    expect(mayNeedArtifactPreprocessMock).toHaveBeenCalledWith('create a maintenance report document')
+    expect(preprocessArtifactChatMessageMock).toHaveBeenCalledWith('create a maintenance report document')
+    expect(bridge.chat).not.toHaveBeenCalled()
+    expect(buildCompressedHistoryMock).not.toHaveBeenCalled()
+    expect(recordBridgeToolStartedMock).toHaveBeenCalledWith(
+      state,
+      'session-1',
+      expect.stringMatching(/^cli_run_/),
+      'create_artifact',
+      { prompt: 'create a maintenance report document' },
+      expect.stringMatching(/^artifact_tool_/),
+    )
+    expect(recordBridgeToolCompletedMock).toHaveBeenCalledWith(
+      state,
+      'session-1',
+      expect.stringMatching(/^cli_run_/),
+      'create_artifact',
+      expect.objectContaining({
+        tool_call_id: 'artifact-tool-1',
+        is_error: false,
+      }),
+    )
+    expect(emit).toHaveBeenCalledWith('tool.started', expect.objectContaining({
+      tool: 'create_artifact',
+      preview: expect.stringContaining('Generating structured content'),
+    }))
+    expect(emit).toHaveBeenCalledWith('tool.completed', expect.objectContaining({
+      tool: 'create_artifact',
+      output: '{"ok":true}',
+    }))
+    expect(addMessageMock).toHaveBeenCalledWith(expect.objectContaining({
+      role: 'assistant',
+      content: expect.stringContaining('Artifact created successfully'),
+    }))
+    expect(emit).toHaveBeenCalledWith('message.delta', expect.objectContaining({
+      delta: expect.stringContaining('/tmp/maintenance-report.docx'),
+    }))
+    expect(emit).toHaveBeenCalledWith('message.delta', expect.objectContaining({
+      delta: expect.stringContaining('[maintenance-report.docx](/tmp/maintenance-report.docx)'),
+    }))
+    expect(emit).toHaveBeenCalledWith('run.completed', expect.objectContaining({
+      result: { artifact },
+      output: expect.stringContaining('/tmp/maintenance-report.docx'),
+    }))
+    expect(state.isWorking).toBe(false)
   })
 
   it('evaluates active goals after a successful bridge run and queues continuation prompts', async () => {

@@ -13,6 +13,8 @@ REINS_OWNED_COMMANDS = {
     "migrate",
     "finance",
     "computer",
+    "wechat",
+    "artifacts",
     "workmode",
     "debug-env",
     "web",
@@ -77,8 +79,17 @@ def print_reins_help() -> None:
 Usage:
   reins [command] [options]
 
-Core commands:
+Main interface:
   reins chat
+  reins chat "your message"
+  reins web
+
+Hermes computer-use:
+  reins computer-use install
+  reins computer-use status
+  reins -t computer_use chat
+
+Core Hermes commands:
   reins model
   reins tools
   reins config
@@ -94,16 +105,22 @@ Reins commands:
   reins migrate hermes
   reins update
   reins finance
+  reins wechat
+  reins debug-env
+
+Legacy/debug:
   reins computer
   reins workmode
-  reins web
-  reins debug-env
 
 Examples:
   reins chat
-  reins doctor
-  reins model
+  reins chat "hello"
   reins web
+  reins computer-use install
+  reins computer-use status
+  reins -t computer_use chat
+  reins wechat open
+  reins wechat draft --to "John" --message "Hello"
   reins finance --help
   REINS_HOME=/tmp/reins-test reins debug-env
 
@@ -184,9 +201,23 @@ def handle_reins_owned_command(argv: Sequence[str]) -> int:
 
         return computer_main(argv[1:])
 
+    if command == "wechat":
+        from reins.features.wechat.cli import main as wechat_main
+
+        return wechat_main(argv[1:])
+
+    if command == "artifacts":
+        from reins.features.artifacts.cli import main as artifacts_main
+
+        return artifacts_main(argv[1:])
+
     if command == "workmode":
         from reins.features.workmode.cli import main as workmode_main
 
+        print(
+            "Warning: `reins workmode` is legacy/debug only. "
+            "Use `reins chat`, `reins web`, or Hermes computer-use for the main agent flow."
+        )
         return workmode_main(argv[1:])
 
     if command == "web":
@@ -206,7 +237,7 @@ def maybe_preprocess_chat(argv: Sequence[str]) -> int | None:
         return None
 
     # Only intercept direct prompt style:
-    #   reins chat "今天买咖啡 28"
+    #   reins chat "create a report"
     #
     # Do not intercept interactive chat:
     #   reins chat
@@ -227,15 +258,23 @@ def maybe_preprocess_chat(argv: Sequence[str]) -> int | None:
     if not message:
         return None
 
+    from reins.features.artifacts.plugin import preprocess_artifact_text
+
+    artifact_result = preprocess_artifact_text(message)
+
+    if artifact_result.handled:
+        print(artifact_result.message)
+        return artifact_result.exit_code
+
     from reins.features.finance.plugin import preprocess_finance_text
 
-    result = preprocess_finance_text(message)
+    finance_result = preprocess_finance_text(message)
 
-    if not result.handled:
-        return None
+    if finance_result.handled:
+        print(finance_result.message)
+        return finance_result.exit_code
 
-    print(result.message)
-    return result.exit_code
+    return None
 
 
 def normalize_hermes_argv(argv: Sequence[str]) -> list[str]:
@@ -273,6 +312,19 @@ def run_hermes(argv: Sequence[str]) -> int:
     hermes_argv = normalize_hermes_argv(argv)
 
     # Hermes sees argv as if the user typed `hermes ...`.
+    #
+    # Examples:
+    #   reins computer-use status
+    # becomes:
+    #   hermes computer-use status
+    #
+    #   reins -t computer_use chat
+    # becomes:
+    #   hermes -t computer_use chat
+    #
+    #   reins chat "hello"
+    # becomes:
+    #   hermes -z "hello" chat
     sys.argv = ["hermes", *hermes_argv]
 
     result = hermes_main()
