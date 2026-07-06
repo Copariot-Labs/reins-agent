@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import type { Attachment } from '@/stores/hermes/chat'
 import { useChatStore } from '@/stores/hermes/chat'
+import { useChatCapabilitiesStore, type BrowserCapabilityMode } from '@/stores/hermes/chat-capabilities'
 import { useAppStore } from '@/stores/hermes/app'
 import { useProfilesStore } from '@/stores/hermes/profiles'
 import { fetchContextLength } from '@/api/hermes/sessions'
 import { setModelContext } from '@/api/hermes/model-context'
-import { NButton, NTooltip, NSwitch, NModal, NInputNumber, useMessage } from 'naive-ui'
+import { connectVisibleBrowser } from '@/api/hermes/browser'
+import { NButton, NTooltip, NSwitch, NModal, NInputNumber, NSelect, useMessage } from 'naive-ui'
 import { computed, ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToolTraceVisibility } from '@/composables/useToolTraceVisibility'
 
 const chatStore = useChatStore()
+const capabilitiesStore = useChatCapabilitiesStore()
 const appStore = useAppStore()
 const profilesStore = useProfilesStore()
 const { t } = useI18n()
@@ -24,6 +27,49 @@ const attachments = ref<Attachment[]>([])
 const isDragging = ref(false)
 const dragCounter = ref(0)
 const isComposing = ref(false)
+const isConnectingVisibleBrowser = ref(false)
+
+const browserModeOptions: Array<{ label: string; value: BrowserCapabilityMode }> = [
+  { label: 'Browse off', value: 'off' },
+  { label: 'Backend', value: 'backend' },
+  { label: 'Visible', value: 'connected' },
+]
+
+const computerUseMode = computed<'off' | 'on'>({
+  get: () => capabilitiesStore.computerUseEnabled ? 'on' : 'off',
+  set: (value) => {
+    capabilitiesStore.computerUseEnabled = value === 'on'
+  },
+})
+
+const computerUseOptions: Array<{ label: string; value: 'off' | 'on' }> = [
+  { label: 'Desktop off', value: 'off' },
+  { label: 'Computer Use', value: 'on' },
+]
+
+async function ensureVisibleBrowserConnected() {
+  if (isConnectingVisibleBrowser.value) return
+  isConnectingVisibleBrowser.value = true
+  try {
+    const status = await connectVisibleBrowser()
+    if (status.connected) {
+      message.success('Visible browser connected')
+    } else {
+      message.error(status.error || 'Visible browser is not connected')
+    }
+  } catch (err: any) {
+    message.error(`Visible browser connect failed: ${err?.message || err}`)
+  } finally {
+    isConnectingVisibleBrowser.value = false
+  }
+}
+
+watch(
+  () => capabilitiesStore.browserMode,
+  (mode) => {
+    if (mode === 'connected') void ensureVisibleBrowserConnected()
+  },
+)
 
 const bridgeCommands = computed(() => [
   { name: 'usage', args: '', description: t('chat.slashCommands.usage') },
@@ -508,6 +554,52 @@ function isImage(type: string): boolean {
         {{ toolTraceVisible ? t('chat.hideToolCalls') : t('chat.showToolCalls') }}
       </NTooltip>
 
+      <NTooltip trigger="hover">
+        <template #trigger>
+          <div class="capability-control browser-control">
+            <span class="capability-icon" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="9"/>
+                <path d="M3 12h18"/>
+                <path d="M12 3a13.5 13.5 0 0 1 0 18"/>
+                <path d="M12 3a13.5 13.5 0 0 0 0 18"/>
+              </svg>
+            </span>
+            <NSelect
+              v-model:value="capabilitiesStore.browserMode"
+              size="tiny"
+              class="capability-select browser-select"
+              :options="browserModeOptions"
+              :consistent-menu-width="false"
+              :loading="isConnectingVisibleBrowser"
+            />
+          </div>
+        </template>
+        Browser mode for the next run
+      </NTooltip>
+
+      <NTooltip trigger="hover">
+        <template #trigger>
+          <div class="capability-control computer-control">
+            <span class="capability-icon" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="12" rx="2"/>
+                <path d="M8 20h8"/>
+                <path d="M12 16v4"/>
+              </svg>
+            </span>
+            <NSelect
+              v-model:value="computerUseMode"
+              size="tiny"
+              class="capability-select computer-select"
+              :options="computerUseOptions"
+              :consistent-menu-width="false"
+            />
+          </div>
+        </template>
+        Desktop control for the next run
+      </NTooltip>
+
       <span v-if="totalTokens > 0" class="context-info" :class="{ 'context-warning': usagePercent > 80 }">
         {{ formatTokens(totalTokens) }} /
         <NTooltip trigger="hover">
@@ -684,6 +776,7 @@ function isImage(type: string): boolean {
 .input-top-bar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 0 0 6px;
 }
@@ -751,6 +844,60 @@ function isImage(type: string): boolean {
     color: #999999;
     opacity: 1;
   }
+}
+
+.capability-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding-left: 8px;
+  border-left: 1px solid $border-light;
+  color: $text-muted;
+}
+
+.capability-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+}
+
+.capability-select {
+  flex: 0 0 auto;
+
+  :deep(.n-base-selection) {
+    --n-height: 24px !important;
+    min-height: 24px;
+    border-radius: $radius-sm;
+  }
+
+  :deep(.n-base-selection-label) {
+    height: 22px;
+    padding: 0 20px 0 7px;
+    font-size: 12px;
+    line-height: 22px;
+  }
+
+  :deep(.n-base-selection-input) {
+    height: 22px;
+    line-height: 22px;
+  }
+
+  :deep(.n-base-selection__state-border),
+  :deep(.n-base-selection__border) {
+    border-radius: $radius-sm;
+  }
+}
+
+.browser-select {
+  width: 104px;
+}
+
+.computer-select {
+  width: 124px;
 }
 
 .context-info {

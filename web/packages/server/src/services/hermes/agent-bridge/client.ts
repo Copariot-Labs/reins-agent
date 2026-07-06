@@ -45,9 +45,19 @@ export interface AgentBridgeChatOptions {
   storage_message?: AgentBridgeMessage
   model?: string
   provider?: string
+  capabilities?: AgentBridgeCapabilities
   source?: string
   wait?: boolean
   timeout?: number
+}
+
+export interface AgentBridgeCapabilities {
+  browser?: {
+    mode?: 'off' | 'backend' | 'connected'
+  }
+  computer_use?: {
+    enabled?: boolean
+  }
 }
 
 export type AgentBridgeMessage =
@@ -103,6 +113,7 @@ export interface AgentBridgeContextEstimate extends AgentBridgeResponse {
   profile?: string
   model?: string
   provider?: string
+  capabilities_key?: string
 }
 
 export interface AgentBridgeCommandResult extends AgentBridgeResponse {
@@ -410,6 +421,7 @@ export class AgentBridgeClient {
       ...(profile ? { profile } : {}),
       ...(options.model ? { model: options.model } : {}),
       ...(options.provider ? { provider: options.provider } : {}),
+      ...(options.capabilities ? { capabilities: options.capabilities } : {}),
       ...(options.source ? { source: options.source } : {}),
       ...(options.wait ? { wait: true } : {}),
       ...(options.timeout ? { timeout: options.timeout } : {}),
@@ -422,7 +434,7 @@ export class AgentBridgeClient {
     messages: unknown[],
     instructions?: string,
     profile?: string,
-    options: Pick<AgentBridgeChatOptions, 'model' | 'provider'> = {},
+    options: Pick<AgentBridgeChatOptions, 'model' | 'provider' | 'capabilities'> = {},
   ): Promise<AgentBridgeContextEstimate> {
     return this.request<AgentBridgeContextEstimate>({
       action: 'context_estimate',
@@ -432,6 +444,7 @@ export class AgentBridgeClient {
       ...(profile ? { profile } : {}),
       ...(options.model ? { model: options.model } : {}),
       ...(options.provider ? { provider: options.provider } : {}),
+      ...(options.capabilities ? { capabilities: options.capabilities } : {}),
     })
   }
 

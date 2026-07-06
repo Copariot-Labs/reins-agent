@@ -8,6 +8,17 @@ export type ContentBlock =
   | { type: 'image'; name: string; path: string; media_type: string }
   | { type: 'file'; name: string; path: string; media_type?: string }
 
+export type BrowserCapabilityMode = 'off' | 'backend' | 'connected'
+
+export interface ChatCapabilities {
+  browser?: {
+    mode?: BrowserCapabilityMode
+  }
+  computer_use?: {
+    enabled?: boolean
+  }
+}
+
 export interface SessionMessage {
   id: number | string
   session_id: string
@@ -35,6 +46,7 @@ export interface QueuedRun {
   provider?: string
   model_groups?: Array<{ provider: string; models: string[] }>
   instructions?: string
+  capabilities?: ChatCapabilities
   profile: string
   source?: ChatRunSource
   originSocketId?: string
@@ -92,6 +104,7 @@ export interface BridgeContextState {
   profile?: string
   model?: string
   provider?: string
+  capabilitiesKey?: string
 }
 
 export type ChatRunSource = 'api_server' | 'cli'

@@ -11,6 +11,17 @@ export interface ChatMessage {
   content: string | ContentBlock[]
 }
 
+export type BrowserCapabilityMode = 'off' | 'backend' | 'connected'
+
+export interface ChatCapabilities {
+  browser?: {
+    mode?: BrowserCapabilityMode
+  }
+  computer_use?: {
+    enabled?: boolean
+  }
+}
+
 export interface StartRunRequest {
   input: string | ContentBlock[]
   instructions?: string
@@ -21,6 +32,7 @@ export interface StartRunRequest {
   model_groups?: Array<{ provider: string; models: string[] }>
   queue_id?: string
   source?: 'api_server' | 'cli'
+  capabilities?: ChatCapabilities
 }
 
 export interface StartRunResponse {

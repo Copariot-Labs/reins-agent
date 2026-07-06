@@ -27,6 +27,7 @@ import { ref, computed } from 'vue';
 import { useAppStore } from './app';
 import { useProfilesStore } from './profiles';
 import { useSettingsStore } from './settings';
+import { useChatCapabilitiesStore } from './chat-capabilities';
 import {
   primeCompletionSound,
   playCompletionSound,
@@ -1641,6 +1642,7 @@ export const useChatStore = defineStore('chat', () => {
       }
 
       const appStore = useAppStore();
+      const capabilitiesStore = useChatCapabilitiesStore();
       await appStore.waitForModelsForRun();
       const sessionModel = activeSession.value?.model || appStore.selectedModel;
       const sessionProvider =
@@ -1664,6 +1666,7 @@ export const useChatStore = defineStore('chat', () => {
         })),
         queue_id: userMsg.id,
         source: 'cli' as const,
+        capabilities: capabilitiesStore.snapshot,
       };
       if (shouldSendInitialSessionConfig && activeSession.value) {
         activeSession.value.messageCount = Math.max(

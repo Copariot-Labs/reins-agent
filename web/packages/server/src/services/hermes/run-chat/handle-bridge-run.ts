@@ -27,11 +27,13 @@ import {
   recordBridgeToolCompleted,
 } from './bridge-message'
 import { summarizeToolArguments } from './response-utils'
-import type { ContentBlock, QueuedRun, SessionState } from './types'
+import type { ChatCapabilities, ContentBlock, QueuedRun, SessionState } from './types'
 import type { ChatMessage } from '../../../lib/context-compressor'
 import { resolveBridgeRunModelConfig, type RunModelGroup } from './model-config'
 import { filterBridgeToolCallMarkupDelta, flushPendingToolCallMarkup } from './bridge-delta'
 import { mayNeedArtifactPreprocess, preprocessArtifactChatMessage, type ArtifactChatPreprocessResult } from '../artifacts'
+import { chatCapabilitiesInstructions, chatCapabilitiesKey, normalizeChatCapabilities, toBridgeCapabilities } from './capabilities'
+import { prepareBrowserForRun } from '../browser-connection'
 
 const BRIDGE_USAGE_FLUSH_DELAY_MS = 200
 
@@ -121,18 +123,20 @@ function cacheBridgeContext(state: SessionState, data: Record<string, unknown> |
     profile: typeof data.profile === 'string' ? data.profile : state.bridgeContext?.profile,
     model: typeof data.model === 'string' ? data.model : state.bridgeContext?.model,
     provider: typeof data.provider === 'string' ? data.provider : state.bridgeContext?.provider,
+    capabilitiesKey: typeof data.capabilities_key === 'string' ? data.capabilities_key : state.bridgeContext?.capabilitiesKey,
   }
 }
 
 function bridgeContextMatches(
   state: SessionState,
-  expected: { profile: string; model?: string | null; provider?: string | null },
+  expected: { profile: string; model?: string | null; provider?: string | null; capabilitiesKey?: string | null },
 ): boolean {
   const context = state.bridgeContext
   if (!context) return false
   if (context.profile && context.profile !== expected.profile) return false
   if (expected.model && context.model && context.model !== expected.model) return false
   if (expected.provider && context.provider && context.provider !== expected.provider) return false
+  if (expected.capabilitiesKey && context.capabilitiesKey !== expected.capabilitiesKey) return false
   return true
 }
 
@@ -141,6 +145,8 @@ async function ensureBridgeFixedContext(args: {
   profile: string
   model?: string | null
   provider?: string | null
+  capabilities?: ChatCapabilities
+  capabilitiesKey?: string
   instructions: string
   state: SessionState
   bridge: AgentBridgeClient
@@ -157,15 +163,22 @@ async function ensureBridgeFixedContext(args: {
       [],
       args.instructions,
       args.profile,
-      { model: args.model ?? undefined, provider: args.provider ?? undefined },
+      { model: args.model ?? undefined, provider: args.provider ?? undefined, capabilities: args.capabilities },
     )
     cacheBridgeContext(args.state, estimate)
+    if (args.capabilitiesKey) {
+      args.state.bridgeContext = {
+        ...(args.state.bridgeContext || {}),
+        capabilitiesKey: args.capabilitiesKey,
+      }
+    }
     const fixedContextTokens = getCachedBridgeContextOverhead(args.state)
     bridgeLogger.info({
       sessionId: args.sessionId,
       profile: args.profile,
       model: args.model,
       provider: args.provider,
+      capabilitiesKey: args.capabilitiesKey,
       toolCount: estimate.tool_count,
       systemPromptChars: estimate.system_prompt_chars,
       fixedContextTokens,
@@ -187,7 +200,7 @@ async function ensureBridgeFixedContext(args: {
 export async function handleBridgeRun(
   nsp: ReturnType<Server['of']>,
   socket: Socket,
-  data: { input: string | ContentBlock[]; display_input?: string | ContentBlock[] | null; display_role?: 'user' | 'command'; storage_message?: string; session_id?: string; model?: string; provider?: string; model_groups?: RunModelGroup[]; instructions?: string; source?: string; queue_id?: string; peerExcludeSocketId?: string },
+  data: { input: string | ContentBlock[]; display_input?: string | ContentBlock[] | null; display_role?: 'user' | 'command'; storage_message?: string; session_id?: string; model?: string; provider?: string; model_groups?: RunModelGroup[]; instructions?: string; capabilities?: ChatCapabilities; source?: string; queue_id?: string; peerExcludeSocketId?: string },
   profile: string,
   sessionMap: Map<string, SessionState>,
   bridge: AgentBridgeClient,
@@ -205,6 +218,9 @@ export async function handleBridgeRun(
     ? `${getSystemPrompt()}\n${instructions}`
     : getSystemPrompt()
   const sessionRow = getSession(session_id)
+  const normalizedCapabilities = normalizeChatCapabilities(data.capabilities)
+  const capabilitiesKey = chatCapabilitiesKey(normalizedCapabilities)
+  const bridgeCapabilities = toBridgeCapabilities(normalizedCapabilities)
   const sessionModel = sessionRow?.model || ''
   const sessionProvider = sessionRow?.provider || ''
   const { model: resolvedModel, provider: resolvedProvider } = await resolveBridgeRunModelConfig({
@@ -224,6 +240,7 @@ export async function handleBridgeRun(
   const runContext = [
     `[Current Hermes profile: ${profile}]`,
     sessionRow?.workspace ? `[Current working directory: ${sessionRow.workspace}]` : '',
+    ...chatCapabilitiesInstructions(normalizedCapabilities),
     'When calling Hermes Web UI endpoints from tools or skills, include the current Hermes profile as the X-Hermes-Profile header if the endpoint supports profile-scoped behavior.',
   ].filter(Boolean).join('\n')
   fullInstructions = `\n${runContext}\n${fullInstructions}`
@@ -329,6 +346,17 @@ export async function handleBridgeRun(
     if (artifactHandled) return
   }
 
+  const browserConnection = await prepareBrowserForRun(profile, normalizedCapabilities)
+  if (browserConnection?.cdpUrl) {
+    bridgeLogger.info({
+      sessionId: session_id,
+      profile,
+      cdpUrl: browserConnection.cdpUrl,
+      browser: browserConnection.browser,
+      managed: browserConnection.managed,
+    }, '[chat-run-socket] visible browser connected')
+  }
+
   const history = await buildCompressedHistory(
     session_id, profile,
     '',
@@ -342,6 +370,8 @@ export async function handleBridgeRun(
         profile,
         model: resolvedModel,
         provider: resolvedProvider,
+        capabilities: bridgeCapabilities,
+        capabilitiesKey,
         instructions: fullInstructions,
         state,
         bridge,
@@ -355,6 +385,7 @@ export async function handleBridgeRun(
         profile,
         model: resolvedModel,
         provider: resolvedProvider,
+        capabilitiesKey,
         fixedContextTokens,
         messageTokens: localMessageTokens,
         contextTokens,
@@ -393,6 +424,7 @@ export async function handleBridgeRun(
         ...(bridgeStorageInput !== undefined ? { storage_message: bridgeStorageInput } : {}),
         ...(resolvedModel ? { model: resolvedModel } : {}),
         ...(resolvedProvider ? { provider: resolvedProvider } : {}),
+        capabilities: bridgeCapabilities,
       },
     )
     state.runId = started.run_id
@@ -426,7 +458,12 @@ export async function handleBridgeRun(
         bridge,
         dequeueNextQueuedRun,
         fullInstructions,
-        { model: resolvedModel, provider: resolvedProvider },
+        {
+          model: resolvedModel,
+          provider: resolvedProvider,
+          capabilities: bridgeCapabilities,
+          capabilitiesKey,
+        },
         currentInputTokens,
         shouldPersistUserMessage && displayRole === 'user',
         data.model_groups,
@@ -453,6 +490,8 @@ export async function handleBridgeRun(
       profile,
       model: resolvedModel,
       provider: resolvedProvider,
+      capabilities: bridgeCapabilities,
+      capabilitiesKey,
       instructions: fullInstructions,
       state,
       usage: errUsage,
@@ -732,6 +771,8 @@ async function refreshFinalContextUsage(args: {
   profile: string
   model?: string | null
   provider?: string | null
+  capabilities?: ChatCapabilities
+  capabilitiesKey?: string
   instructions: string
   state: SessionState
   usage: { inputTokens: number; outputTokens: number }
@@ -753,6 +794,8 @@ async function refreshFinalContextUsage(args: {
       profile: args.profile,
       model: args.model,
       provider: args.provider,
+      capabilities: args.capabilities,
+      capabilitiesKey: args.capabilitiesKey,
       instructions: args.instructions,
       state: args.state,
       bridge: args.bridge,
@@ -769,6 +812,7 @@ async function refreshFinalContextUsage(args: {
       profile: args.profile,
       model: args.model,
       provider: args.provider,
+      capabilitiesKey: args.capabilitiesKey,
       messages: finalHistory.length,
       fixedContextTokens: args.state.bridgeContext?.fixedContextTokens,
       messageTokens: finalMessageTokens,
@@ -823,7 +867,7 @@ async function applyBridgeChunkAsync(
   bridge: AgentBridgeClient,
   dequeueNextQueuedRun: (socket: Socket, sessionId: string, fallbackProfile?: string) => void,
   instructions: string,
-  modelContext: { model?: string | null; provider?: string | null },
+  modelContext: { model?: string | null; provider?: string | null; capabilities?: ChatCapabilities; capabilitiesKey?: string },
   currentInputTokens = 0,
   currentInputIncludedInDb = true,
   modelGroups?: RunModelGroup[],
@@ -1161,6 +1205,8 @@ async function applyBridgeChunkAsync(
     profile,
     model: modelContext.model,
     provider: modelContext.provider,
+    capabilities: modelContext.capabilities,
+    capabilitiesKey: modelContext.capabilitiesKey,
     instructions,
     state,
     usage,
@@ -1243,7 +1289,7 @@ async function maybeEnqueueGoalContinuation(args: {
   state: SessionState
   bridge: AgentBridgeClient
   profile: string
-  modelContext: { model?: string | null; provider?: string | null }
+  modelContext: { model?: string | null; provider?: string | null; capabilities?: ChatCapabilities; capabilitiesKey?: string }
   modelGroups?: RunModelGroup[]
   instructions: string
   finalResponse: string
@@ -1290,6 +1336,7 @@ async function maybeEnqueueGoalContinuation(args: {
     storageMessage: prompt,
     model: args.modelContext.model || undefined,
     provider: args.modelContext.provider || undefined,
+    capabilities: args.modelContext.capabilities,
     model_groups: args.modelGroups,
     instructions: undefined,
     profile: args.profile,

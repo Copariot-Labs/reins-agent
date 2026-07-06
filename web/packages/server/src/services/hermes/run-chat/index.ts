@@ -20,7 +20,7 @@ import { handleAbort } from './abort'
 import { getOrCreateSession } from './compression'
 import { handleSessionCommand, isSessionCommand, parseSessionCommand } from './session-command'
 import { contentBlocksToString } from './content-blocks'
-import type { ContentBlock, QueuedRun, SessionState } from './types'
+import type { ChatCapabilities, ContentBlock, QueuedRun, SessionState } from './types'
 import { authenticateUserToken, isAuthEnabled, type AuthenticatedUser } from '../../../middleware/user-auth'
 import { userCanAccessProfile } from '../../../db/hermes/users-store'
 
@@ -110,6 +110,7 @@ export class ChatRunSocket {
       queue_id?: string
       source?: string
       profile?: string
+      capabilities?: ChatCapabilities
     }) => {
       let runProfile: string
       try {
@@ -161,6 +162,7 @@ export class ChatRunSocket {
             provider: data.provider,
             model_groups: data.model_groups,
             instructions: data.instructions,
+            capabilities: data.capabilities,
             profile: runProfile,
             source,
             originSocketId: socket.id,
@@ -283,6 +285,7 @@ export class ChatRunSocket {
       provider?: string
       model_groups?: Array<{ provider: string; models: string[] }>
       instructions?: string
+      capabilities?: ChatCapabilities
       source?: string
       queue_id?: string
       peerExcludeSocketId?: string
@@ -383,6 +386,7 @@ export class ChatRunSocket {
       provider: next.provider,
       model_groups: next.model_groups,
       instructions: next.instructions,
+      capabilities: next.capabilities,
       source: next.source,
       queue_id: next.queue_id,
       peerExcludeSocketId: next.originSocketId,

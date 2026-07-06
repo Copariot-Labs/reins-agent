@@ -37,6 +37,7 @@ const recordBridgeToolCompletedMock = vi.fn()
 const resolveBridgeRunModelConfigMock = vi.fn()
 const mayNeedArtifactPreprocessMock = vi.fn()
 const preprocessArtifactChatMessageMock = vi.fn()
+const prepareBrowserForRunMock = vi.fn()
 
 vi.mock('../../packages/server/src/lib/llm-prompt', () => ({
   getSystemPrompt: getSystemPromptMock,
@@ -94,6 +95,10 @@ vi.mock('../../packages/server/src/services/hermes/artifacts', () => ({
   preprocessArtifactChatMessage: preprocessArtifactChatMessageMock,
 }))
 
+vi.mock('../../packages/server/src/services/hermes/browser-connection', () => ({
+  prepareBrowserForRun: prepareBrowserForRunMock,
+}))
+
 function makeSocket() {
   return {
     connected: true,
@@ -128,6 +133,7 @@ describe('bridge run final context usage', () => {
     resolveBridgeRunModelConfigMock.mockResolvedValue({ model: 'gpt-test', provider: 'openai' })
     mayNeedArtifactPreprocessMock.mockReturnValue(false)
     preprocessArtifactChatMessageMock.mockResolvedValue({ handled: false, message: '', exit_code: 0, artifact: null })
+    prepareBrowserForRunMock.mockResolvedValue(null)
     recordBridgeToolStartedMock.mockReturnValue({
       id: 'artifact-tool-1',
       name: 'create_artifact',
@@ -193,12 +199,36 @@ describe('bridge run final context usage', () => {
       vi.fn(),
     )
 
+    expect(prepareBrowserForRunMock).toHaveBeenCalledWith('default', {
+      browser: { mode: 'backend' },
+      computer_use: { enabled: false },
+    })
     expect(bridge.contextEstimate).toHaveBeenCalledWith(
       'session-1',
       [],
       expect.stringContaining('[Current Hermes profile: default]'),
       'default',
-      { model: 'gpt-test', provider: 'openai' },
+      {
+        model: 'gpt-test',
+        provider: 'openai',
+        capabilities: {
+          browser: { mode: 'backend' },
+          computer_use: { enabled: false },
+        },
+      },
+    )
+    expect(bridge.chat).toHaveBeenCalledWith(
+      'session-1',
+      'hello',
+      [{ role: 'user', content: 'previous' }],
+      expect.stringContaining('[Web chat browser mode: backend]'),
+      'default',
+      expect.objectContaining({
+        capabilities: {
+          browser: { mode: 'backend' },
+          computer_use: { enabled: false },
+        },
+      }),
     )
     expect(bridge.contextEstimate.mock.calls[0][2]).toContain('system prompt')
     expect(bridge.contextEstimate.mock.calls[0][2]).toContain('X-Hermes-Profile')
@@ -213,6 +243,85 @@ describe('bridge run final context usage', () => {
       outputTokens: 7,
       contextTokens: 12345,
     }))
+  })
+
+  it('prepares a connected visible browser before bridge chat runs', async () => {
+    const emit = vi.fn()
+    const nsp = makeNamespace(emit)
+    const socket = makeSocket()
+    const state = makeState()
+    const sessionMap = new Map([['session-1', state]])
+    prepareBrowserForRunMock.mockResolvedValueOnce({
+      connected: true,
+      cdpUrl: 'http://127.0.0.1:9222',
+      browser: 'Chrome',
+      profile: 'default',
+      managed: true,
+    })
+    const bridge = {
+      chat: vi.fn().mockResolvedValue({ run_id: 'run-1', status: 'started' }),
+      contextEstimate: vi.fn().mockResolvedValue({
+        token_count: 42,
+        fixed_context_tokens: 24,
+        message_count: 1,
+        tool_count: 4,
+        system_prompt_chars: 13,
+        capabilities_key: 'browser:connected|computer:on',
+      }),
+      streamOutput: vi.fn(async function* () {
+        yield { run_id: 'run-1', done: true, status: 'completed', output: 'done' }
+      }),
+    } as any
+
+    const { handleBridgeRun } = await import('../../packages/server/src/services/hermes/run-chat/handle-bridge-run')
+    await handleBridgeRun(
+      nsp,
+      socket,
+      {
+        input: 'visit example.com',
+        session_id: 'session-1',
+        capabilities: {
+          browser: { mode: 'connected' },
+          computer_use: { enabled: true },
+        },
+      },
+      'default',
+      sessionMap,
+      bridge,
+      false,
+      vi.fn(),
+      vi.fn(),
+    )
+
+    expect(prepareBrowserForRunMock).toHaveBeenCalledWith('default', {
+      browser: { mode: 'connected' },
+      computer_use: { enabled: true },
+    })
+    expect(bridge.contextEstimate).toHaveBeenCalledWith(
+      'session-1',
+      [],
+      expect.stringContaining('[Web chat browser mode: connected]'),
+      'default',
+      expect.objectContaining({
+        capabilities: {
+          browser: { mode: 'connected' },
+          computer_use: { enabled: true },
+        },
+      }),
+    )
+    expect(bridge.chat).toHaveBeenCalledWith(
+      'session-1',
+      'visit example.com',
+      expect.any(Array),
+      expect.stringContaining('visible connected browser'),
+      'default',
+      expect.objectContaining({
+        capabilities: {
+          browser: { mode: 'connected' },
+          computer_use: { enabled: true },
+        },
+      }),
+    )
   })
 
   it('handles artifact chat messages without starting the agent bridge', async () => {
@@ -453,6 +562,7 @@ describe('bridge run final context usage', () => {
             fixed_context_tokens: 20_000,
             system_prompt_tokens: 3_000,
             tool_tokens: 17_000,
+            capabilities_key: 'browser:backend|computer:off',
           }],
         }
         yield { run_id: 'run-1', done: true, status: 'completed', output: 'done' }

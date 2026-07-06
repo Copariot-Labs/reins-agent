@@ -596,14 +596,55 @@ def _resolve_runtime(model: str, provider: str | None = None) -> dict[str, Any]:
     return resolve_runtime_provider(requested=requested, target_model=model or None)
 
 
-def _load_enabled_toolsets() -> list[str] | None:
+def _normalize_capabilities(value: Any) -> dict[str, Any]:
+    raw = value if isinstance(value, dict) else {}
+    browser_raw = raw.get("browser") if isinstance(raw.get("browser"), dict) else {}
+    computer_raw = raw.get("computer_use") if isinstance(raw.get("computer_use"), dict) else {}
+    browser_mode = str(browser_raw.get("mode") or "").strip().lower()
+    if browser_mode not in {"off", "connected"}:
+        browser_mode = "backend"
+    return {
+        "browser": {"mode": browser_mode},
+        "computer_use": {"enabled": bool(computer_raw.get("enabled") is True)},
+    }
+
+
+def _capability_key(capabilities: dict[str, Any] | None) -> str:
+    caps = _normalize_capabilities(capabilities)
+    return "|".join([
+        f"browser:{caps['browser']['mode']}",
+        f"computer:{'on' if caps['computer_use']['enabled'] else 'off'}",
+    ])
+
+
+def _apply_capability_toolsets(enabled: list[str] | None, capabilities: dict[str, Any] | None) -> list[str] | None:
+    if enabled is None:
+        return None
+
+    caps = _normalize_capabilities(capabilities)
+    next_enabled = {str(item).strip() for item in enabled if str(item).strip()}
+
+    if caps["browser"]["mode"] == "off":
+        next_enabled.discard("browser")
+    else:
+        next_enabled.add("browser")
+
+    if caps["computer_use"]["enabled"]:
+        next_enabled.add("computer_use")
+    else:
+        next_enabled.discard("computer_use")
+
+    return sorted(next_enabled)
+
+
+def _load_enabled_toolsets(capabilities: dict[str, Any] | None = None) -> list[str] | None:
     _ensure_agent_imports()
     raw = os.environ.get("HERMES_BRIDGE_TOOLSETS", "").strip()
     if raw:
         values = [part.strip() for part in raw.split(",") if part.strip()]
         if any(value in {"all", "*"} for value in values):
             return None
-        return values or None
+        return _apply_capability_toolsets(values, capabilities)
 
     try:
         from hermes_cli.config import load_config
@@ -622,8 +663,10 @@ def _load_enabled_toolsets() -> list[str] | None:
                     pass
             if not resolved_tools:
                 enabled = sorted(_get_platform_tools(cfg, "cli", include_default_mcp_servers=True))
-        return enabled or None
+        return _apply_capability_toolsets(enabled, capabilities)
     except Exception:
+        if capabilities is not None:
+            return _apply_capability_toolsets([], capabilities)
         return None
 
 
@@ -738,9 +781,12 @@ class AgentPool:
         profile: str | None = None,
         model: str | None = None,
         provider: str | None = None,
+        capabilities: dict[str, Any] | None = None,
     ) -> AgentSession:
         requested_model = str(model or "").strip()
         requested_provider = str(provider or "").strip()
+        normalized_capabilities = _normalize_capabilities(capabilities)
+        capability_key = _capability_key(normalized_capabilities)
         with self._lock:
             existing = self._sessions.get(session_id)
             if existing is not None:
@@ -749,6 +795,7 @@ class AgentPool:
                     (profile and existing.config.get("profile") != profile)
                     or (requested_model and existing.config.get("model") != requested_model)
                     or (requested_provider and existing.config.get("provider") != requested_provider)
+                    or existing.config.get("capabilities_key") != capability_key
                 )
                 if config_changed:
                     if not existing.running:
@@ -771,6 +818,7 @@ class AgentPool:
                 runtime = _resolve_runtime(resolved_model, requested_provider or None)
                 agent_cfg = cfg.get("agent") or {}
                 prompt = str(agent_cfg.get("system_prompt", "") or "").strip() or None
+                enabled_toolsets = _load_enabled_toolsets(normalized_capabilities)
 
                 agent = AIAgent(
                     model=resolved_model,
@@ -786,7 +834,7 @@ class AgentPool:
                     verbose_logging=False,
                     reasoning_config=_load_reasoning_config(),
                     service_tier=_load_service_tier(),
-                    enabled_toolsets=_load_enabled_toolsets(),
+                    enabled_toolsets=enabled_toolsets,
                     platform=_bridge_platform(),
                     session_id=session_id,
                     session_db=self._db.get_for_profile(profile),
@@ -814,6 +862,9 @@ class AgentPool:
                         "base_url": runtime.get("base_url"),
                         "api_mode": runtime.get("api_mode"),
                         "platform": _bridge_platform(),
+                        "capabilities": normalized_capabilities,
+                        "capabilities_key": capability_key,
+                        "enabled_toolsets": enabled_toolsets,
                         "resumed": False,
                         "resumed_message_count": 0,
                         "db_error": self._db.error,
@@ -964,6 +1015,7 @@ class AgentPool:
             "profile": profile or session.config.get("profile") or "default",
             "model": session.config.get("model"),
             "provider": session.config.get("provider"),
+            "capabilities_key": session.config.get("capabilities_key"),
             **info,
         }
         session.config["context_info"] = event
@@ -977,8 +1029,9 @@ class AgentPool:
         profile: str | None = None,
         model: str | None = None,
         provider: str | None = None,
+        capabilities: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        session = self.get_or_create(session_id, profile=profile, model=model, provider=provider)
+        session = self.get_or_create(session_id, profile=profile, model=model, provider=provider, capabilities=capabilities)
         context_info = self._estimate_context_info(session.agent, messages or [], instructions)
         print(
             "[hermes_bridge] context estimate "
@@ -995,6 +1048,7 @@ class AgentPool:
             "profile": profile or session.config.get("profile") or "default",
             "model": session.config.get("model"),
             "provider": session.config.get("provider"),
+            "capabilities_key": session.config.get("capabilities_key"),
             **context_info,
         }
 
@@ -1420,9 +1474,10 @@ class AgentPool:
         force_compress: bool = False,
         model: str | None = None,
         provider: str | None = None,
+        capabilities: dict[str, Any] | None = None,
         source: str | None = None,
     ) -> RunRecord:
-        session = self.get_or_create(session_id, profile=profile, model=model, provider=provider)
+        session = self.get_or_create(session_id, profile=profile, model=model, provider=provider, capabilities=capabilities)
         with session.lock:
             if session.running:
                 raise RuntimeError(f"session {session_id} is already running")
@@ -2061,6 +2116,7 @@ class BridgeServer:
             profile = req.get("profile")
             model = req.get("model")
             provider = req.get("provider")
+            capabilities = req.get("capabilities")
             source = req.get("source")
             record = self.pool.start_chat(
                 session_id,
@@ -2072,6 +2128,7 @@ class BridgeServer:
                 bool(req.get("force_compress")),
                 model,
                 provider,
+                capabilities if isinstance(capabilities, dict) else None,
                 source,
             )
             if req.get("wait"):
@@ -2096,6 +2153,7 @@ class BridgeServer:
                 profile=req.get("profile"),
                 model=req.get("model"),
                 provider=req.get("provider"),
+                capabilities=req.get("capabilities") if isinstance(req.get("capabilities"), dict) else None,
             )
 
         if action == "get_result":
