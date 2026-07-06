@@ -34,6 +34,7 @@ import { groupChatRoutes, setGroupChatServer } from './hermes/group-chat'
 import { performanceMonitorRoutes } from './hermes/performance-monitor'
 import { financeRoutes } from './hermes/finance'
 import { browserRoutes } from './hermes/browser'
+import { computerUseRoutes } from './hermes/computer-use'
 
 /**
  * Register all routes on the Koa app.
@@ -78,6 +79,7 @@ export function registerRoutes(app: any, authMiddleware: Array<(ctx: Context, ne
   app.use(performanceMonitorRoutes.routes())  // Must be before proxy
   app.use(financeRoutes.routes())             // Must be before proxy
   app.use(browserRoutes.routes())              // Must be before proxy
+  app.use(computerUseRoutes.routes())          // Must be before proxy
   app.use(proxyRoutes.routes())
 
   // Proxy catch-all middleware (must be last)

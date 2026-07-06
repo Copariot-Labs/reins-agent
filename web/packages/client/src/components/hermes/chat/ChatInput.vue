@@ -6,7 +6,13 @@ import { useAppStore } from '@/stores/hermes/app'
 import { useProfilesStore } from '@/stores/hermes/profiles'
 import { fetchContextLength } from '@/api/hermes/sessions'
 import { setModelContext } from '@/api/hermes/model-context'
-import { connectVisibleBrowser } from '@/api/hermes/browser'
+import {
+  connectVisibleBrowser,
+  disconnectVisibleBrowser,
+  fetchVisibleBrowserStatus,
+  type VisibleBrowserStatus,
+} from '@/api/hermes/browser'
+import { fetchComputerUseDoctor, fetchComputerUseStatus, type ComputerUseCheck } from '@/api/hermes/computer-use'
 import { NButton, NTooltip, NSwitch, NModal, NInputNumber, NSelect, useMessage } from 'naive-ui'
 import { computed, ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -28,6 +34,10 @@ const isDragging = ref(false)
 const dragCounter = ref(0)
 const isComposing = ref(false)
 const isConnectingVisibleBrowser = ref(false)
+const isCheckingComputerUse = ref(false)
+const visibleBrowserStatus = ref<VisibleBrowserStatus | null>(null)
+const computerUseStatus = ref<ComputerUseCheck | null>(null)
+const computerUseDoctor = ref<ComputerUseCheck | null>(null)
 
 const browserModeOptions: Array<{ label: string; value: BrowserCapabilityMode }> = [
   { label: 'Browse off', value: 'off' },
@@ -47,20 +57,78 @@ const computerUseOptions: Array<{ label: string; value: 'off' | 'on' }> = [
   { label: 'Computer Use', value: 'on' },
 ]
 
-async function ensureVisibleBrowserConnected() {
+async function ensureVisibleBrowserConnected(showToast = true) {
   if (isConnectingVisibleBrowser.value) return
   isConnectingVisibleBrowser.value = true
   try {
     const status = await connectVisibleBrowser()
-    if (status.connected) {
+    visibleBrowserStatus.value = status
+    if (showToast && status.connected) {
       message.success('Visible browser connected')
-    } else {
+    } else if (showToast) {
       message.error(status.error || 'Visible browser is not connected')
     }
   } catch (err: any) {
-    message.error(`Visible browser connect failed: ${err?.message || err}`)
+    if (showToast) message.error(`Visible browser connect failed: ${err?.message || err}`)
   } finally {
     isConnectingVisibleBrowser.value = false
+  }
+}
+
+async function ensureVisibleBrowserDisconnected(showToast = false) {
+  if (isConnectingVisibleBrowser.value) return
+  isConnectingVisibleBrowser.value = true
+  try {
+    visibleBrowserStatus.value = await disconnectVisibleBrowser()
+  } catch (err: any) {
+    if (showToast) message.error(`Visible browser disconnect failed: ${err?.message || err}`)
+  } finally {
+    isConnectingVisibleBrowser.value = false
+  }
+}
+
+async function refreshVisibleBrowserStatus(showToast = false) {
+  if (isConnectingVisibleBrowser.value) return
+  isConnectingVisibleBrowser.value = true
+  try {
+    const status = await fetchVisibleBrowserStatus()
+    visibleBrowserStatus.value = status
+    if (showToast) {
+      if (status.connected) message.success('Visible browser connected')
+      else message.warning(status.error || 'Visible browser disconnected')
+    }
+  } catch (err: any) {
+    if (showToast) message.error(`Visible browser status failed: ${err?.message || err}`)
+  } finally {
+    isConnectingVisibleBrowser.value = false
+  }
+}
+
+async function refreshComputerUseStatus(showToast = false) {
+  if (isCheckingComputerUse.value) return
+  isCheckingComputerUse.value = true
+  try {
+    const status = await fetchComputerUseStatus()
+    computerUseStatus.value = status
+    if (!status.ok) {
+      computerUseDoctor.value = await fetchComputerUseDoctor().catch(() => null)
+    }
+    if (showToast) {
+      if (status.ok) message.success('Computer use ready')
+      else message.warning(status.error || status.stderr || 'Computer use needs attention')
+    }
+  } catch (err: any) {
+    if (showToast) message.error(`Computer use check failed: ${err?.message || err}`)
+    computerUseStatus.value = {
+      ok: false,
+      command: [],
+      profile: capabilitiesStore.profileName,
+      stdout: '',
+      stderr: '',
+      error: err?.message || String(err),
+    }
+  } finally {
+    isCheckingComputerUse.value = false
   }
 }
 
@@ -68,8 +136,46 @@ watch(
   () => capabilitiesStore.browserMode,
   (mode) => {
     if (mode === 'connected') void ensureVisibleBrowserConnected()
+    else void ensureVisibleBrowserDisconnected(true)
   },
 )
+
+watch(
+  () => capabilitiesStore.computerUseEnabled,
+  (enabled) => {
+    if (enabled) void refreshComputerUseStatus(true)
+  },
+)
+
+const visibleBrowserStatusLabel = computed(() => {
+  if (isConnectingVisibleBrowser.value) return 'Checking visible browser...'
+  const status = visibleBrowserStatus.value
+  if (!status) return 'Visible browser status unknown'
+  if (status.connected) return `Visible browser connected${status.browser ? `: ${status.browser}` : ''}`
+  return status.error ? `Visible browser disconnected: ${status.error}` : 'Visible browser disconnected'
+})
+
+const visibleBrowserStatusClass = computed(() => {
+  if (isConnectingVisibleBrowser.value) return 'checking'
+  if (!visibleBrowserStatus.value) return 'unknown'
+  return visibleBrowserStatus.value.connected ? 'ready' : 'error'
+})
+
+const computerUseStatusLabel = computed(() => {
+  if (isCheckingComputerUse.value) return 'Checking computer use...'
+  const status = computerUseStatus.value
+  if (!capabilitiesStore.computerUseEnabled) return 'Computer use disabled'
+  if (!status) return 'Computer use status unknown'
+  if (status.ok) return 'Computer use ready'
+  return status.error || status.stderr || 'Computer use needs attention'
+})
+
+const computerUseStatusClass = computed(() => {
+  if (isCheckingComputerUse.value) return 'checking'
+  if (!capabilitiesStore.computerUseEnabled) return 'unknown'
+  if (!computerUseStatus.value) return 'unknown'
+  return computerUseStatus.value.ok ? 'ready' : 'error'
+})
 
 const bridgeCommands = computed(() => [
   { name: 'usage', args: '', description: t('chat.slashCommands.usage') },
@@ -145,6 +251,12 @@ onMounted(() => {
     // 同步到 chat store
     chatStore.setAutoPlaySpeech(autoPlaySpeech.value)
   }
+  if (capabilitiesStore.browserMode === 'connected') {
+    void ensureVisibleBrowserConnected(false)
+  } else {
+    void ensureVisibleBrowserDisconnected()
+  }
+  if (capabilitiesStore.computerUseEnabled) void refreshComputerUseStatus()
 })
 
 // 监听变化并保存
@@ -557,6 +669,13 @@ function isImage(type: string): boolean {
       <NTooltip trigger="hover">
         <template #trigger>
           <div class="capability-control browser-control">
+            <button
+              type="button"
+              class="connection-dot"
+              :class="visibleBrowserStatusClass"
+              :aria-label="visibleBrowserStatusLabel"
+              @click.stop="refreshVisibleBrowserStatus(true)"
+            ></button>
             <span class="capability-icon" aria-hidden="true">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="9"/>
@@ -575,12 +694,19 @@ function isImage(type: string): boolean {
             />
           </div>
         </template>
-        Browser mode for the next run
+        {{ visibleBrowserStatusLabel }}
       </NTooltip>
 
       <NTooltip trigger="hover">
         <template #trigger>
           <div class="capability-control computer-control">
+            <button
+              type="button"
+              class="connection-dot"
+              :class="computerUseStatusClass"
+              :aria-label="computerUseStatusLabel"
+              @click.stop="refreshComputerUseStatus(true)"
+            ></button>
             <span class="capability-icon" aria-hidden="true">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="4" width="18" height="12" rx="2"/>
@@ -597,7 +723,7 @@ function isImage(type: string): boolean {
             />
           </div>
         </template>
-        Desktop control for the next run
+        {{ computerUseStatusLabel }}
       </NTooltip>
 
       <span v-if="totalTokens > 0" class="context-info" :class="{ 'context-warning': usagePercent > 80 }">
@@ -863,6 +989,45 @@ function isImage(type: string): boolean {
   flex: 0 0 14px;
   width: 14px;
   height: 14px;
+}
+
+.connection-dot {
+  flex: 0 0 9px;
+  width: 9px;
+  height: 9px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: $text-muted;
+  cursor: pointer;
+  opacity: 0.75;
+
+  &.ready {
+    background: #34a853;
+    opacity: 1;
+  }
+
+  &.checking {
+    background: #e8a735;
+    opacity: 1;
+    animation: connectionPulse 1s ease-in-out infinite;
+  }
+
+  &.error {
+    background: #e85d4a;
+    opacity: 1;
+  }
+}
+
+@keyframes connectionPulse {
+  0%,
+  100% {
+    transform: scale(0.9);
+  }
+
+  50% {
+    transform: scale(1.2);
+  }
 }
 
 .capability-select {

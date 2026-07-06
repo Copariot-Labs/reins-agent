@@ -258,7 +258,10 @@ async function launchVisibleBrowser(profile: string): Promise<BrowserConnectionS
   child.unref()
 
   const cdpUrl = `http://127.0.0.1:${port}`
-  const version = await waitForCdp(cdpUrl)
+  const launchError = new Promise<never>((_resolve, reject) => {
+    child.once('error', reject)
+  })
+  const version = await Promise.race([waitForCdp(cdpUrl), launchError])
   launchedByProfile.set(profile, { child, cdpUrl, pid: child.pid, executable })
   await writeManagedCdpUrl(profile, cdpUrl)
   logger.info('[browser-connection] launched visible browser profile=%s cdp=%s pid=%s', profile, cdpUrl, child.pid)
