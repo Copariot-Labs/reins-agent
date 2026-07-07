@@ -324,6 +324,101 @@ describe('bridge run final context usage', () => {
     )
   })
 
+  it('injects the deterministic WeChat desktop workflow for WeChat requests', async () => {
+    const emit = vi.fn()
+    const nsp = makeNamespace(emit)
+    const socket = makeSocket()
+    const state = makeState()
+    const sessionMap = new Map([['session-1', state]])
+    const bridge = {
+      chat: vi.fn().mockResolvedValue({ run_id: 'run-1', status: 'started' }),
+      contextEstimate: vi.fn().mockResolvedValue({
+        token_count: 12345,
+        fixed_context_tokens: 12327,
+        message_count: 2,
+        tool_count: 5,
+        system_prompt_chars: 13,
+        capabilities_key: 'browser:backend|computer:on',
+      }),
+      streamOutput: vi.fn(async function* () {
+        yield { run_id: 'run-1', done: true, status: 'completed', output: 'drafted' }
+      }),
+    } as any
+    recordBridgeToolStartedMock.mockImplementationOnce((_state: any, _sessionId: string, _runMarker: string, toolName: string, args: Record<string, unknown> | undefined, rawToolCallId: unknown) => ({
+      id: String(rawToolCallId || 'wechat-workflow-tool'),
+      name: toolName,
+      arguments: JSON.stringify(args || {}),
+    }))
+    recordBridgeToolCompletedMock.mockImplementationOnce((_state: any, _sessionId: string, _runMarker: string, _toolName: string, ev: Record<string, unknown>) => ({
+      id: String(ev.tool_call_id || 'wechat-workflow-tool'),
+      output: String(ev.result || ''),
+      duration: 0.4,
+    }))
+
+    const { handleBridgeRun } = await import('../../packages/server/src/services/hermes/run-chat/handle-bridge-run')
+    await handleBridgeRun(
+      nsp,
+      socket,
+      {
+        input: 'Send a WeChat message to Alice saying the report is ready',
+        session_id: 'session-1',
+        capabilities: {
+          browser: { mode: 'backend' },
+          computer_use: { enabled: false },
+        },
+      },
+      'default',
+      sessionMap,
+      bridge,
+      false,
+      vi.fn(),
+      vi.fn(),
+    )
+
+    expect(prepareBrowserForRunMock).toHaveBeenCalledWith('default', {
+      browser: { mode: 'backend' },
+      computer_use: { enabled: false },
+    })
+    expect(bridge.contextEstimate).toHaveBeenCalledWith(
+      'session-1',
+      [],
+      expect.stringContaining('[WeChat desktop workflow requested]'),
+      'default',
+      expect.objectContaining({
+        capabilities: {
+          browser: { mode: 'backend' },
+          computer_use: { enabled: false },
+        },
+      }),
+    )
+    expect(bridge.chat).toHaveBeenCalledWith(
+      'session-1',
+      'Send a WeChat message to Alice saying the report is ready',
+      expect.any(Array),
+      expect.stringContaining('Use the deterministic Reins WeChat skill/CLI for WeChat actions.'),
+      'default',
+      expect.objectContaining({
+        capabilities: {
+          browser: { mode: 'backend' },
+          computer_use: { enabled: false },
+        },
+      }),
+    )
+    expect(emit).toHaveBeenCalledWith('tool.started', expect.objectContaining({
+      tool: 'wechat_workflow',
+      preview: expect.stringContaining('Reins WeChat skill'),
+      arguments: expect.stringContaining('confirmation_required_before_send'),
+    }))
+    expect(emit).toHaveBeenCalledWith('tool.completed', expect.objectContaining({
+      tool: 'wechat_workflow',
+      output: expect.stringContaining('No WeChat message or file should be sent until the user confirms'),
+    }))
+    expect(emit).toHaveBeenCalledWith('agent.event', expect.objectContaining({
+      kind: 'workflow',
+      text: expect.stringContaining('WeChat workflow enabled'),
+    }))
+  })
+
   it('handles artifact chat messages without starting the agent bridge', async () => {
     const emit = vi.fn()
     const nsp = makeNamespace(emit)

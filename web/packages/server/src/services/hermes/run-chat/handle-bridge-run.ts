@@ -34,8 +34,21 @@ import { filterBridgeToolCallMarkupDelta, flushPendingToolCallMarkup } from './b
 import { mayNeedArtifactPreprocess, preprocessArtifactChatMessage, type ArtifactChatPreprocessResult } from '../artifacts'
 import { chatCapabilitiesInstructions, chatCapabilitiesKey, normalizeChatCapabilities, toBridgeCapabilities } from './capabilities'
 import { prepareBrowserForRun } from '../browser-connection'
+import {
+  WECHAT_WORKFLOW_TOOL_NAME,
+  buildWeChatWorkflow,
+  weChatWorkflowToolArgs,
+  weChatWorkflowToolResult,
+  type WeChatWorkflow,
+} from '../wechat-workflow'
 
 const BRIDGE_USAGE_FLUSH_DELAY_MS = 200
+
+interface WorkflowToolRun {
+  toolCallId: string
+  toolName: string
+  workflow: WeChatWorkflow
+}
 
 function stringValue(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
@@ -218,6 +231,8 @@ export async function handleBridgeRun(
     ? `${getSystemPrompt()}\n${instructions}`
     : getSystemPrompt()
   const sessionRow = getSession(session_id)
+  const requestText = typeof input === 'string' ? input : contentBlocksToString(input)
+  const weChatWorkflow = data.display_role === 'command' ? null : buildWeChatWorkflow(requestText)
   const normalizedCapabilities = normalizeChatCapabilities(data.capabilities)
   const capabilitiesKey = chatCapabilitiesKey(normalizedCapabilities)
   const bridgeCapabilities = toBridgeCapabilities(normalizedCapabilities)
@@ -241,6 +256,7 @@ export async function handleBridgeRun(
     `[Current Hermes profile: ${profile}]`,
     sessionRow?.workspace ? `[Current working directory: ${sessionRow.workspace}]` : '',
     ...chatCapabilitiesInstructions(normalizedCapabilities),
+    ...(weChatWorkflow?.instructions || []),
     'When calling Hermes Web UI endpoints from tools or skills, include the current Hermes profile as the X-Hermes-Profile header if the endpoint supports profile-scoped behavior.',
   ].filter(Boolean).join('\n')
   fullInstructions = `\n${runContext}\n${fullInstructions}`
@@ -357,6 +373,8 @@ export async function handleBridgeRun(
     }, '[chat-run-socket] visible browser connected')
   }
 
+  let workflowToolRun: WorkflowToolRun | undefined
+
   const history = await buildCompressedHistory(
     session_id, profile,
     '',
@@ -443,6 +461,26 @@ export async function handleBridgeRun(
       run_id: started.run_id,
       queue_length: state.queue.length || 0,
     })
+    if (weChatWorkflow) {
+      workflowToolRun = emitWeChatWorkflowToolStarted({
+        workflow: weChatWorkflow,
+        input: requestText,
+        state,
+        sessionId: session_id,
+        runMarker,
+        runId: started.run_id,
+        emit,
+        sessionMap,
+      })
+      const payload = {
+        event: 'agent.event',
+        run_id: started.run_id,
+        kind: 'workflow',
+        text: weChatWorkflow.statusText,
+      }
+      replaceState(sessionMap, session_id, 'agent.event', payload)
+      emit('agent.event', payload)
+    }
 
     for await (const chunk of bridge.streamOutput(started.run_id)) {
       await applyBridgeChunkAsync(
@@ -463,6 +501,7 @@ export async function handleBridgeRun(
           provider: resolvedProvider,
           capabilities: bridgeCapabilities,
           capabilitiesKey,
+          workflowTool: workflowToolRun,
         },
         currentInputTokens,
         shouldPersistUserMessage && displayRole === 'user',
@@ -474,6 +513,7 @@ export async function handleBridgeRun(
     if (state.activeRunMarker !== runMarker) return
     if (!state.isWorking) return
     const queueLen = state.queue?.length ?? 0
+    const failedRunId = state.runId
     state.isWorking = false
     state.isAborting = false
     state.profile = undefined
@@ -484,6 +524,19 @@ export async function handleBridgeRun(
     flushBridgePendingToDb(state, session_id)
     updateSessionStats(session_id)
     const message = err instanceof Error ? err.message : String(err)
+    if (workflowToolRun) {
+      emitWeChatWorkflowToolCompleted({
+        workflowTool: workflowToolRun,
+        state,
+        sessionId: session_id,
+        runMarker,
+        runId: failedRunId || workflowToolRun.toolCallId,
+        emit,
+        sessionMap,
+        status: 'failed',
+        error: message,
+      })
+    }
     const errUsage = await calcAndUpdateUsage(session_id, state, emit)
     const errContextTokens = await refreshFinalContextUsage({
       sessionId: session_id,
@@ -513,6 +566,85 @@ export async function handleBridgeRun(
     })
     if (queueLen > 0) dequeueNextQueuedRun(socket, session_id)
   }
+}
+
+function emitWeChatWorkflowToolStarted(args: {
+  workflow: WeChatWorkflow
+  input: string
+  state: SessionState
+  sessionId: string
+  runMarker: string
+  runId: string
+  emit: (event: string, payload: any) => void
+  sessionMap: Map<string, SessionState>
+}): WorkflowToolRun {
+  const toolCallId = `wechat_workflow_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+  const tool = recordBridgeToolStarted(
+    args.state,
+    args.sessionId,
+    args.runMarker,
+    WECHAT_WORKFLOW_TOOL_NAME,
+    weChatWorkflowToolArgs(args.workflow, args.input),
+    toolCallId,
+  )
+  const payload = {
+    event: 'tool.started',
+    run_id: args.runId,
+    tool_call_id: tool.id,
+    tool: tool.name,
+    name: tool.name,
+    arguments: tool.arguments,
+    preview: args.workflow.toolPreview,
+  }
+  pushState(args.sessionMap, args.sessionId, 'tool.started', payload)
+  args.emit('tool.started', payload)
+  return {
+    toolCallId: tool.id,
+    toolName: tool.name,
+    workflow: args.workflow,
+  }
+}
+
+function emitWeChatWorkflowToolCompleted(args: {
+  workflowTool: WorkflowToolRun
+  state: SessionState
+  sessionId: string
+  runMarker: string
+  runId: string
+  emit: (event: string, payload: any) => void
+  sessionMap: Map<string, SessionState>
+  status: 'completed' | 'failed'
+  finalOutput?: string
+  error?: string | null
+}) {
+  const completed = recordBridgeToolCompleted(
+    args.state,
+    args.sessionId,
+    args.runMarker,
+    args.workflowTool.toolName,
+    {
+      tool_call_id: args.workflowTool.toolCallId,
+      result: weChatWorkflowToolResult({
+        workflow: args.workflowTool.workflow,
+        status: args.status,
+        finalOutput: args.finalOutput,
+        error: args.error,
+      }),
+      is_error: args.status === 'failed',
+    },
+  )
+  const payload = {
+    event: 'tool.completed',
+    run_id: args.runId,
+    tool_call_id: completed.id,
+    tool: args.workflowTool.toolName,
+    name: args.workflowTool.toolName,
+    output: completed.output,
+    duration: completed.duration,
+    error: args.status === 'failed' || undefined,
+  }
+  pushState(args.sessionMap, args.sessionId, 'tool.completed', payload)
+  args.emit('tool.completed', payload)
 }
 
 async function maybeHandleArtifactChatRun(args: {
@@ -867,7 +999,7 @@ async function applyBridgeChunkAsync(
   bridge: AgentBridgeClient,
   dequeueNextQueuedRun: (socket: Socket, sessionId: string, fallbackProfile?: string) => void,
   instructions: string,
-  modelContext: { model?: string | null; provider?: string | null; capabilities?: ChatCapabilities; capabilitiesKey?: string },
+  modelContext: { model?: string | null; provider?: string | null; capabilities?: ChatCapabilities; capabilitiesKey?: string; workflowTool?: WorkflowToolRun },
   currentInputTokens = 0,
   currentInputIncludedInDb = true,
   modelGroups?: RunModelGroup[],
@@ -1219,6 +1351,20 @@ async function applyBridgeChunkAsync(
     profile: state.profile,
   })
   const terminalError = bridgeTerminalError(chunk)
+  if (modelContext.workflowTool) {
+    emitWeChatWorkflowToolCompleted({
+      workflowTool: modelContext.workflowTool,
+      state,
+      sessionId,
+      runMarker,
+      runId: chunk.run_id,
+      emit,
+      sessionMap,
+      status: terminalError ? 'failed' : 'completed',
+      finalOutput: chunk.output || state.bridgeOutput || '',
+      error: terminalError || chunk.error,
+    })
+  }
   const hadQueuedRunBeforeGoalEvaluation = state.queue.length > 0
   state.isWorking = hadQueuedRunBeforeGoalEvaluation
   state.isAborting = false
