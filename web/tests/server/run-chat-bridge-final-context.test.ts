@@ -324,7 +324,7 @@ describe('bridge run final context usage', () => {
     )
   })
 
-  it('injects the deterministic WeChat desktop workflow for WeChat requests', async () => {
+  it('injects the deterministic WeCom gateway workflow for WeCom requests', async () => {
     const emit = vi.fn()
     const nsp = makeNamespace(emit)
     const socket = makeSocket()
@@ -345,12 +345,12 @@ describe('bridge run final context usage', () => {
       }),
     } as any
     recordBridgeToolStartedMock.mockImplementationOnce((_state: any, _sessionId: string, _runMarker: string, toolName: string, args: Record<string, unknown> | undefined, rawToolCallId: unknown) => ({
-      id: String(rawToolCallId || 'wechat-workflow-tool'),
+      id: String(rawToolCallId || 'wecom-workflow-tool'),
       name: toolName,
       arguments: JSON.stringify(args || {}),
     }))
     recordBridgeToolCompletedMock.mockImplementationOnce((_state: any, _sessionId: string, _runMarker: string, _toolName: string, ev: Record<string, unknown>) => ({
-      id: String(ev.tool_call_id || 'wechat-workflow-tool'),
+      id: String(ev.tool_call_id || 'wecom-workflow-tool'),
       output: String(ev.result || ''),
       duration: 0.4,
     }))
@@ -360,7 +360,7 @@ describe('bridge run final context usage', () => {
       nsp,
       socket,
       {
-        input: 'Send a WeChat message to Alice saying the report is ready',
+        input: 'Handle a WeCom ticket notification and record it',
         session_id: 'session-1',
         capabilities: {
           browser: { mode: 'backend' },
@@ -382,7 +382,7 @@ describe('bridge run final context usage', () => {
     expect(bridge.contextEstimate).toHaveBeenCalledWith(
       'session-1',
       [],
-      expect.stringContaining('[WeChat desktop workflow requested]'),
+      expect.stringContaining('[Reins WeCom work-order workflow requested]'),
       'default',
       expect.objectContaining({
         capabilities: {
@@ -393,9 +393,9 @@ describe('bridge run final context usage', () => {
     )
     expect(bridge.chat).toHaveBeenCalledWith(
       'session-1',
-      'Send a WeChat message to Alice saying the report is ready',
+      'Handle a WeCom ticket notification and record it',
       expect.any(Array),
-      expect.stringContaining('Use the deterministic Reins WeChat skill/CLI for WeChat actions.'),
+      expect.stringContaining('parse that text into JSON'),
       'default',
       expect.objectContaining({
         capabilities: {
@@ -405,17 +405,17 @@ describe('bridge run final context usage', () => {
       }),
     )
     expect(emit).toHaveBeenCalledWith('tool.started', expect.objectContaining({
-      tool: 'wechat_workflow',
-      preview: expect.stringContaining('Reins WeChat skill'),
-      arguments: expect.stringContaining('confirmation_required_before_send'),
+      tool: 'wecom_workflow',
+      preview: expect.stringContaining('Receive WeCom ticket notification text'),
+      arguments: expect.stringContaining('desktop_computer_use'),
     }))
     expect(emit).toHaveBeenCalledWith('tool.completed', expect.objectContaining({
-      tool: 'wechat_workflow',
-      output: expect.stringContaining('No WeChat message or file should be sent until the user confirms'),
+      tool: 'wecom_workflow',
+      output: expect.stringContaining('WeChat Customer Service callbacks'),
     }))
     expect(emit).toHaveBeenCalledWith('agent.event', expect.objectContaining({
       kind: 'workflow',
-      text: expect.stringContaining('WeChat workflow enabled'),
+      text: expect.stringContaining('Reins WeCom work-order workflow enabled'),
     }))
   })
 

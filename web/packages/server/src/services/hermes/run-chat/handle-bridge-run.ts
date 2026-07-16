@@ -35,19 +35,19 @@ import { mayNeedArtifactPreprocess, preprocessArtifactChatMessage, type Artifact
 import { chatCapabilitiesInstructions, chatCapabilitiesKey, normalizeChatCapabilities, toBridgeCapabilities } from './capabilities'
 import { prepareBrowserForRun } from '../browser-connection'
 import {
-  WECHAT_WORKFLOW_TOOL_NAME,
-  buildWeChatWorkflow,
-  weChatWorkflowToolArgs,
-  weChatWorkflowToolResult,
-  type WeChatWorkflow,
-} from '../wechat-workflow'
+  WECOM_WORKFLOW_TOOL_NAME,
+  buildWeComWorkflow,
+  weComWorkflowToolArgs,
+  weComWorkflowToolResult,
+  type WeComWorkflow,
+} from '../wecom-workflow'
 
 const BRIDGE_USAGE_FLUSH_DELAY_MS = 200
 
 interface WorkflowToolRun {
   toolCallId: string
   toolName: string
-  workflow: WeChatWorkflow
+  workflow: WeComWorkflow
 }
 
 function stringValue(value: unknown): string {
@@ -232,7 +232,7 @@ export async function handleBridgeRun(
     : getSystemPrompt()
   const sessionRow = getSession(session_id)
   const requestText = typeof input === 'string' ? input : contentBlocksToString(input)
-  const weChatWorkflow = data.display_role === 'command' ? null : buildWeChatWorkflow(requestText)
+  const weComWorkflow = data.display_role === 'command' ? null : buildWeComWorkflow(requestText)
   const normalizedCapabilities = normalizeChatCapabilities(data.capabilities)
   const capabilitiesKey = chatCapabilitiesKey(normalizedCapabilities)
   const bridgeCapabilities = toBridgeCapabilities(normalizedCapabilities)
@@ -256,7 +256,7 @@ export async function handleBridgeRun(
     `[Current Hermes profile: ${profile}]`,
     sessionRow?.workspace ? `[Current working directory: ${sessionRow.workspace}]` : '',
     ...chatCapabilitiesInstructions(normalizedCapabilities),
-    ...(weChatWorkflow?.instructions || []),
+    ...(weComWorkflow?.instructions || []),
     'When calling Hermes Web UI endpoints from tools or skills, include the current Hermes profile as the X-Hermes-Profile header if the endpoint supports profile-scoped behavior.',
   ].filter(Boolean).join('\n')
   fullInstructions = `\n${runContext}\n${fullInstructions}`
@@ -461,9 +461,9 @@ export async function handleBridgeRun(
       run_id: started.run_id,
       queue_length: state.queue.length || 0,
     })
-    if (weChatWorkflow) {
-      workflowToolRun = emitWeChatWorkflowToolStarted({
-        workflow: weChatWorkflow,
+    if (weComWorkflow) {
+      workflowToolRun = emitWeComWorkflowToolStarted({
+        workflow: weComWorkflow,
         input: requestText,
         state,
         sessionId: session_id,
@@ -476,7 +476,7 @@ export async function handleBridgeRun(
         event: 'agent.event',
         run_id: started.run_id,
         kind: 'workflow',
-        text: weChatWorkflow.statusText,
+        text: weComWorkflow.statusText,
       }
       replaceState(sessionMap, session_id, 'agent.event', payload)
       emit('agent.event', payload)
@@ -525,7 +525,7 @@ export async function handleBridgeRun(
     updateSessionStats(session_id)
     const message = err instanceof Error ? err.message : String(err)
     if (workflowToolRun) {
-      emitWeChatWorkflowToolCompleted({
+      emitWeComWorkflowToolCompleted({
         workflowTool: workflowToolRun,
         state,
         sessionId: session_id,
@@ -568,8 +568,8 @@ export async function handleBridgeRun(
   }
 }
 
-function emitWeChatWorkflowToolStarted(args: {
-  workflow: WeChatWorkflow
+function emitWeComWorkflowToolStarted(args: {
+  workflow: WeComWorkflow
   input: string
   state: SessionState
   sessionId: string
@@ -578,13 +578,13 @@ function emitWeChatWorkflowToolStarted(args: {
   emit: (event: string, payload: any) => void
   sessionMap: Map<string, SessionState>
 }): WorkflowToolRun {
-  const toolCallId = `wechat_workflow_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+  const toolCallId = `wecom_workflow_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
   const tool = recordBridgeToolStarted(
     args.state,
     args.sessionId,
     args.runMarker,
-    WECHAT_WORKFLOW_TOOL_NAME,
-    weChatWorkflowToolArgs(args.workflow, args.input),
+    WECOM_WORKFLOW_TOOL_NAME,
+    weComWorkflowToolArgs(args.workflow, args.input),
     toolCallId,
   )
   const payload = {
@@ -605,7 +605,7 @@ function emitWeChatWorkflowToolStarted(args: {
   }
 }
 
-function emitWeChatWorkflowToolCompleted(args: {
+function emitWeComWorkflowToolCompleted(args: {
   workflowTool: WorkflowToolRun
   state: SessionState
   sessionId: string
@@ -624,7 +624,7 @@ function emitWeChatWorkflowToolCompleted(args: {
     args.workflowTool.toolName,
     {
       tool_call_id: args.workflowTool.toolCallId,
-      result: weChatWorkflowToolResult({
+      result: weComWorkflowToolResult({
         workflow: args.workflowTool.workflow,
         status: args.status,
         finalOutput: args.finalOutput,
@@ -1352,7 +1352,7 @@ async function applyBridgeChunkAsync(
   })
   const terminalError = bridgeTerminalError(chunk)
   if (modelContext.workflowTool) {
-    emitWeChatWorkflowToolCompleted({
+    emitWeComWorkflowToolCompleted({
       workflowTool: modelContext.workflowTool,
       state,
       sessionId,

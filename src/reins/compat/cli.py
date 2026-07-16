@@ -14,6 +14,7 @@ REINS_OWNED_COMMANDS = {
     "finance",
     "computer",
     "wechat",
+    "wecom",
     "artifacts",
     "workmode",
     "debug-env",
@@ -105,11 +106,12 @@ Reins commands:
   reins migrate hermes
   reins update
   reins finance
-  reins wechat
+  reins wecom
   reins debug-env
 
 Legacy/debug:
   reins computer
+  reins wechat
   reins workmode
 
 Examples:
@@ -119,8 +121,7 @@ Examples:
   reins computer-use install
   reins computer-use status
   reins -t computer_use chat
-  reins wechat open
-  reins wechat draft --to "John" --message "Hello"
+  reins wecom process --message "退款一直没到账" --json
   reins finance --help
   REINS_HOME=/tmp/reins-test reins debug-env
 
@@ -205,6 +206,11 @@ def handle_reins_owned_command(argv: Sequence[str]) -> int:
         from reins.features.wechat.cli import main as wechat_main
 
         return wechat_main(argv[1:])
+
+    if command == "wecom":
+        from reins.features.wecom.cli import main as wecom_main
+
+        return wecom_main(argv[1:])
 
     if command == "artifacts":
         from reins.features.artifacts.cli import main as artifacts_main
