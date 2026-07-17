@@ -17,6 +17,7 @@ REINS_OWNED_COMMANDS = {
     "wecom",
     "artifacts",
     "workmode",
+    "presentation",
     "debug-env",
     "web",
 }
@@ -106,6 +107,7 @@ Reins commands:
   reins migrate hermes
   reins update
   reins finance
+  reins presentation
   reins wecom
   reins debug-env
 
@@ -225,6 +227,11 @@ def handle_reins_owned_command(argv: Sequence[str]) -> int:
             "Use `reins chat`, `reins web`, or Hermes computer-use for the main agent flow."
         )
         return workmode_main(argv[1:])
+
+    if command == "presentation":
+        from reins.features.presentation.cli import main as presentation_main
+
+        return presentation_main(argv[1:])
 
     if command == "web":
         from reins.compat.web import run_web

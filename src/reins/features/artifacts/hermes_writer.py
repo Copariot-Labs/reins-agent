@@ -506,3 +506,19 @@ def run_hermes_for_artifact(
         raise HermesArtifactError("XLSX response is missing required field: sheets")
 
     return parsed
+
+
+def run_local_json_model(
+    *,
+    prompt: str,
+    timeout: int = 180,
+    debug: bool = False,
+) -> dict[str, Any]:
+    """Run the configured local artifact model with a caller-owned JSON schema."""
+
+    output = _ollama_generate_json_api(
+        prompt=prompt,
+        timeout=timeout,
+        debug=debug,
+    )
+    return _parse_model_json(output)
