@@ -111,6 +111,7 @@ export default {
     search: 'Buscar',
     apiRelay: 'API Relay',
     history: 'Historial',
+    presentations: 'Presentaciones',
     jobs: 'Tareas programadas',
     models: 'Modelos',
     profiles: 'Perfiles',

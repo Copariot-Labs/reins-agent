@@ -111,6 +111,7 @@ export default {
     search: '検索',
     apiRelay: 'APIリレー',
     history: '履歴',
+    presentations: 'プレゼンテーション',
     jobs: 'ジョブ',
     models: 'モデル',
     profiles: 'プロファイル',

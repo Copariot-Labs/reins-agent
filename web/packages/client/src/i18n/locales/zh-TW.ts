@@ -111,6 +111,7 @@ export default {
     search: '搜尋',
     apiRelay: '中轉站',
     history: '歷史',
+    presentations: '簡報',
     jobs: '任務',
     kanban: '看板',
     models: '模型',

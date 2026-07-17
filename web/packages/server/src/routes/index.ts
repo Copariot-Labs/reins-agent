@@ -36,6 +36,7 @@ import { financeRoutes } from './hermes/finance'
 import { browserRoutes } from './hermes/browser'
 import { computerUseRoutes } from './hermes/computer-use'
 import { wecomRoutes } from './hermes/wecom'
+import { presentationRoutes } from './hermes/presentations'
 
 /**
  * Register all routes on the Koa app.
@@ -82,6 +83,7 @@ export function registerRoutes(app: any, authMiddleware: Array<(ctx: Context, ne
   app.use(browserRoutes.routes())              // Must be before proxy
   app.use(computerUseRoutes.routes())          // Must be before proxy
   app.use(wecomRoutes.routes())                // Must be before proxy
+  app.use(presentationRoutes.routes())         // Must be before proxy
   app.use(proxyRoutes.routes())
 
   // Proxy catch-all middleware (must be last)

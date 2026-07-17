@@ -114,6 +114,7 @@ export default {
     search: 'Search',
     apiRelay: 'API Relay',
     history: 'History',
+    presentations: 'Presentations',
     jobs: 'Jobs',
     kanban: 'Kanban',
     models: 'Models',

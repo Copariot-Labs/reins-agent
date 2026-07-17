@@ -112,6 +112,7 @@ export default {
     search: '搜索',
     apiRelay: '中转站',
     history: '历史',
+    presentations: '演示文稿',
     jobs: '任务',
     kanban: '看板',
     models: '模型',

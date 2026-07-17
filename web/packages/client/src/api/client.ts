@@ -106,9 +106,11 @@ export async function request<T>(
   const base = getBaseUrl();
   const url = `${base}${path}`;
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...(options.headers as Record<string, string>),
   };
+  if (!(options.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+  }
 
   const apiKey = getApiKey();
   if (apiKey) {
