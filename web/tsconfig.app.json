@@ -14,5 +14,9 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["packages/client/src/**/*.ts", "packages/client/src/**/*.tsx", "packages/client/src/**/*.vue"]
+  "include": [
+    "packages/client/src/**/*.ts",
+    "packages/client/src/**/*.tsx",
+    "packages/client/src/**/*.vue"
+  ]
 }

@@ -11,20 +11,27 @@ from reins.features.wecom.store import add_record, export_records_xlsx, find_rec
 
 
 FIELD_ALIASES = {
-    "external_id": ("external_id", "externalId", "ticket_id", "ticketId", "work_order_id", "workOrderId", "工单编号", "工单ID", "编号"),
-    "ticket_created_at": ("ticket_created_at", "ticketCreatedAt", "created_at", "createdAt", "ticket_time", "ticketTime", "创建时间", "工单创建时间"),
-    "title": ("title", "subject", "summary", "标题", "主题", "工单标题", "问题标题"),
-    "description": ("description", "content", "problem", "request", "问题描述", "描述", "内容", "居民诉求", "诉求", "问题"),
-    "resident_ref": ("resident_ref", "residentRef", "customer_ref", "customerRef", "user_ref", "userRef", "居民引用", "居民标识", "客户引用"),
+    "external_id": ("external_id", "externalId", "ticket_id", "ticketId", "work_order_id", "workOrderId", "工单编号", "工单号", "工单ID", "编号"),
+    "ticket_created_at": ("ticket_created_at", "ticketCreatedAt", "created_at", "createdAt", "ticket_time", "ticketTime", "创建时间", "工单创建时间", "生成时间"),
+    "title": ("title", "subject", "summary", "标题", "主题", "工单标题", "问题标题", "问题/现象"),
+    "description": ("description", "content", "problem", "request", "问题描述", "描述", "内容", "居民诉求", "诉求", "问题", "客户原话", "居民原话"),
+    "resident_ref": ("resident_ref", "residentRef", "customer_ref", "customerRef", "user_ref", "userRef", "居民引用", "居民标识", "客户引用", "微信客户", "客户标识"),
     "resident_name": ("resident_name", "residentName", "customer_name", "customerName", "name", "居民姓名", "客户姓名", "姓名", "联系人"),
     "resident_contact": ("resident_contact", "residentContact", "phone", "mobile", "tel", "contact", "联系方式", "联系电话", "手机号", "电话"),
-    "location": ("location", "address", "community", "building", "room", "位置", "地址", "小区", "楼栋", "房号"),
-    "category": ("category", "type", "question_type", "questionType", "issue_type", "issueType", "分类", "类型", "问题类型", "工单类型"),
+    "location": ("location", "address", "community", "building", "room", "位置", "地点", "地址", "小区", "楼栋", "房号"),
+    "category": ("category", "type", "question_type", "questionType", "issue_type", "issueType", "分类", "类别", "类型", "问题类型", "问题类别", "工单类型", "工单类别"),
+    "original_category": ("original_category", "originalCategory", "source_category", "sourceCategory", "原始类别", "来源类别"),
     "priority": ("priority", "urgency", "level", "优先级", "紧急程度", "等级"),
+    "original_priority": ("original_priority", "originalPriority", "原始优先级"),
     "assigned_role": ("assigned_role", "assignedRole", "responsible_role", "responsibleRole", "负责角色", "责任角色", "处理部门"),
-    "source_channel": ("source_channel", "sourceChannel", "source", "channel", "来源渠道", "来源", "渠道"),
+    "source_channel": ("source_channel", "sourceChannel", "source", "channel", "来源渠道", "消息来源", "来源", "渠道"),
     "assignee": ("assignee", "owner", "handler", "处理人", "负责人", "跟进人"),
     "due_at": ("due_at", "dueAt", "deadline", "expected_time", "expectedTime", "截止时间", "期望处理时间", "要求完成时间"),
+    "upstream_status": ("upstream_status", "upstreamStatus", "工单状态", "处理状态", "状态"),
+    "customer_assessment": ("customer_assessment", "customerAssessment", "客服研判", "客服判断", "网格员研判", "网格研判", "研判"),
+    "handling_requirements": ("handling_requirements", "handlingRequirements", "处理要求", "办理要求"),
+    "people_involved": ("people_involved", "peopleInvolved", "涉及人数", "涉及人员"),
+    "current_danger": ("current_danger", "currentDanger", "当前危险", "是否危险"),
 }
 
 CLI_FIELD_NAMES = {
@@ -37,11 +44,34 @@ CLI_FIELD_NAMES = {
     "resident_contact",
     "location",
     "category",
+    "original_category",
     "priority",
+    "original_priority",
     "assigned_role",
     "source_channel",
     "assignee",
     "due_at",
+    "upstream_status",
+    "customer_assessment",
+    "handling_requirements",
+    "people_involved",
+    "current_danger",
+}
+
+SECTION_FIELDS = {
+    "新建工单": "",
+    "客户描述": "",
+    "客户诉求": "",
+    "居民诉求": "",
+    "已核实信息": "",
+    "已确认信息": "",
+    "客服研判": "customer_assessment",
+    "客服判断": "customer_assessment",
+    "网格员研判": "customer_assessment",
+    "网格研判": "customer_assessment",
+    "处理要求": "handling_requirements",
+    "系统信息": "",
+    "工单结束": "",
 }
 
 ROLE_LABELS = {
@@ -71,17 +101,61 @@ ROLE_RULES = [
     (
         "hospital",
         "医疗卫生",
-        ("医院", "卫生", "医生", "护士", "急救", "拨打120", "打120", "急救电话", "发烧", "受伤", "疫苗", "孕检", "预防接种", "消毒", "传染"),
+        (
+            "医院",
+            "社区卫生",
+            "卫生院",
+            "卫生服务中心",
+            "医生",
+            "护士",
+            "急救",
+            "拨打120",
+            "打120",
+            "急救电话",
+            "心脏",
+            "胸痛",
+            "呼吸困难",
+            "晕倒",
+            "昏迷",
+            "药吃完",
+            "缺药",
+            "发烧",
+            "受伤",
+            "疫苗",
+            "孕检",
+            "预防接种",
+            "消毒",
+            "传染",
+        ),
+    ),
+    (
+        "property",
+        "物业维修",
+        (
+            "物业",
+            "漏水",
+            "电梯",
+            "维修",
+            "楼道灯",
+            "门禁",
+            "下水",
+            "水管",
+            "停水",
+            "停电",
+            "停车",
+            "消防通道",
+            "公共设施",
+            "飞线充电",
+            "电动车充电",
+            "楼道充电",
+            "占用通道",
+            "通道堵塞",
+        ),
     ),
     (
         "cleaning",
         "环境卫生",
         ("保洁", "垃圾", "卫生", "清扫", "清洁", "异味", "臭", "楼道脏", "杂物", "蚊虫", "积水"),
-    ),
-    (
-        "property",
-        "物业维修",
-        ("物业", "漏水", "电梯", "维修", "楼道灯", "门禁", "下水", "水管", "停水", "停电", "停车", "消防通道", "公共设施"),
     ),
     (
         "community",
@@ -119,6 +193,12 @@ HIGH_PRIORITY_RE = re.compile(
 LOW_PRIORITY_RE = re.compile(r"咨询|了解|问一下|什么时候|哪里|如何办理|怎么申请")
 RESOLVED_RE = re.compile(r"已处理|已解决|已完成|完成|解决了|修好|办结|closed|resolved|done", re.IGNORECASE)
 
+PRIORITY_ALIASES = {
+    "high": ("high", "urgent", "critical", "emergency", "紧急", "危急", "高", "重要"),
+    "normal": ("normal", "medium", "普通", "正常", "一般", "中"),
+    "low": ("low", "低", "较低", "不紧急"),
+}
+
 
 def _string(value: Any) -> str:
     if value is None:
@@ -147,7 +227,12 @@ def _first_value(payload: dict[str, Any], field: str) -> str:
 
 
 def _normal_label(value: str) -> str:
-    return re.sub(r"[\s：:：]+", "", value.strip())
+    clean = re.sub(r"^[·•\-]\s*", "", value.strip())
+    return re.sub(r"[\s：:]+", "", clean)
+
+
+def _normal_section_label(value: str) -> str:
+    return _normal_label(value).strip("【】[]")
 
 
 def _fold(value: str) -> str:
@@ -167,14 +252,26 @@ def _canonical_role(value: str) -> str:
     return ""
 
 
+def _normalize_message_newlines(value: str) -> str:
+    text = _string(value)
+    if ("\n" in text or "\r" in text) or not ("\\n" in text or "\\r" in text):
+        return text
+
+    # Some local OpenAI-compatible models double-escape tool-call newlines,
+    # leaving the handler with one literal ``\\n``-delimited line.
+    return text.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")
+
+
 def _is_generic_category(value: str) -> bool:
     folded = _fold(value)
     return any(folded == _fold(alias) or _fold(alias) in folded for alias in GENERIC_CATEGORY_ALIASES)
 
 
 def parse_work_order_message(message: str) -> dict[str, str]:
-    text = _string(message)
+    text = _normalize_message_newlines(message)
     if not text:
+        return {}
+    if text.lstrip().startswith("【Reins工单通知】"):
         return {}
 
     reverse_aliases: dict[str, str] = {}
@@ -183,16 +280,41 @@ def parse_work_order_message(message: str) -> dict[str, str]:
             reverse_aliases[_normal_label(alias)] = field
 
     parsed: dict[str, str] = {}
+    section_values: dict[str, list[str]] = {}
+    current_section = ""
     lines = [line.strip() for line in text.splitlines() if line.strip()]
-    for line in lines:
-        match = re.match(r"^([^:：]{1,24})[:：]\s*(.+)$", line)
+    for raw_line in lines:
+        line = re.sub(r"^[·•\-]\s*", "", raw_line).strip()
+        normalized_line = _normal_section_label(line)
+        section_field = SECTION_FIELDS.get(normalized_line)
+        if section_field is not None:
+            current_section = section_field
+            if section_field:
+                section_values.setdefault(section_field, [])
+            continue
+
+        match = re.match(r"^([^:：]{1,40})[:：]\s*(.+)$", line)
         if not match:
+            if current_section:
+                section_values.setdefault(current_section, []).append(line)
             continue
         label = _normal_label(match.group(1))
         value = match.group(2).strip()
         field = reverse_aliases.get(label)
-        if field and value:
-            parsed[field] = value
+        if not field:
+            if current_section:
+                section_values.setdefault(current_section, []).append(line)
+            continue
+        if not value:
+            continue
+        if field == "category" and parsed.get("category") and parsed["category"] != value:
+            parsed.setdefault("original_category", parsed["category"])
+        parsed[field] = value
+
+    for field, values in section_values.items():
+        section_text = "\n".join(value for value in values if value).strip()
+        if section_text:
+            parsed[field] = section_text
 
     if "title" not in parsed:
         first_line = lines[0] if lines else ""
@@ -242,7 +364,12 @@ def _message_from_metadata(metadata: dict[str, Any], fallback: str = "") -> str:
         ("resident_contact", "联系方式"),
         ("location", "位置"),
         ("source_channel", "来源"),
+        ("upstream_status", "上游状态"),
+        ("people_involved", "涉及人员"),
+        ("current_danger", "当前危险"),
         ("description", "内容"),
+        ("customer_assessment", "客服研判"),
+        ("handling_requirements", "处理要求"),
     ]:
         value = _string(metadata.get(field))
         if value:
@@ -256,7 +383,16 @@ def _message_from_metadata(metadata: dict[str, Any], fallback: str = "") -> str:
 def _analysis_text(metadata: dict[str, Any]) -> str:
     return "\n".join(
         _string(metadata.get(field))
-        for field in ("title", "description", "category", "location", "source_channel")
+        for field in (
+            "title",
+            "description",
+            "customer_assessment",
+            "handling_requirements",
+            "current_danger",
+            "category",
+            "location",
+            "source_channel",
+        )
         if _string(metadata.get(field))
     )
 
@@ -289,12 +425,17 @@ def _infer_category_and_role(metadata: dict[str, Any]) -> tuple[str, str, str]:
                     break
         return category, provided_role, "provided_assigned_role"
 
+    category = _string(metadata.get("category"))
+    if category:
+        mapped_category, mapped_role, mapped_reason = _role_from_category(category)
+        if mapped_role and mapped_role != "human_review":
+            return mapped_category, mapped_role, mapped_reason
+
     text = _analysis_text(metadata)
     for role, category, keywords in ROLE_RULES:
         if any(keyword in text for keyword in keywords):
             return category, role, f"keyword:{role}"
 
-    category = _string(metadata.get("category"))
     if category:
         return _role_from_category(category)
 
@@ -304,7 +445,15 @@ def _infer_category_and_role(metadata: dict[str, Any]) -> tuple[str, str, str]:
 def _infer_priority(metadata: dict[str, Any]) -> tuple[str, str]:
     provided = _string(metadata.get("priority")).lower()
     if provided:
-        return provided, "provided_priority"
+        folded = _fold(provided)
+        for priority, aliases in PRIORITY_ALIASES.items():
+            if any(folded == _fold(alias) for alias in aliases):
+                return priority, "provided_priority"
+        return provided, "provided_priority_unmapped"
+
+    danger = _fold(_string(metadata.get("current_danger")))
+    if danger in {"是", "有", "yes", "true", "1"}:
+        return "high", "current_danger"
 
     text = _analysis_text(metadata)
     if HIGH_PRIORITY_RE.search(text):
@@ -357,9 +506,15 @@ def _apply_analysis(metadata: dict[str, Any]) -> dict[str, Any]:
             metadata.setdefault("original_category", current_category)
         metadata["category"] = analysis["category"]
 
-    for field in ("priority", "assigned_role"):
-        if analysis.get(field) and not _string(metadata.get(field)):
-            metadata[field] = analysis[field]
+    analyzed_priority = _string(analysis.get("priority"))
+    current_priority = _string(metadata.get("priority"))
+    if analyzed_priority and analyzed_priority != current_priority:
+        if current_priority:
+            metadata.setdefault("original_priority", current_priority)
+        metadata["priority"] = analyzed_priority
+
+    if analysis.get("assigned_role") and not _string(metadata.get("assigned_role")):
+        metadata["assigned_role"] = analysis["assigned_role"]
 
     metadata["assigned_role_label"] = analysis["assigned_role_label"]
     metadata["assignment_reason"] = analysis["assignment_reason"]
@@ -404,6 +559,9 @@ def _apply_notification_result(record: dict[str, Any], notification: dict[str, A
     metadata = dict(record.get("metadata") if isinstance(record.get("metadata"), dict) else {})
     metadata["notification_status"] = notification.get("status", "")
     metadata["notification_target"] = notification.get("target_env", "")
+    metadata["notification_channel"] = notification.get("channel", "")
+    metadata["notification_recipients"] = notification.get("recipients", [])
+    metadata["notification_message_id"] = notification.get("message_id", "")
     metadata["notification_error"] = notification.get("error", "")
     metadata["notified_at"] = datetime.now(timezone.utc).isoformat()
 
@@ -456,9 +614,11 @@ def create_work_order(payload: dict[str, Any]) -> dict[str, Any]:
     metadata.setdefault("record_kind", kind)
 
     duplicate = False
+    exact_duplicate = False
     existing = _existing_ticket(metadata)
     if existing:
         duplicate = True
+        exact_duplicate = _string(existing.get("message")) == message
         metadata = _merge_metadata(existing, metadata)
         metadata["last_duplicate_received_at"] = datetime.now(timezone.utc).isoformat()
         if not explicit_status:
@@ -489,8 +649,23 @@ def create_work_order(payload: dict[str, Any]) -> dict[str, Any]:
 
     notification: dict[str, Any] | None = None
     if _bool(payload.get("notify")) or _bool(payload.get("send_notification") or payload.get("sendNotification")):
-        notification = notify_staff(record, dry_run=_bool(payload.get("dry_run") or payload.get("dryRun")))
-        record = _apply_notification_result(record, notification)
+        previous_metadata = existing.get("metadata") if existing and isinstance(existing.get("metadata"), dict) else {}
+        already_sent = previous_metadata.get("notification_status") == "sent"
+        force_notify = _bool(payload.get("force_notify") or payload.get("forceNotify"))
+        if exact_duplicate and already_sent and not force_notify:
+            notification = {
+                "ok": True,
+                "status": "skipped_duplicate",
+                "channel": previous_metadata.get("notification_channel", ""),
+                "assigned_role": metadata.get("assigned_role", ""),
+                "target_env": previous_metadata.get("notification_target", ""),
+                "recipients": previous_metadata.get("notification_recipients", []),
+                "content": "",
+                "error": "",
+            }
+        else:
+            notification = notify_staff(record, dry_run=_bool(payload.get("dry_run") or payload.get("dryRun")))
+            record = _apply_notification_result(record, notification)
 
     return {
         "ok": True,

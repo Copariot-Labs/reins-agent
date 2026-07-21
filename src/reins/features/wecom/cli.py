@@ -6,6 +6,7 @@ from typing import Any, Sequence
 
 from reins.features.wecom.docx_importer import import_docx_faq
 from reins.features.wecom.engine import add_faq_entry, export_records, load_faq_entries, process_message
+from reins.features.wecom.plugin_installer import install_hermes_plugin, print_install_instructions
 from reins.features.wecom.store import doctor, list_records, records_report
 from reins.features.wecom.work_order import create_work_order, notify_work_order, record_staff_reply
 
@@ -103,6 +104,7 @@ def build_parser() -> argparse.ArgumentParser:
     work_order_add_parser.add_argument("--chat-type", default="work_order", help="Conversation type.")
     work_order_add_parser.add_argument("--platform", default="wecom", help="Source platform label.")
     work_order_add_parser.add_argument("--notify", action="store_true", help="Notify the responsible WeCom target after recording.")
+    work_order_add_parser.add_argument("--force-notify", action="store_true", help="Notify again even when this is an exact duplicate ticket.")
     work_order_add_parser.add_argument("--dry-run", action="store_true", help="Build the notification without sending it.")
     work_order_add_parser.add_argument("--json", dest="json_output", action="store_true", help="Print JSON.")
 
@@ -124,6 +126,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor_parser = subparsers.add_parser("doctor", help="Check WeCom processor storage.")
     doctor_parser.add_argument("--json", dest="json_output", action="store_true", help="Print JSON.")
+
+    subparsers.add_parser("install-plugin", help="Install the Reins WeCom tools for Hermes profiles.")
 
     return parser
 
@@ -192,6 +196,7 @@ def _work_order_payload(args: argparse.Namespace) -> dict[str, Any]:
         "chat_type",
         "platform",
         "notify",
+        "force_notify",
         "dry_run",
     ]:
         value = getattr(args, key, "")
@@ -343,6 +348,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "doctor":
         _print(doctor(), json_output=args.json_output)
+        return 0
+
+    if args.command == "install-plugin":
+        plugin_dirs = install_hermes_plugin()
+        print_install_instructions(plugin_dirs)
         return 0
 
     parser.print_help()

@@ -87,7 +87,11 @@ function getReplyMessage(body: Record<string, unknown>): string {
 }
 
 function normalizeTicketLabel(value: string): string {
-  return value.replace(/[\s:：]+/g, '').trim().toLowerCase();
+  return value
+    .replace(/^[·•-]\s*/, '')
+    .replace(/[\s:：]+/g, '')
+    .trim()
+    .toLowerCase();
 }
 
 const TICKET_TEXT_FIELD_ALIASES: Record<string, string[]> = {
@@ -99,10 +103,11 @@ const TICKET_TEXT_FIELD_ALIASES: Record<string, string[]> = {
     'work_order_id',
     'workOrderId',
     '工单编号',
+    '工单号',
     '工单ID',
     '编号',
   ],
-  category: ['category', 'type', '问题类型', '工单类型', '分类', '类型'],
+  category: ['category', 'type', '问题类型', '问题类别', '工单类型', '工单类别', '分类', '类别', '类型'],
   priority: ['priority', 'urgency', 'level', '优先级', '紧急程度', '等级'],
   resident_ref: [
     'resident_ref',
@@ -114,16 +119,47 @@ const TICKET_TEXT_FIELD_ALIASES: Record<string, string[]> = {
     '居民引用',
     '居民标识',
     '客户引用',
+    '微信客户',
+    '客户标识',
   ],
-  title: ['summary', 'title', 'subject', '摘要', '标题', '主题', '工单标题'],
-  description: ['description', 'content', 'problem', 'request', '问题描述', '描述', '内容', '居民诉求', '诉求', '问题'],
-  source_channel: ['source', 'source_channel', 'sourceChannel', 'channel', '来源', '来源渠道', '渠道'],
-  ticket_created_at: ['created_at', 'createdAt', 'ticket_created_at', 'ticketCreatedAt', '创建时间', '工单创建时间'],
+  title: ['summary', 'title', 'subject', '摘要', '标题', '主题', '工单标题', '问题/现象'],
+  description: ['description', 'content', 'problem', 'request', '问题描述', '描述', '内容', '居民诉求', '诉求', '问题', '客户原话', '居民原话'],
+  location: ['location', 'address', '位置', '地点', '地址', '小区', '楼栋', '房号'],
+  source_channel: ['source', 'source_channel', 'sourceChannel', 'channel', '来源', '消息来源', '来源渠道', '渠道'],
+  ticket_created_at: ['created_at', 'createdAt', 'ticket_created_at', 'ticketCreatedAt', '创建时间', '工单创建时间', '生成时间'],
+  upstream_status: ['upstream_status', 'upstreamStatus', '工单状态', '处理状态', '状态'],
+  customer_assessment: ['customer_assessment', 'customerAssessment', '客服研判', '客服判断', '网格员研判', '网格研判', '研判'],
+  handling_requirements: ['handling_requirements', 'handlingRequirements', '处理要求', '办理要求'],
+  people_involved: ['people_involved', 'peopleInvolved', '涉及人数', '涉及人员'],
+  current_danger: ['current_danger', 'currentDanger', '当前危险', '是否危险'],
 };
 
-function parseWeComTicketText(message: string): Record<string, unknown> {
+const SECTION_FIELDS: Record<string, string> = {
+  新建工单: '',
+  客户描述: '',
+  客户诉求: '',
+  居民诉求: '',
+  已核实信息: '',
+  已确认信息: '',
+  客服研判: 'customer_assessment',
+  客服判断: 'customer_assessment',
+  网格员研判: 'customer_assessment',
+  网格研判: 'customer_assessment',
+  处理要求: 'handling_requirements',
+  系统信息: '',
+  工单结束: '',
+};
+
+function normalizeTicketSection(value: string): string {
+  return normalizeTicketLabel(value)
+    .replace(/^[【\[]/, '')
+    .replace(/[】\]]$/, '');
+}
+
+export function parseWeComTicketText(message: string): Record<string, unknown> {
   const text = stringArg(message);
   if (!text) return {};
+  if (text.startsWith('【Reins工单通知】')) return {};
 
   const reverseAliases = new Map<string, string>();
   for (const [field, aliases] of Object.entries(TICKET_TEXT_FIELD_ALIASES)) {
@@ -133,18 +169,49 @@ function parseWeComTicketText(message: string): Record<string, unknown> {
   }
 
   const parsed: Record<string, unknown> = {};
+  const sectionValues = new Map<string, string[]>();
+  let currentSection = '';
+
   for (const line of text.split(/\r?\n/)) {
-    const trimmed = line.trim();
+    const trimmed = line.trim().replace(/^[·•-]\s*/, '').trim();
     if (!trimmed || /^\[.+\]$/.test(trimmed)) continue;
 
+    const sectionField = SECTION_FIELDS[normalizeTicketSection(trimmed)];
+    if (sectionField !== undefined) {
+      currentSection = sectionField;
+      if (sectionField && !sectionValues.has(sectionField)) {
+        sectionValues.set(sectionField, []);
+      }
+      continue;
+    }
+
     const match = trimmed.match(/^([^:：]{1,40})[:：]\s*(.+)$/);
-    if (!match) continue;
+    if (!match) {
+      if (currentSection) {
+        sectionValues.get(currentSection)?.push(trimmed);
+      }
+      continue;
+    }
 
     const label = normalizeTicketLabel(match[1]);
     const field = reverseAliases.get(label);
-    if (!field) continue;
+    if (!field) {
+      if (currentSection) {
+        sectionValues.get(currentSection)?.push(trimmed);
+      }
+      continue;
+    }
 
-    parsed[field] = match[2].trim();
+    const value = match[2].trim();
+    if (field === 'category' && parsed.category && parsed.category !== value) {
+      parsed.original_category ??= parsed.category;
+    }
+    parsed[field] = value;
+  }
+
+  for (const [field, values] of sectionValues.entries()) {
+    const value = values.filter(Boolean).join('\n').trim();
+    if (value) parsed[field] = value;
   }
 
   return parsed;

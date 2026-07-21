@@ -40,15 +40,24 @@ WORK_ORDER_METADATA_HEADERS = [
     "category",
     "original_category",
     "priority",
+    "original_priority",
     "assigned_role",
     "assigned_role_label",
     "source_channel",
     "assignee",
     "due_at",
+    "upstream_status",
+    "customer_assessment",
+    "handling_requirements",
+    "people_involved",
+    "current_danger",
     "assignment_reason",
     "priority_reason",
     "notification_status",
     "notification_target",
+    "notification_channel",
+    "notification_recipients",
+    "notification_message_id",
     "notification_error",
     "last_staff_reply",
     "last_staff_reply_at",
@@ -464,6 +473,8 @@ def records_report(kind: str | None = None) -> dict[str, Any]:
 
 
 def doctor() -> dict[str, Any]:
+    from reins.features.wecom.notifier import notification_doctor
+
     migrate()
     records_path = export_records_xlsx()
 
@@ -479,4 +490,5 @@ def doctor() -> dict[str, Any]:
         "records_xlsx_path": str(records_path),
         "record_count": record_count,
         "reply_count": reply_count,
+        "notifications": notification_doctor(),
     }

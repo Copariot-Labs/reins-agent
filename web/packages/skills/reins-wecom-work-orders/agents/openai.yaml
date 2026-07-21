@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reins WeCom Work Orders"
+  short_description: "Process WeCom group tickets and notify assigned staff"
+  default_prompt: "Use $reins-wecom-work-orders to process this WeCom group work order."
