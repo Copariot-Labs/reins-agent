@@ -28,6 +28,22 @@ ROLE_USER_ENV = {
     "human_review": "REINS_WECOM_NOTIFY_USERS_HUMAN_REVIEW",
 }
 
+# Preferred production mode: one shared WeCom group bot webhook.
+# The role-specific UserID variables below are reused as real group mentions.
+WECOM_GROUP_WEBHOOK_ENV = "REINS_WECOM_NOTIFY_GROUP_WEBHOOK"
+WECOM_REPLY_BOT_NAME_ENV = "REINS_WECOM_REPLY_BOT_NAME"
+
+PRIORITY_LABELS = {
+    "high": "紧急",
+    "urgent": "紧急",
+    "critical": "紧急",
+    "emergency": "紧急",
+    "normal": "普通",
+    "medium": "普通",
+    "low": "低",
+}
+
+
 WECOM_CORP_ID_ENV = "REINS_WECOM_CORP_ID"
 WECOM_APP_SECRET_ENV = "REINS_WECOM_APP_SECRET"
 WECOM_APP_AGENT_ID_ENV = "REINS_WECOM_APP_AGENT_ID"
@@ -82,39 +98,51 @@ def _split_user_ids(value: Any) -> list[str]:
     return users
 
 
+def _priority_label(value: Any) -> str:
+    priority = _string(value)
+    if not priority:
+        return "普通"
+    return PRIORITY_LABELS.get(priority.lower(), priority)
+
+
 def build_staff_notification(record: dict[str, Any]) -> str:
     metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
     role_label = _string(metadata.get("assigned_role_label") or metadata.get("assigned_role") or "相关人员")
+    ticket_id = _string(metadata.get("external_id") or metadata.get("ticket_id")) or _string(record.get("id"))
+    priority = _priority_label(metadata.get("priority"))
+    category = _string(metadata.get("category")) or "未分类"
+    location = _string(metadata.get("location"))
+
+    # Keep the resident's complete issue content. Prefer the parsed resident
+    # description, then the title, then the stored message as a final fallback.
+    issue = _string(metadata.get("description") or metadata.get("title") or record.get("message"))
+    requirements = _string(metadata.get("handling_requirements"))
+    reply_bot_name = os.environ.get(WECOM_REPLY_BOT_NAME_ENV, "社区美女").strip() or "社区美女"
+
     lines = [
-        f"【Reins工单通知】请{role_label}跟进",
-        f"工单编号：{_string(metadata.get('external_id') or metadata.get('ticket_id')) or record.get('id')}",
-        f"状态：{_string(record.get('status')) or 'new'}",
-        f"优先级：{_string(metadata.get('priority')) or 'normal'}",
-        f"分类：{_string(metadata.get('category')) or '未分类'}",
+        "【Reins工单提醒】",
+        f"工单编号：{ticket_id}",
+        f"负责人：{role_label}",
+        f"优先级：{priority}",
+        f"类型：{category}",
     ]
 
-    for label, key in [
-        ("来源", "source_channel"),
-        ("创建时间", "ticket_created_at"),
-        ("上游状态", "upstream_status"),
-        ("涉及人员", "people_involved"),
-        ("当前危险", "current_danger"),
-        ("居民", "resident_ref"),
-        ("位置", "location"),
-        ("标题", "title"),
-        ("内容", "description"),
-        ("客服研判", "customer_assessment"),
-        ("处理要求", "handling_requirements"),
-    ]:
-        value = _string(metadata.get(key))
-        if value:
-            lines.append(f"{label}：{value}")
+    if location:
+        lines.append(f"地点：{location}")
 
-    errors = metadata.get("validation_errors")
-    if isinstance(errors, list) and errors:
-        lines.append(f"需要人工确认：{', '.join(str(item) for item in errors)}")
+    if issue:
+        lines.extend(["", "居民诉求：", issue])
 
-    lines.append("处理后请回复工单编号和处理结果，Reins会更新工单记录。")
+    if requirements:
+        lines.extend(["", f"处理要求：{requirements}"])
+
+    lines.extend(
+        [
+            "",
+            "请被@的负责人尽快跟进处理。",
+            f"完成后请在本群 @{reply_bot_name} 回复：{ticket_id} 已处理：<处理结果>",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -283,11 +311,23 @@ def send_wecom_app_text(
     }
 
 
-def send_wecom_text(webhook_url: str, content: str, *, timeout: float = 10.0) -> dict[str, Any]:
+def send_wecom_text(
+    webhook_url: str,
+    content: str,
+    *,
+    mentioned_user_ids: list[str] | None = None,
+    timeout: float = 10.0,
+) -> dict[str, Any]:
+    text_payload: dict[str, Any] = {"content": content}
+    if mentioned_user_ids:
+        # WeCom group-bot text messages support real member mentions through
+        # mentioned_list. Values must be internal WeCom UserIDs.
+        text_payload["mentioned_list"] = mentioned_user_ids
+
     payload = json.dumps(
         {
             "msgtype": "text",
-            "text": {"content": content},
+            "text": text_payload,
         },
         ensure_ascii=False,
     ).encode("utf-8")
@@ -334,6 +374,7 @@ def send_wecom_text(webhook_url: str, content: str, *, timeout: float = 10.0) ->
         "status": "sent",
         "error": "",
         "body": body,
+        "message_id": "",
     }
 
 
@@ -342,6 +383,53 @@ def notify_staff(record: dict[str, Any], *, dry_run: bool = False) -> dict[str, 
     role = _string(metadata.get("assigned_role")) or "human_review"
     content = build_staff_notification(record)
     user_ids, user_env_name = users_for_role(role)
+
+    # New preferred mode: send one concise message to the shared operations
+    # group and mention the responsible member(s) using their internal UserIDs.
+    group_webhook = os.environ.get(WECOM_GROUP_WEBHOOK_ENV, "").strip()
+    if group_webhook:
+        channel = "group_webhook_mention"
+
+        if dry_run:
+            return {
+                "ok": True,
+                "status": "dry_run",
+                "channel": channel,
+                "assigned_role": role,
+                "target_env": WECOM_GROUP_WEBHOOK_ENV,
+                "recipients": user_ids,
+                "content": content,
+                "error": "",
+            }
+
+        if not user_ids:
+            return {
+                "ok": False,
+                "status": "pending_configuration",
+                "channel": channel,
+                "assigned_role": role,
+                "target_env": WECOM_GROUP_WEBHOOK_ENV,
+                "recipients": [],
+                "content": content,
+                "error": f"missing {user_env_name}",
+            }
+
+        result = send_wecom_text(
+            group_webhook,
+            content,
+            mentioned_user_ids=user_ids,
+        )
+        return {
+            **result,
+            "channel": channel,
+            "assigned_role": role,
+            "target_env": WECOM_GROUP_WEBHOOK_ENV,
+            "recipients": user_ids,
+            "content": content,
+        }
+
+    # Backward-compatible fallback. If the new shared-group webhook is not
+    # configured, preserve the old private-message/application behavior.
     webhook_url, webhook_env_name = webhook_for_role(role)
 
     if user_ids:
@@ -431,32 +519,43 @@ def notification_doctor() -> dict[str, Any]:
         WECOM_APP_AGENT_ID_ENV: bool(os.environ.get(WECOM_APP_AGENT_ID_ENV, "").strip()),
     }
     app_credentials_ready = all(credentials.values())
+    shared_group_ready = bool(os.environ.get(WECOM_GROUP_WEBHOOK_ENV, "").strip())
     roles: dict[str, Any] = {}
 
     for role in ROLE_USER_ENV:
         user_ids, user_env = users_for_role(role)
-        webhook_url, webhook_env = webhook_for_role(role)
-        if user_ids:
-            mode = "private_message"
-            ready = app_credentials_ready
-            target_env = user_env
-        elif webhook_url:
-            mode = "group_webhook_fallback"
-            ready = True
-            target_env = webhook_env
+
+        if shared_group_ready:
+            mode = "group_webhook_mention"
+            ready = bool(user_ids)
+            target_env = WECOM_GROUP_WEBHOOK_ENV
         else:
-            mode = "not_configured"
-            ready = False
-            target_env = user_env
+            webhook_url, webhook_env = webhook_for_role(role)
+            if user_ids:
+                mode = "private_message"
+                ready = app_credentials_ready
+                target_env = user_env
+            elif webhook_url:
+                mode = "group_webhook_fallback"
+                ready = True
+                target_env = webhook_env
+            else:
+                mode = "not_configured"
+                ready = False
+                target_env = user_env
 
         roles[role] = {
             "ready": ready,
             "mode": mode,
             "target_env": target_env,
+            "recipient_env": user_env,
             "recipient_count": len(user_ids),
         }
 
     return {
+        "preferred_mode": "group_webhook_mention" if shared_group_ready else "legacy",
+        "group_webhook_ready": shared_group_ready,
+        "group_webhook_env": WECOM_GROUP_WEBHOOK_ENV,
         "app_credentials_ready": app_credentials_ready,
         "credentials": credentials,
         "roles": roles,

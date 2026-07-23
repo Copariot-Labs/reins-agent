@@ -60,6 +60,16 @@ def preprocess_inbound_work_order(
     platform_name = str(getattr(platform, "value", platform) or "").lower()
     if platform_name != "wecom":
         return None
+    lines = message.splitlines()
+    if (
+        len(lines) > 1
+        and lines[0].strip().startswith("@")
+        and (
+            lines[1].strip().startswith("【新建工单】")
+            or lines[1].strip().startswith("待处理工单")
+        )
+    ):
+        message = "\n".join(lines[1:]).strip()
     if not (message.startswith("【新建工单】") or message.startswith("待处理工单")):
         return None
 
@@ -90,7 +100,7 @@ def register_ingest_group_ticket(ctx) -> None:
         "name": "wecom_ingest_group_ticket",
         "description": (
             "Parse one complete WeCom group work-order message, classify the responsible role, "
-            "save or update its Excel record, and privately notify configured staff."
+            "save or update its Excel record, and mention the responsible staff in the shared WeCom group."
         ),
         "parameters": {
             "type": "object",
@@ -211,7 +221,7 @@ def register_report(ctx) -> None:
 def register_doctor(ctx) -> None:
     schema = {
         "name": "wecom_work_order_doctor",
-        "description": "Check Reins WeCom storage and role-specific private notification configuration.",
+        "description": "Check Reins WeCom storage and shared-group mention notification configuration.",
         "parameters": {"type": "object", "properties": {}, "required": []},
     }
 

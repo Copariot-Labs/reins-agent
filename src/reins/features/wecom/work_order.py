@@ -194,7 +194,7 @@ LOW_PRIORITY_RE = re.compile(r"咨询|了解|问一下|什么时候|哪里|如�
 RESOLVED_RE = re.compile(r"已处理|已解决|已完成|完成|解决了|修好|办结|closed|resolved|done", re.IGNORECASE)
 
 PRIORITY_ALIASES = {
-    "high": ("high", "urgent", "critical", "emergency", "紧急", "危急", "高", "重要"),
+    "high": ("high", "urgent", "critical", "emergency", "紧急", "危急", "高", "重要", "优先"),
     "normal": ("normal", "medium", "普通", "正常", "一般", "中"),
     "low": ("low", "低", "较低", "不紧急"),
 }
@@ -233,6 +233,13 @@ def _normal_label(value: str) -> str:
 
 def _normal_section_label(value: str) -> str:
     return _normal_label(value).strip("【】[]")
+
+
+def _strip_markdown_decoration(value: str) -> str:
+    clean = re.sub(r"^#{1,6}\s+", "", value.strip())
+    if len(clean) >= 4 and clean.startswith("**") and clean.endswith("**"):
+        clean = clean[2:-2].strip()
+    return clean
 
 
 def _fold(value: str) -> str:
@@ -274,6 +281,14 @@ def parse_work_order_message(message: str) -> dict[str, str]:
     if text.lstrip().startswith("【Reins工单通知】"):
         return {}
 
+    lines = [_strip_markdown_decoration(line) for line in text.splitlines() if line.strip()]
+    if (
+        len(lines) > 1
+        and lines[0].startswith("@")
+        and (lines[1].startswith("【新建工单】") or lines[1].startswith("待处理工单"))
+    ):
+        lines = lines[1:]
+
     reverse_aliases: dict[str, str] = {}
     for field, aliases in FIELD_ALIASES.items():
         for alias in aliases:
@@ -282,7 +297,6 @@ def parse_work_order_message(message: str) -> dict[str, str]:
     parsed: dict[str, str] = {}
     section_values: dict[str, list[str]] = {}
     current_section = ""
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
     for raw_line in lines:
         line = re.sub(r"^[·•\-]\s*", "", raw_line).strip()
         normalized_line = _normal_section_label(line)
@@ -652,6 +666,9 @@ def create_work_order(payload: dict[str, Any]) -> dict[str, Any]:
         previous_metadata = existing.get("metadata") if existing and isinstance(existing.get("metadata"), dict) else {}
         already_sent = previous_metadata.get("notification_status") == "sent"
         force_notify = _bool(payload.get("force_notify") or payload.get("forceNotify"))
+        notification_event_key = _string(metadata.get("notification_event_key"))
+        if notification_event_key and previous_metadata.get("notification_event_key") == notification_event_key:
+            force_notify = False
         if exact_duplicate and already_sent and not force_notify:
             notification = {
                 "ok": True,

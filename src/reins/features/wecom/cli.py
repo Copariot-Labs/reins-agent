@@ -1,13 +1,34 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import json
 from typing import Any, Sequence
 
+from dotenv import load_dotenv
+
+from reins.api.home import get_reins_home
 from reins.features.wecom.docx_importer import import_docx_faq
 from reins.features.wecom.engine import add_faq_entry, export_records, load_faq_entries, process_message
 from reins.features.wecom.plugin_installer import install_hermes_plugin, print_install_instructions
 from reins.features.wecom.store import doctor, list_records, records_report
+from reins.features.wecom.ticket_api import (
+    TicketAPIConfig,
+    clear_cursor,
+    inspect_tickets,
+    load_cursor,
+    poll_forever,
+    poll_once,
+    save_cursor,
+    ticket_api_doctor,
+)
+from reins.features.wecom.ticket_service import (
+    install_service,
+    service_status,
+    start_service,
+    stop_service,
+    uninstall_service,
+)
 from reins.features.wecom.work_order import create_work_order, notify_work_order, record_staff_reply
 
 
@@ -124,6 +145,72 @@ def build_parser() -> argparse.ArgumentParser:
     work_order_reply_parser.add_argument("--replied-at", default="", help="Reply timestamp.")
     work_order_reply_parser.add_argument("--json", dest="json_output", action="store_true", help="Print JSON.")
 
+    ticket_api_parser = subparsers.add_parser(
+        "ticket-api",
+        help="Poll the internal ticket API and notify responsible staff in the shared WeCom group.",
+    )
+    ticket_api_subparsers = ticket_api_parser.add_subparsers(dest="ticket_api_command")
+
+    ticket_poll_parser = ticket_api_subparsers.add_parser("poll", help="Fetch and process available tickets.")
+    ticket_poll_parser.add_argument("--url", default=None, help="Override REINS_TICKET_API_URL.")
+    ticket_poll_parser.add_argument("--since", default=None, help="Override the saved ISO-8601 cursor for this run.")
+    ticket_poll_parser.add_argument(
+        "--status",
+        action="append",
+        default=None,
+        help="Status to fetch; repeat or use comma-separated values.",
+    )
+    ticket_poll_parser.add_argument("--limit", type=int, default=None, help="Tickets per API request (1-100).")
+    ticket_poll_parser.add_argument("--interval", type=float, default=None, help="Watch interval in seconds (minimum 5).")
+    ticket_poll_parser.add_argument("--timeout", type=float, default=None, help="HTTP timeout in seconds.")
+    ticket_poll_parser.add_argument("--cursor-path", default=None, help="Override the local cursor JSON path.")
+    ticket_poll_parser.add_argument("--watch", action="store_true", help="Continue polling until interrupted.")
+    ticket_poll_parser.add_argument("--dry-run", action="store_true", help="Classify and preview without sending or advancing the cursor.")
+    ticket_poll_parser.add_argument("--reset-cursor", action="store_true", help="Remove the saved cursor before polling.")
+    ticket_poll_parser.add_argument("--json", dest="json_output", action="store_true", help="Print JSON.")
+    ticket_poll_parser.add_argument("--json-lines", action="store_true", help="Print one compact JSON object per watch cycle.")
+
+    ticket_doctor_parser = ticket_api_subparsers.add_parser("doctor", help="Check ticket API and WeCom notification configuration.")
+    ticket_doctor_parser.add_argument("--json", dest="json_output", action="store_true", help="Print JSON.")
+
+    ticket_inspect_parser = ticket_api_subparsers.add_parser(
+        "inspect",
+        help="Read sanitized ticket metadata without recording or notifying.",
+    )
+    ticket_inspect_parser.add_argument("--url", default=None, help="Override REINS_TICKET_API_URL.")
+    ticket_inspect_parser.add_argument("--since", default="", help="Optional ISO-8601 lower bound; empty means no cursor.")
+    ticket_inspect_parser.add_argument(
+        "--status",
+        action="append",
+        default=[],
+        help="Optional status filter; omit it to use the API default.",
+    )
+    ticket_inspect_parser.add_argument("--limit", type=int, default=5, help="Tickets per API request (1-100).")
+    ticket_inspect_parser.add_argument("--timeout", type=float, default=None, help="HTTP timeout in seconds.")
+    ticket_inspect_parser.add_argument("--json", dest="json_output", action="store_true", help="Print JSON.")
+
+    ticket_cursor_parser = ticket_api_subparsers.add_parser("cursor", help="Show, set, or reset the polling cursor.")
+    ticket_cursor_actions = ticket_cursor_parser.add_mutually_exclusive_group()
+    ticket_cursor_actions.add_argument("--set", dest="cursor_since", default="", help="Set an ISO-8601 since value.")
+    ticket_cursor_actions.add_argument("--now", action="store_true", help="Start watching from the current UTC time.")
+    ticket_cursor_actions.add_argument("--reset", action="store_true", help="Remove the saved cursor.")
+    ticket_cursor_parser.add_argument("--json", dest="json_output", action="store_true", help="Print JSON.")
+
+    ticket_service_parser = ticket_api_subparsers.add_parser(
+        "service",
+        help="Manage the standalone macOS ticket poller service.",
+    )
+    ticket_service_subparsers = ticket_service_parser.add_subparsers(dest="ticket_service_command")
+    ticket_service_install = ticket_service_subparsers.add_parser("install", help="Install and start the launchd poller.")
+    ticket_service_install.add_argument("--interval", type=float, default=None, help="Poll interval in seconds (minimum 5).")
+    ticket_service_install.add_argument(
+        "--replay-existing",
+        action="store_true",
+        help="Process existing matching tickets instead of starting from the current time.",
+    )
+    for service_command in ("start", "stop", "status", "uninstall"):
+        ticket_service_subparsers.add_parser(service_command)
+
     doctor_parser = subparsers.add_parser("doctor", help="Check WeCom processor storage.")
     doctor_parser.add_argument("--json", dest="json_output", action="store_true", help="Print JSON.")
 
@@ -155,6 +242,21 @@ def _print(value: Any, *, json_output: bool) -> None:
             print(_json(value))
     else:
         print(_json(value))
+
+
+def _print_json_line(value: Any) -> None:
+    print(json.dumps(value, ensure_ascii=False, separators=(",", ":")), flush=True)
+
+
+def _ticket_api_config(args: argparse.Namespace) -> TicketAPIConfig:
+    return TicketAPIConfig.from_env(
+        url=getattr(args, "url", None),
+        statuses=getattr(args, "status", None),
+        limit=getattr(args, "limit", None),
+        poll_interval=getattr(args, "interval", None),
+        timeout=getattr(args, "timeout", None),
+        cursor_path=getattr(args, "cursor_path", None),
+    )
 
 
 def _metadata(raw: str) -> dict[str, Any]:
@@ -223,6 +325,7 @@ def _work_order_reply_payload(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    load_dotenv(get_reins_home() / ".env", override=False)
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
 
@@ -344,6 +447,122 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         work_order_parser = next(action for action in parser._actions if action.dest == "command").choices["work-order"]
         work_order_parser.print_help()
+        return 0
+
+    if args.command == "ticket-api":
+        if args.ticket_api_command == "poll":
+            config = _ticket_api_config(args)
+            if args.reset_cursor:
+                clear_cursor(config.cursor_path)
+            if args.watch:
+                emit = _print_json_line if args.json_lines else lambda value: _print(
+                    value,
+                    json_output=args.json_output,
+                )
+                try:
+                    poll_forever(
+                        config,
+                        since=args.since,
+                        dry_run=args.dry_run,
+                        emit=emit,
+                    )
+                except KeyboardInterrupt:
+                    return 0
+                return 0
+            try:
+                result = poll_once(config, since=args.since, dry_run=args.dry_run)
+            except Exception as exc:
+                result = {"ok": False, "error": str(exc)}
+            if args.json_lines:
+                _print_json_line(result)
+            else:
+                _print(result, json_output=args.json_output)
+            return 0 if result.get("ok") else 1
+
+        if args.ticket_api_command == "doctor":
+            result = ticket_api_doctor(_ticket_api_config(args))
+            _print(result, json_output=args.json_output)
+            return 0 if result.get("ok") else 1
+
+        if args.ticket_api_command == "inspect":
+            config = _ticket_api_config(args)
+            try:
+                result = inspect_tickets(config, since=args.since)
+            except Exception as exc:
+                result = {"ok": False, "error": str(exc)}
+            _print(result, json_output=args.json_output)
+            return 0 if result.get("ok") else 1
+
+        if args.ticket_api_command == "cursor":
+            config = _ticket_api_config(args)
+            if args.reset:
+                removed = clear_cursor(config.cursor_path)
+                result = {
+                    "ok": True,
+                    "action": "reset",
+                    "removed": removed,
+                    "cursor_path": str(config.cursor_path),
+                    "cursor": {},
+                }
+            elif args.now or args.cursor_since:
+                since = args.cursor_since or datetime.now(timezone.utc).replace(
+                    tzinfo=None,
+                    microsecond=0,
+                ).isoformat()
+                save_cursor(config.cursor_path, since)
+                result = {
+                    "ok": True,
+                    "action": "set",
+                    "cursor_path": str(config.cursor_path),
+                    "cursor": load_cursor(config.cursor_path),
+                }
+            else:
+                result = {
+                    "ok": True,
+                    "action": "show",
+                    "cursor_path": str(config.cursor_path),
+                    "cursor": load_cursor(config.cursor_path),
+                }
+            _print(result, json_output=args.json_output)
+            return 0
+
+        if args.ticket_api_command == "service":
+            service_command = args.ticket_service_command
+            if service_command == "install":
+                config = TicketAPIConfig.from_env(poll_interval=args.interval)
+                try:
+                    config.validate()
+                except Exception as exc:
+                    _print({"ok": False, "error": str(exc)}, json_output=True)
+                    return 1
+                if not args.replay_existing and not load_cursor(config.cursor_path).get("since"):
+                    since = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0).isoformat()
+                    save_cursor(config.cursor_path, since)
+                result = install_service(interval=config.poll_interval)
+            elif service_command == "start":
+                result = start_service()
+            elif service_command == "stop":
+                result = stop_service()
+            elif service_command == "status":
+                result = service_status()
+            elif service_command == "uninstall":
+                result = uninstall_service()
+            else:
+                command_parser = next(
+                    action for action in parser._actions if action.dest == "command"
+                ).choices["ticket-api"]
+                service_parser = next(
+                    action for action in command_parser._actions if action.dest == "ticket_api_command"
+                ).choices["service"]
+                service_parser.print_help()
+                return 0
+            _print(result, json_output=True)
+            return 0 if result.get("ok") else 1
+
+        command_parser = next(
+            action for action in parser._actions if action.dest == "command"
+        ).choices["ticket-api"]
+        command_parser.print_help()
         return 0
 
     if args.command == "doctor":

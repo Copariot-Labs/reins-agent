@@ -107,6 +107,27 @@ SCREENSHOT_WECOM_TICKET = """【新建工单】
 居民标识：wmvlKYcAAAcuk-t3-61mAc2tStCYuNKA
 【工单结束】"""
 
+MENTIONED_POWER_OUTAGE_TICKET = """@社区美女
+【新建工单】
+工单编号：t_a04299d4b5e34bb4
+处理状态：待处理
+优先级：优先
+问题类别：公共设施维修
+消息来源：微信居民消息
+生成时间：2026-07-22 10:53:18（北京时间）
+【居民诉求】
+居民原话：3栋 404 没电了
+【已确认信息】
+- 地点：3栋404
+- 问题/现象：停电
+【网格员研判】
+居民反映3栋404没电了
+【处理要求】
+请尽快联系或到场处理；完成后在本群同步结果。
+【系统信息】
+居民标识：wmvlKYcAAAVUcll6OBn5cwI6JnqPcN2g
+【工单结束】"""
+
 
 class WeComWorkOrderTests(unittest.TestCase):
     def test_ignores_reins_staff_notification_to_prevent_group_loops(self):
@@ -166,7 +187,7 @@ class WeComWorkOrderTests(unittest.TestCase):
             self.assertIn("handling_requirements", worksheet)
             self.assertIn("t_89751e8754e44289", worksheet)
             self.assertIn('state="frozen"', worksheet)
-            self.assertIn('<autoFilter ref="A1:AU2"/>', worksheet)
+            self.assertIn('<autoFilter ref="A1:BB2"/>', worksheet)
 
     def test_verified_repair_category_beats_ambiguous_bathroom_keyword(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -243,6 +264,36 @@ class WeComWorkOrderTests(unittest.TestCase):
         self.assertEqual(result["analysis"]["assigned_role"], "property")
         self.assertEqual(result["record"]["metadata"]["assigned_role_label"], "物业")
         self.assertEqual(result["notification"]["channel"], "private_message")
+        self.assertEqual(result["notification"]["recipients"], ["property-maintenance-1"])
+
+    def test_parses_mentioned_power_outage_and_normalizes_priority(self):
+        parsed = parse_work_order_message(MENTIONED_POWER_OUTAGE_TICKET)
+        self.assertEqual(parsed["external_id"], "t_a04299d4b5e34bb4")
+        self.assertEqual(parsed["priority"], "优先")
+        self.assertEqual(parsed["category"], "公共设施维修")
+        self.assertEqual(parsed["location"], "3栋404")
+        self.assertEqual(parsed["title"], "停电")
+
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(
+                os.environ,
+                {
+                    "REINS_HOME": directory,
+                    "REINS_WECOM_NOTIFY_USERS_PROPERTY": "property-maintenance-1",
+                },
+                clear=True,
+            ):
+                result = create_work_order(
+                    {
+                        "message": MENTIONED_POWER_OUTAGE_TICKET,
+                        "notify": True,
+                        "dry_run": True,
+                    }
+                )
+
+        self.assertEqual(result["analysis"]["priority"], "high")
+        self.assertEqual(result["analysis"]["assigned_role"], "property")
+        self.assertEqual(result["record"]["metadata"]["original_priority"], "优先")
         self.assertEqual(result["notification"]["recipients"], ["property-maintenance-1"])
 
     def test_parses_model_tool_call_with_literal_escaped_newlines(self):
@@ -411,6 +462,24 @@ class WeComWorkOrderTests(unittest.TestCase):
         self.assertIn('"external_id": "t_3ab6a6d8f17648ad"', context_text)
         self.assertIn('"assigned_role": "property"', context_text)
         self.assertIn('"target_env": "REINS_WECOM_NOTIFY_USERS_PROPERTY"', context_text)
+
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(
+                os.environ,
+                {
+                    "REINS_HOME": directory,
+                    "REINS_WECOM_NOTIFY_USERS_PROPERTY": "property-maintenance-1",
+                },
+                clear=True,
+            ):
+                mentioned = context.hooks["pre_llm_call"](
+                    user_message=MENTIONED_POWER_OUTAGE_TICKET,
+                    platform="wecom",
+                )
+
+        self.assertIsNotNone(mentioned)
+        self.assertIn('"external_id": "t_a04299d4b5e34bb4"', mentioned["context"])
+        self.assertIn('"priority": "high"', mentioned["context"])
 
         self.assertIsNone(
             context.hooks["pre_llm_call"](
