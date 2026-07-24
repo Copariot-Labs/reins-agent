@@ -30,6 +30,7 @@ def _work_order_result(result: dict[str, Any]) -> dict[str, Any]:
             "status": notification.get("status", ""),
             "channel": notification.get("channel", ""),
             "target_env": notification.get("target_env", ""),
+            "recipient_env": notification.get("recipient_env", ""),
             "recipients": notification.get("recipients", []),
             "error": notification.get("error", ""),
         },

@@ -124,6 +124,12 @@ def _work_order_issue(record: dict[str, Any], metadata: dict[str, Any]) -> str:
 
 def _staff_work_order_values(record: dict[str, Any]) -> list[object]:
     metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+    notification_recipients = metadata.get("notification_recipients")
+    assignee_from_notification = (
+        "、".join(str(value).strip() for value in notification_recipients if str(value).strip())
+        if isinstance(notification_recipients, list)
+        else ""
+    )
 
     created_at = _first_non_empty(
         metadata.get("ticket_created_at"),
@@ -153,7 +159,10 @@ def _staff_work_order_values(record: dict[str, Any]) -> list[object]:
             metadata.get("assigned_role_label"),
             metadata.get("assigned_role"),
         ),
-        "assignee": _clean(metadata.get("assignee")),
+        "assignee": _first_non_empty(
+            metadata.get("assignee"),
+            assignee_from_notification,
+        ),
         "location": _clean(metadata.get("location")),
         "issue": _work_order_issue(record, metadata),
         "handling_requirements": _clean(metadata.get("handling_requirements")),

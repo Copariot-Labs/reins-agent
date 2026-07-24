@@ -14,6 +14,11 @@ from reins.features.wecom.plugin_installer import install_hermes_plugin
 from reins.features.wecom.work_order import create_work_order, parse_work_order_message
 
 
+TEST_GROUP_WEBHOOK = (
+    "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test-group-robot-key"
+)
+
+
 PRODUCTION_WECOM_TICKET = """待处理工单：待处理工单
 · 工单号：t_89751e8754e44289
 · 优先级：normal
@@ -133,7 +138,7 @@ class WeComWorkOrderTests(unittest.TestCase):
     def test_ignores_reins_staff_notification_to_prevent_group_loops(self):
         self.assertEqual(
             parse_work_order_message(
-                "【Reins工单通知】请物业跟进\n工单编号：t_loop_test\n标题：卫生间漏水"
+                "【Reins工单提醒】请物业跟进\n工单编号：t_loop_test\n标题：卫生间漏水"
             ),
             {},
         )
@@ -157,7 +162,15 @@ class WeComWorkOrderTests(unittest.TestCase):
 
     def test_records_routes_and_deduplicates_production_ticket(self):
         with tempfile.TemporaryDirectory() as directory:
-            with patch.dict(os.environ, {"REINS_HOME": directory}, clear=True):
+            with patch.dict(
+                os.environ,
+                {
+                    "REINS_HOME": directory,
+                    "REINS_WECOM_NOTIFY_GROUP_WEBHOOK": TEST_GROUP_WEBHOOK,
+                    "REINS_WECOM_NOTIFY_USERS_CLEANING": "cleaner-1",
+                },
+                clear=True,
+            ):
                 first = create_work_order(
                     {
                         "message": PRODUCTION_WECOM_TICKET,
@@ -171,8 +184,12 @@ class WeComWorkOrderTests(unittest.TestCase):
             self.assertEqual(first["analysis"]["assigned_role"], "cleaning")
             self.assertEqual(metadata["assigned_role_label"], "保洁")
             self.assertEqual(metadata["category"], "公共区域清扫")
-            self.assertEqual(first["notification"]["channel"], "private_message")
-            self.assertEqual(first["notification"]["target_env"], "REINS_WECOM_NOTIFY_USERS_CLEANING")
+            self.assertEqual(first["notification"]["channel"], "group_webhook_mention")
+            self.assertEqual(first["notification"]["target_env"], "REINS_WECOM_NOTIFY_GROUP_WEBHOOK")
+            self.assertEqual(
+                first["notification"]["recipient_env"],
+                "REINS_WECOM_NOTIFY_USERS_CLEANING",
+            )
             self.assertIn("客服研判", first["notification"]["content"])
             self.assertFalse(first["duplicate"])
             self.assertTrue(second["duplicate"])
@@ -182,12 +199,14 @@ class WeComWorkOrderTests(unittest.TestCase):
             self.assertTrue(workbook_path.is_file())
             with ZipFile(workbook_path) as workbook:
                 worksheet = workbook.read("xl/worksheets/sheet1.xml").decode("utf-8")
-            self.assertIn("upstream_status", worksheet)
-            self.assertIn("customer_assessment", worksheet)
-            self.assertIn("handling_requirements", worksheet)
+            self.assertIn("工单编号", worksheet)
+            self.assertIn("居民诉求", worksheet)
+            self.assertIn("处理要求", worksheet)
+            self.assertIn("通知状态", worksheet)
+            self.assertIn("cleaner-1", worksheet)
             self.assertIn("t_89751e8754e44289", worksheet)
             self.assertIn('state="frozen"', worksheet)
-            self.assertIn('<autoFilter ref="A1:BB2"/>', worksheet)
+            self.assertIn('<autoFilter ref="A1:O2"/>', worksheet)
 
     def test_verified_repair_category_beats_ambiguous_bathroom_keyword(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -195,6 +214,7 @@ class WeComWorkOrderTests(unittest.TestCase):
                 os.environ,
                 {
                     "REINS_HOME": directory,
+                    "REINS_WECOM_NOTIFY_GROUP_WEBHOOK": TEST_GROUP_WEBHOOK,
                     "REINS_WECOM_NOTIFY_USERS_PROPERTY": "property-user-1|property-user-2",
                 },
                 clear=True,
@@ -210,8 +230,12 @@ class WeComWorkOrderTests(unittest.TestCase):
         self.assertEqual(result["analysis"]["priority"], "high")
         self.assertEqual(result["analysis"]["assigned_role"], "property")
         self.assertEqual(result["record"]["metadata"]["assigned_role_label"], "物业")
-        self.assertEqual(result["notification"]["channel"], "private_message")
-        self.assertEqual(result["notification"]["target_env"], "REINS_WECOM_NOTIFY_USERS_PROPERTY")
+        self.assertEqual(result["notification"]["channel"], "group_webhook_mention")
+        self.assertEqual(result["notification"]["target_env"], "REINS_WECOM_NOTIFY_GROUP_WEBHOOK")
+        self.assertEqual(
+            result["notification"]["recipient_env"],
+            "REINS_WECOM_NOTIFY_USERS_PROPERTY",
+        )
         self.assertEqual(result["notification"]["recipients"], ["property-user-1", "property-user-2"])
 
     def test_parses_and_routes_bracketed_emergency_ticket(self):
@@ -248,6 +272,7 @@ class WeComWorkOrderTests(unittest.TestCase):
                 os.environ,
                 {
                     "REINS_HOME": directory,
+                    "REINS_WECOM_NOTIFY_GROUP_WEBHOOK": TEST_GROUP_WEBHOOK,
                     "REINS_WECOM_NOTIFY_USERS_PROPERTY": "property-maintenance-1",
                 },
                 clear=True,
@@ -263,7 +288,7 @@ class WeComWorkOrderTests(unittest.TestCase):
         self.assertEqual(result["analysis"]["priority"], "high")
         self.assertEqual(result["analysis"]["assigned_role"], "property")
         self.assertEqual(result["record"]["metadata"]["assigned_role_label"], "物业")
-        self.assertEqual(result["notification"]["channel"], "private_message")
+        self.assertEqual(result["notification"]["channel"], "group_webhook_mention")
         self.assertEqual(result["notification"]["recipients"], ["property-maintenance-1"])
 
     def test_parses_mentioned_power_outage_and_normalizes_priority(self):
@@ -279,6 +304,7 @@ class WeComWorkOrderTests(unittest.TestCase):
                 os.environ,
                 {
                     "REINS_HOME": directory,
+                    "REINS_WECOM_NOTIFY_GROUP_WEBHOOK": TEST_GROUP_WEBHOOK,
                     "REINS_WECOM_NOTIFY_USERS_PROPERTY": "property-maintenance-1",
                 },
                 clear=True,
@@ -316,9 +342,10 @@ class WeComWorkOrderTests(unittest.TestCase):
         sent_notification = {
             "ok": True,
             "status": "sent",
-            "channel": "private_message",
+            "channel": "group_webhook_mention",
             "assigned_role": "hospital",
-            "target_env": "REINS_WECOM_NOTIFY_USERS_HOSPITAL",
+            "target_env": "REINS_WECOM_NOTIFY_GROUP_WEBHOOK",
+            "recipient_env": "REINS_WECOM_NOTIFY_USERS_HOSPITAL",
             "recipients": ["doctor-1"],
             "content": "notification",
             "error": "",
@@ -338,7 +365,7 @@ class WeComWorkOrderTests(unittest.TestCase):
         self.assertEqual(second["notification"]["status"], "skipped_duplicate")
         self.assertEqual(notify.call_count, 1)
 
-    def test_sends_private_message_through_wecom_application_api(self):
+    def test_sends_group_webhook_message_with_real_user_mentions(self):
         requests = []
 
         class FakeResponse:
@@ -356,30 +383,140 @@ class WeComWorkOrderTests(unittest.TestCase):
 
         def fake_urlopen(request, timeout):
             requests.append((request, timeout))
-            if "/gettoken?" in request.full_url:
-                return FakeResponse({"errcode": 0, "access_token": "test-token", "expires_in": 7200})
-            return FakeResponse({"errcode": 0, "errmsg": "ok", "msgid": "message-123"})
+            return FakeResponse({"errcode": 0, "errmsg": "ok"})
 
-        notifier._TOKEN_CACHE.clear()
         with patch("reins.features.wecom.notifier.urlopen", side_effect=fake_urlopen):
-            result = notifier.send_wecom_app_text(
-                corp_id="corp-id",
-                app_secret="app-secret",
-                agent_id="1000002",
-                user_ids=["doctor-1", "doctor-2"],
+            result = notifier.send_wecom_text(
+                TEST_GROUP_WEBHOOK,
                 content="urgent ticket",
+                mentioned_user_ids=["doctor-1", "doctor-2"],
             )
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["status"], "sent")
-        self.assertEqual(result["message_id"], "message-123")
-        self.assertEqual(len(requests), 2)
-        self.assertIn("/cgi-bin/gettoken?", requests[0][0].full_url)
-        self.assertIn("/cgi-bin/message/send?", requests[1][0].full_url)
-        sent_payload = json.loads(requests[1][0].data.decode("utf-8"))
-        self.assertEqual(sent_payload["touser"], "doctor-1|doctor-2")
-        self.assertEqual(sent_payload["agentid"], 1000002)
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(requests[0][0].full_url, TEST_GROUP_WEBHOOK)
+        sent_payload = json.loads(requests[0][0].data.decode("utf-8"))
+        self.assertEqual(sent_payload["msgtype"], "text")
         self.assertEqual(sent_payload["text"]["content"], "urgent ticket")
+        self.assertEqual(sent_payload["text"]["mentioned_list"], ["doctor-1", "doctor-2"])
+        self.assertNotIn("touser", sent_payload)
+
+    def test_group_webhook_rejects_invalid_success_response(self):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                return False
+
+            def read(self):
+                return b"{}"
+
+        with patch("reins.features.wecom.notifier.urlopen", return_value=FakeResponse()):
+            result = notifier.send_wecom_text(
+                TEST_GROUP_WEBHOOK,
+                content="ticket",
+                mentioned_user_ids=["property-1"],
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("missing", result["error"])
+
+    def test_group_notification_never_falls_back_to_private_app_credentials(self):
+        record = {
+            "id": 1,
+            "message": "3栋404停电",
+            "metadata": {
+                "external_id": "t_no_private_fallback",
+                "assigned_role": "property",
+            },
+        }
+        with patch.dict(
+            os.environ,
+            {
+                "REINS_WECOM_CORP_ID": "legacy-corp",
+                "REINS_WECOM_APP_SECRET": "legacy-secret",
+                "REINS_WECOM_APP_AGENT_ID": "1000002",
+                "REINS_WECOM_NOTIFY_USERS_PROPERTY": "property-1",
+            },
+            clear=True,
+        ):
+            with patch("reins.features.wecom.notifier.send_wecom_text") as send:
+                result = notifier.notify_staff(record)
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["status"], "pending_configuration")
+        self.assertEqual(result["channel"], "group_webhook_mention")
+        self.assertIn("REINS_WECOM_NOTIFY_GROUP_WEBHOOK", result["error"])
+        send.assert_not_called()
+
+    def test_exports_ticket_before_attempting_notification(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(
+                os.environ,
+                {
+                    "REINS_HOME": directory,
+                    "REINS_WECOM_NOTIFY_GROUP_WEBHOOK": TEST_GROUP_WEBHOOK,
+                    "REINS_WECOM_NOTIFY_USERS_PROPERTY": "property-1",
+                },
+                clear=True,
+            ):
+                with patch(
+                    "reins.features.wecom.work_order.notify_staff",
+                    side_effect=RuntimeError("simulated notifier crash"),
+                ):
+                    with self.assertRaisesRegex(RuntimeError, "simulated notifier crash"):
+                        create_work_order(
+                            {
+                                "message": MENTIONED_POWER_OUTAGE_TICKET,
+                                "notify": True,
+                            }
+                        )
+
+            workbook_path = Path(directory) / "wecom" / "records.xlsx"
+            self.assertTrue(workbook_path.is_file())
+            with ZipFile(workbook_path) as workbook:
+                worksheet = workbook.read("xl/worksheets/sheet1.xml").decode("utf-8")
+            self.assertIn("t_a04299d4b5e34bb4", worksheet)
+
+    def test_doctor_reports_roles_that_share_the_same_recipient_mapping(self):
+        with patch.dict(
+            os.environ,
+            {
+                "REINS_WECOM_NOTIFY_GROUP_WEBHOOK": TEST_GROUP_WEBHOOK,
+                "REINS_WECOM_NOTIFY_USERS_PROPERTY": "shared-user",
+                "REINS_WECOM_NOTIFY_USERS_CLEANING": "shared-user",
+            },
+            clear=True,
+        ):
+            result = notifier.notification_doctor()
+
+        warnings = result["recipient_mapping_warnings"]
+        self.assertEqual(len(warnings), 1)
+        self.assertEqual(warnings[0]["roles"], ["property", "cleaning"])
+        self.assertEqual(
+            result["roles"]["property"]["shared_with_roles"],
+            ["cleaning"],
+        )
+
+    def test_long_group_notification_preserves_reply_instruction(self):
+        record = {
+            "id": 1,
+            "metadata": {
+                "external_id": "t_long_ticket",
+                "assigned_role": "property",
+                "description": "停电和漏水" * 2000,
+            },
+        }
+
+        content = notifier.build_staff_notification(record)
+
+        self.assertLessEqual(len(content.encode("utf-8")), notifier.WECOM_TEXT_MAX_BYTES)
+        self.assertIn("工单内容过长，已截断", content)
+        self.assertIn("@社区美女", content)
+        self.assertIn("t_long_ticket 已处理", content)
 
     def test_hermes_plugin_registers_and_processes_group_ticket(self):
         class FakeContext:
@@ -411,6 +548,7 @@ class WeComWorkOrderTests(unittest.TestCase):
                 os.environ,
                 {
                     "REINS_HOME": directory,
+                    "REINS_WECOM_NOTIFY_GROUP_WEBHOOK": TEST_GROUP_WEBHOOK,
                     "REINS_WECOM_NOTIFY_USERS_HOSPITAL": "doctor-1",
                 },
                 clear=True,
@@ -423,7 +561,7 @@ class WeComWorkOrderTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["external_id"], "t_27f4f7b483174238")
         self.assertEqual(result["assigned_role"], "hospital")
-        self.assertEqual(result["notification"]["channel"], "private_message")
+        self.assertEqual(result["notification"]["channel"], "group_webhook_mention")
         self.assertEqual(result["notification"]["recipients"], ["doctor-1"])
 
     def test_pre_llm_hook_processes_ticket_without_model_tool_call(self):
@@ -446,6 +584,7 @@ class WeComWorkOrderTests(unittest.TestCase):
                 os.environ,
                 {
                     "REINS_HOME": directory,
+                    "REINS_WECOM_NOTIFY_GROUP_WEBHOOK": TEST_GROUP_WEBHOOK,
                     "REINS_WECOM_NOTIFY_USERS_PROPERTY": "property-maintenance-1",
                 },
                 clear=True,
@@ -461,13 +600,15 @@ class WeComWorkOrderTests(unittest.TestCase):
         self.assertIn("REINS_WECOM_PREPROCESSED_WORK_ORDER", context_text)
         self.assertIn('"external_id": "t_3ab6a6d8f17648ad"', context_text)
         self.assertIn('"assigned_role": "property"', context_text)
-        self.assertIn('"target_env": "REINS_WECOM_NOTIFY_USERS_PROPERTY"', context_text)
+        self.assertIn('"target_env": "REINS_WECOM_NOTIFY_GROUP_WEBHOOK"', context_text)
+        self.assertIn('"recipient_env": "REINS_WECOM_NOTIFY_USERS_PROPERTY"', context_text)
 
         with tempfile.TemporaryDirectory() as directory:
             with patch.dict(
                 os.environ,
                 {
                     "REINS_HOME": directory,
+                    "REINS_WECOM_NOTIFY_GROUP_WEBHOOK": TEST_GROUP_WEBHOOK,
                     "REINS_WECOM_NOTIFY_USERS_PROPERTY": "property-maintenance-1",
                 },
                 clear=True,

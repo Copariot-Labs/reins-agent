@@ -373,6 +373,7 @@ def ticket_to_work_order_payload(ticket: dict[str, Any], *, dry_run: bool = Fals
     created_at = _string(ticket.get("created_at") or ticket.get("generated_at"))
     updated_at = _string(ticket.get("updated_at"))
     priority = _string(ticket.get("priority") or ticket.get("priority_label"))
+    category = _string(ticket.get("category"))
     notification_event_key = "|".join(
         value for value in (external_id, api_status, updated_at or created_at) if value
     )
@@ -384,6 +385,7 @@ def ticket_to_work_order_payload(ticket: dict[str, Any], *, dry_run: bool = Fals
             "ticket_created_at": created_at,
             "priority": priority,
             "upstream_status": api_status,
+            "api_category": category,
             "api_ticket_id": api_ticket_id,
             "api_case_id": api_case_id,
             "api_status": api_status,
@@ -417,7 +419,16 @@ def _ticket_summary(ticket: dict[str, Any], result: dict[str, Any]) -> dict[str,
         "api_dispatched_at": _string(ticket.get("dispatched_at")),
         "external_id": _string(metadata.get("external_id")),
         "duplicate": bool(result.get("duplicate")),
+        "category": _string(metadata.get("category")),
         "assigned_role": _string(metadata.get("assigned_role")),
+        "assignment_reason": _string(metadata.get("assignment_reason")),
+        "notification_channel": _string(notification.get("channel")),
+        "notification_recipient_env": _string(notification.get("recipient_env")),
+        "notification_recipient_count": len(
+            notification.get("recipients")
+            if isinstance(notification.get("recipients"), list)
+            else []
+        ),
         "notification_status": _string(notification.get("status")),
         "notification_error": _string(notification.get("error")),
     }

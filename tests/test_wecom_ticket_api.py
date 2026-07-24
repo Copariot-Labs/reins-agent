@@ -17,13 +17,19 @@ from reins.features.wecom.ticket_api import (
     load_cursor,
     parse_statuses,
     poll_once,
+    ticket_to_work_order_payload,
 )
 from reins.features.wecom.ticket_service import (
     SERVICE_LABEL,
     build_service_definition,
     stop_service,
 )
-from reins.features.wecom.work_order import parse_work_order_message
+from reins.features.wecom.work_order import create_work_order, parse_work_order_message
+
+
+TEST_GROUP_WEBHOOK = (
+    "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test-group-robot-key"
+)
 
 
 POWER_OUTAGE_MARKDOWN = """@社区美女
@@ -80,6 +86,40 @@ class WeComTicketAPITests(unittest.TestCase):
 
         self.assertEqual(parsed["external_id"], "t_api_power_001")
         self.assertEqual(parsed["location"], "3栋404")
+
+    def test_uses_api_category_when_markdown_has_no_category(self):
+        ticket = api_ticket()
+        ticket["category"] = "community_sanitation"
+        ticket["content_markdown"] = """【新建工单】
+工单编号：t_api_category_001
+处理状态：待处理
+生成时间：2026-07-22 10:53:18（北京时间）
+【居民诉求】
+居民原话：公共区域需要安排人员处理
+【已确认信息】
+- 地点：3栋大厅
+- 问题/现象：现场需要处理
+【工单结束】"""
+        payload = ticket_to_work_order_payload(ticket, dry_run=True)
+
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(
+                os.environ,
+                {
+                    "REINS_HOME": directory,
+                    "REINS_WECOM_NOTIFY_GROUP_WEBHOOK": TEST_GROUP_WEBHOOK,
+                    "REINS_WECOM_NOTIFY_USERS_CLEANING": "cleaner-1",
+                },
+                clear=True,
+            ):
+                result = create_work_order(payload)
+
+        self.assertEqual(result["record"]["metadata"]["api_category"], "community_sanitation")
+        self.assertEqual(result["record"]["metadata"]["assigned_role"], "cleaning")
+        self.assertEqual(
+            result["notification"]["recipient_env"],
+            "REINS_WECOM_NOTIFY_USERS_CLEANING",
+        )
 
     def test_default_statuses_include_real_api_dispatched_state(self):
         with patch.dict(os.environ, {}, clear=True):
@@ -204,9 +244,10 @@ class WeComTicketAPITests(unittest.TestCase):
         sent_notification = {
             "ok": True,
             "status": "sent",
-            "channel": "private_message",
+            "channel": "group_webhook_mention",
             "assigned_role": "property",
-            "target_env": "REINS_WECOM_NOTIFY_USERS_PROPERTY",
+            "target_env": "REINS_WECOM_NOTIFY_GROUP_WEBHOOK",
+            "recipient_env": "REINS_WECOM_NOTIFY_USERS_PROPERTY",
             "recipients": ["property-user-1"],
             "content": "notification",
             "error": "",
@@ -228,6 +269,7 @@ class WeComTicketAPITests(unittest.TestCase):
                 os.environ,
                 {
                     "REINS_HOME": str(root / "reins"),
+                    "REINS_WECOM_NOTIFY_GROUP_WEBHOOK": TEST_GROUP_WEBHOOK,
                     "REINS_WECOM_NOTIFY_USERS_PROPERTY": "property-user-1",
                 },
                 clear=True,
@@ -236,6 +278,11 @@ class WeComTicketAPITests(unittest.TestCase):
                 self.assertTrue(dry_run["ok"])
                 self.assertFalse(dry_run["cursor_advanced"])
                 self.assertEqual(dry_run["tickets"][0]["assigned_role"], "property")
+                self.assertEqual(
+                    dry_run["tickets"][0]["notification_recipient_env"],
+                    "REINS_WECOM_NOTIFY_USERS_PROPERTY",
+                )
+                self.assertEqual(dry_run["tickets"][0]["notification_recipient_count"], 1)
                 self.assertEqual(dry_run["tickets"][0]["external_id"], "t_api_power_001")
                 self.assertEqual(dry_run["tickets"][0]["notification_status"], "dry_run")
                 self.assertFalse(config.cursor_path.exists())
@@ -303,9 +350,10 @@ class WeComTicketAPITests(unittest.TestCase):
         sent_notification = {
             "ok": True,
             "status": "sent",
-            "channel": "private_message",
+            "channel": "group_webhook_mention",
             "assigned_role": "property",
-            "target_env": "REINS_WECOM_NOTIFY_USERS_PROPERTY",
+            "target_env": "REINS_WECOM_NOTIFY_GROUP_WEBHOOK",
+            "recipient_env": "REINS_WECOM_NOTIFY_USERS_PROPERTY",
             "recipients": ["property-user-1"],
             "content": "notification",
             "error": "",
@@ -326,6 +374,7 @@ class WeComTicketAPITests(unittest.TestCase):
                 os.environ,
                 {
                     "REINS_HOME": str(root / "reins"),
+                    "REINS_WECOM_NOTIFY_GROUP_WEBHOOK": TEST_GROUP_WEBHOOK,
                     "REINS_WECOM_NOTIFY_USERS_PROPERTY": "property-user-1",
                 },
                 clear=True,
@@ -353,6 +402,7 @@ class WeComTicketAPITests(unittest.TestCase):
         serialized = json.dumps(definition)
         self.assertNotIn("REINS_TICKET_API_TOKEN", serialized)
         self.assertNotIn("REINS_WECOM_APP_SECRET", serialized)
+        self.assertNotIn("REINS_WECOM_NOTIFY_GROUP_WEBHOOK", serialized)
 
     def test_stopping_an_unloaded_launchd_service_is_successful(self):
         result = CompletedProcess(

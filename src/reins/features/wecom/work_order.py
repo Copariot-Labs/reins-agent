@@ -278,7 +278,7 @@ def parse_work_order_message(message: str) -> dict[str, str]:
     text = _normalize_message_newlines(message)
     if not text:
         return {}
-    if text.lstrip().startswith("【Reins工单通知】"):
+    if re.match(r"^【Reins工单(?:通知|提醒)】", text.lstrip()):
         return {}
 
     lines = [_strip_markdown_decoration(line) for line in text.splitlines() if line.strip()]
@@ -360,6 +360,9 @@ def _metadata_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
         value = _first_value(payload, field)
         if value:
             metadata[field] = value
+
+    if not _string(metadata.get("category")) and _string(metadata.get("api_category")):
+        metadata["category"] = _string(metadata.get("api_category"))
 
     metadata.setdefault("source_channel", "wecom_work_order")
     return metadata
@@ -573,6 +576,7 @@ def _apply_notification_result(record: dict[str, Any], notification: dict[str, A
     metadata = dict(record.get("metadata") if isinstance(record.get("metadata"), dict) else {})
     metadata["notification_status"] = notification.get("status", "")
     metadata["notification_target"] = notification.get("target_env", "")
+    metadata["notification_recipient_env"] = notification.get("recipient_env", "")
     metadata["notification_channel"] = notification.get("channel", "")
     metadata["notification_recipients"] = notification.get("recipients", [])
     metadata["notification_message_id"] = notification.get("message_id", "")
@@ -661,6 +665,7 @@ def create_work_order(payload: dict[str, Any]) -> dict[str, Any]:
             metadata=metadata,
         )
 
+    records_xlsx_path = str(export_records_xlsx())
     notification: dict[str, Any] | None = None
     if _bool(payload.get("notify")) or _bool(payload.get("send_notification") or payload.get("sendNotification")):
         previous_metadata = existing.get("metadata") if existing and isinstance(existing.get("metadata"), dict) else {}
@@ -676,6 +681,7 @@ def create_work_order(payload: dict[str, Any]) -> dict[str, Any]:
                 "channel": previous_metadata.get("notification_channel", ""),
                 "assigned_role": metadata.get("assigned_role", ""),
                 "target_env": previous_metadata.get("notification_target", ""),
+                "recipient_env": previous_metadata.get("notification_recipient_env", ""),
                 "recipients": previous_metadata.get("notification_recipients", []),
                 "content": "",
                 "error": "",
@@ -683,6 +689,7 @@ def create_work_order(payload: dict[str, Any]) -> dict[str, Any]:
         else:
             notification = notify_staff(record, dry_run=_bool(payload.get("dry_run") or payload.get("dryRun")))
             record = _apply_notification_result(record, notification)
+            records_xlsx_path = str(export_records_xlsx())
 
     return {
         "ok": True,
@@ -693,7 +700,7 @@ def create_work_order(payload: dict[str, Any]) -> dict[str, Any]:
         "notification": notification,
         "work_order": metadata,
         "record": record,
-        "records_xlsx_path": str(export_records_xlsx()),
+        "records_xlsx_path": records_xlsx_path,
     }
 
 

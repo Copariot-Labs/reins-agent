@@ -3,21 +3,11 @@ from __future__ import annotations
 import json
 import os
 import re
-import time
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlsplit
 from urllib.request import Request, urlopen
 
-
-ROLE_ENV = {
-    "property": "REINS_WECOM_NOTIFY_WEBHOOK_PROPERTY",
-    "cleaning": "REINS_WECOM_NOTIFY_WEBHOOK_CLEANING",
-    "police": "REINS_WECOM_NOTIFY_WEBHOOK_POLICE",
-    "hospital": "REINS_WECOM_NOTIFY_WEBHOOK_HOSPITAL",
-    "community": "REINS_WECOM_NOTIFY_WEBHOOK_COMMUNITY",
-    "human_review": "REINS_WECOM_NOTIFY_WEBHOOK_HUMAN_REVIEW",
-}
 
 ROLE_USER_ENV = {
     "property": "REINS_WECOM_NOTIFY_USERS_PROPERTY",
@@ -32,6 +22,9 @@ ROLE_USER_ENV = {
 # The role-specific UserID variables below are reused as real group mentions.
 WECOM_GROUP_WEBHOOK_ENV = "REINS_WECOM_NOTIFY_GROUP_WEBHOOK"
 WECOM_REPLY_BOT_NAME_ENV = "REINS_WECOM_REPLY_BOT_NAME"
+WECOM_GROUP_WEBHOOK_HOST = "qyapi.weixin.qq.com"
+WECOM_GROUP_WEBHOOK_PATH = "/cgi-bin/webhook/send"
+WECOM_TEXT_MAX_BYTES = 2048
 
 PRIORITY_LABELS = {
     "high": "紧急",
@@ -44,34 +37,12 @@ PRIORITY_LABELS = {
 }
 
 
-WECOM_CORP_ID_ENV = "REINS_WECOM_CORP_ID"
-WECOM_APP_SECRET_ENV = "REINS_WECOM_APP_SECRET"
-WECOM_APP_AGENT_ID_ENV = "REINS_WECOM_APP_AGENT_ID"
-
-_TOKEN_CACHE: dict[tuple[str, str], tuple[str, float]] = {}
-
-
 def _string(value: Any) -> str:
     if value is None:
         return ""
     if isinstance(value, str):
         return value.strip()
     return str(value).strip()
-
-
-def webhook_for_role(role: str) -> tuple[str, str]:
-    env_name = ROLE_ENV.get(role, "")
-    if env_name:
-        value = os.environ.get(env_name, "").strip()
-        if value:
-            return value, env_name
-
-    default_env = "REINS_WECOM_NOTIFY_WEBHOOK_DEFAULT"
-    default_value = os.environ.get(default_env, "").strip()
-    if default_value:
-        return default_value, default_env
-
-    return "", env_name or default_env
 
 
 def users_for_role(role: str) -> tuple[list[str], str]:
@@ -105,19 +76,81 @@ def _priority_label(value: Any) -> str:
     return PRIORITY_LABELS.get(priority.lower(), priority)
 
 
+def _valid_group_webhook_url(value: str) -> bool:
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return False
+
+    keys = parse_qs(parsed.query, keep_blank_values=True).get("key", [])
+    return bool(
+        parsed.scheme == "https"
+        and parsed.hostname == WECOM_GROUP_WEBHOOK_HOST
+        and parsed.path == WECOM_GROUP_WEBHOOK_PATH
+        and not parsed.username
+        and not parsed.password
+        and not parsed.fragment
+        and len(keys) == 1
+        and keys[0].strip()
+    )
+
+
+def _truncate_utf8(value: str, max_bytes: int) -> str:
+    if max_bytes <= 0:
+        return ""
+    encoded = value.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return value
+
+    marker = "…"
+    marker_bytes = marker.encode("utf-8")
+    if max_bytes <= len(marker_bytes):
+        return encoded[:max_bytes].decode("utf-8", errors="ignore")
+    return encoded[: max_bytes - len(marker_bytes)].decode("utf-8", errors="ignore") + marker
+
+
+def _bounded_field(value: Any, max_bytes: int = 192) -> str:
+    return _truncate_utf8(_string(value), max_bytes)
+
+
+def _fit_notification_content(header: str, details: str, footer: str) -> str:
+    parts = [part for part in (header, details, footer) if part]
+    content = "\n\n".join(parts)
+    if len(content.encode("utf-8")) <= WECOM_TEXT_MAX_BYTES:
+        return content
+
+    marker = "（工单内容过长，已截断）"
+    fixed = "\n\n".join((header, marker, footer))
+    available = WECOM_TEXT_MAX_BYTES - len(fixed.encode("utf-8")) - 2
+    shortened_details = _truncate_utf8(details, max(0, available))
+    if shortened_details:
+        return "\n\n".join((header, shortened_details, marker, footer))
+    return _truncate_utf8(fixed, WECOM_TEXT_MAX_BYTES)
+
+
 def build_staff_notification(record: dict[str, Any]) -> str:
     metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
-    role_label = _string(metadata.get("assigned_role_label") or metadata.get("assigned_role") or "相关人员")
-    ticket_id = _string(metadata.get("external_id") or metadata.get("ticket_id")) or _string(record.get("id"))
-    priority = _priority_label(metadata.get("priority"))
-    category = _string(metadata.get("category")) or "未分类"
-    location = _string(metadata.get("location"))
+    role_label = _bounded_field(
+        metadata.get("assigned_role_label") or metadata.get("assigned_role") or "相关人员",
+        96,
+    )
+    ticket_id = _bounded_field(
+        metadata.get("external_id") or metadata.get("ticket_id") or record.get("id"),
+        128,
+    )
+    priority = _bounded_field(_priority_label(metadata.get("priority")), 48)
+    category = _bounded_field(metadata.get("category") or "未分类", 192)
+    location = _bounded_field(metadata.get("location"), 192)
 
     # Keep the resident's complete issue content. Prefer the parsed resident
     # description, then the title, then the stored message as a final fallback.
     issue = _string(metadata.get("description") or metadata.get("title") or record.get("message"))
+    assessment = _string(metadata.get("customer_assessment"))
     requirements = _string(metadata.get("handling_requirements"))
-    reply_bot_name = os.environ.get(WECOM_REPLY_BOT_NAME_ENV, "社区美女").strip() or "社区美女"
+    reply_bot_name = _bounded_field(
+        os.environ.get(WECOM_REPLY_BOT_NAME_ENV, "社区美女").strip() or "社区美女",
+        96,
+    )
 
     lines = [
         "【Reins工单提醒】",
@@ -130,20 +163,25 @@ def build_staff_notification(record: dict[str, Any]) -> str:
     if location:
         lines.append(f"地点：{location}")
 
+    details = []
     if issue:
-        lines.extend(["", "居民诉求：", issue])
-
+        details.extend(["居民诉求：", issue])
+    if assessment and assessment != issue:
+        if details:
+            details.append("")
+        details.extend(["客服研判：", assessment])
     if requirements:
-        lines.extend(["", f"处理要求：{requirements}"])
+        if details:
+            details.append("")
+        details.extend(["处理要求：", requirements])
 
-    lines.extend(
+    footer = "\n".join(
         [
-            "",
             "请被@的负责人尽快跟进处理。",
             f"完成后请在本群 @{reply_bot_name} 回复：{ticket_id} 已处理：<处理结果>",
         ]
     )
-    return "\n".join(lines)
+    return _fit_notification_content("\n".join(lines), "\n".join(details), footer)
 
 
 def _read_json_response(request: Request, *, timeout: float) -> dict[str, Any]:
@@ -162,6 +200,13 @@ def _read_json_response(request: Request, *, timeout: float) -> dict[str, Any]:
             "ok": False,
             "status": "failed",
             "error": str(exc.reason),
+            "body": "",
+        }
+    except TimeoutError:
+        return {
+            "ok": False,
+            "status": "failed",
+            "error": "timeout",
             "body": "",
         }
 
@@ -184,131 +229,6 @@ def _read_json_response(request: Request, *, timeout: float) -> dict[str, Any]:
         }
 
     return {"ok": True, "status": "received", "error": "", "body": body, "data": parsed}
-
-
-def get_wecom_access_token(
-    corp_id: str,
-    app_secret: str,
-    *,
-    timeout: float = 10.0,
-) -> dict[str, Any]:
-    cache_key = (corp_id, app_secret)
-    cached = _TOKEN_CACHE.get(cache_key)
-    if cached and cached[1] > time.monotonic():
-        return {"ok": True, "status": "cached", "access_token": cached[0], "error": ""}
-
-    query = urlencode({"corpid": corp_id, "corpsecret": app_secret})
-    request = Request(
-        f"https://qyapi.weixin.qq.com/cgi-bin/gettoken?{query}",
-        method="GET",
-    )
-    response = _read_json_response(request, timeout=timeout)
-    if not response.get("ok"):
-        return response
-
-    data = response.get("data") if isinstance(response.get("data"), dict) else {}
-    if data.get("errcode") not in (None, 0):
-        return {
-            "ok": False,
-            "status": "failed",
-            "error": str(data.get("errmsg") or "wecom_token_error"),
-        }
-
-    access_token = _string(data.get("access_token"))
-    if not access_token:
-        return {
-            "ok": False,
-            "status": "failed",
-            "error": "missing_access_token",
-        }
-
-    expires_in = int(data.get("expires_in") or 7200)
-    _TOKEN_CACHE[cache_key] = (access_token, time.monotonic() + max(60, expires_in - 60))
-    return {"ok": True, "status": "received", "access_token": access_token, "error": ""}
-
-
-def send_wecom_app_text(
-    *,
-    corp_id: str,
-    app_secret: str,
-    agent_id: str,
-    user_ids: list[str],
-    content: str,
-    timeout: float = 10.0,
-) -> dict[str, Any]:
-    token_result = get_wecom_access_token(corp_id, app_secret, timeout=timeout)
-    if not token_result.get("ok"):
-        return {
-            "ok": False,
-            "status": "failed",
-            "error": f"access_token: {token_result.get('error') or 'failed'}",
-            "body": token_result.get("body", ""),
-        }
-
-    try:
-        numeric_agent_id = int(agent_id)
-    except (TypeError, ValueError):
-        return {
-            "ok": False,
-            "status": "failed",
-            "error": f"invalid {WECOM_APP_AGENT_ID_ENV}",
-            "body": "",
-        }
-
-    payload = json.dumps(
-        {
-            "touser": "|".join(user_ids),
-            "msgtype": "text",
-            "agentid": numeric_agent_id,
-            "text": {"content": content},
-            "safe": 0,
-            "enable_duplicate_check": 1,
-            "duplicate_check_interval": 1800,
-        },
-        ensure_ascii=False,
-    ).encode("utf-8")
-    query = urlencode({"access_token": token_result["access_token"]})
-    request = Request(
-        f"https://qyapi.weixin.qq.com/cgi-bin/message/send?{query}",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    response = _read_json_response(request, timeout=timeout)
-    if not response.get("ok"):
-        return response
-
-    data = response.get("data") if isinstance(response.get("data"), dict) else {}
-    if data.get("errcode") not in (None, 0):
-        return {
-            "ok": False,
-            "status": "failed",
-            "error": str(data.get("errmsg") or "wecom_message_error"),
-            "body": response.get("body", ""),
-        }
-
-    invalid = {
-        key: _string(data.get(key))
-        for key in ("invaliduser", "unlicenseduser", "invalidparty", "invalidtag")
-        if _string(data.get(key))
-    }
-    if invalid:
-        detail = ", ".join(f"{key}={value}" for key, value in invalid.items())
-        return {
-            "ok": False,
-            "status": "partial_sent",
-            "error": detail,
-            "body": response.get("body", ""),
-            "message_id": _string(data.get("msgid")),
-        }
-
-    return {
-        "ok": True,
-        "status": "sent",
-        "error": "",
-        "body": response.get("body", ""),
-        "message_id": _string(data.get("msgid")),
-    }
 
 
 def send_wecom_text(
@@ -337,43 +257,26 @@ def send_wecom_text(
         headers={"Content-Type": "application/json"},
         method="POST",
     )
+    response = _read_json_response(request, timeout=timeout)
+    if not response.get("ok"):
+        return response
 
-    try:
-        with urlopen(request, timeout=timeout) as response:
-            body = response.read().decode("utf-8", errors="replace")
-    except HTTPError as exc:
+    parsed = response.get("data") if isinstance(response.get("data"), dict) else {}
+    if parsed.get("errcode") != 0:
+        error_code = parsed.get("errcode", "missing")
+        error_message = _string(parsed.get("errmsg")) or "wecom_webhook_error"
         return {
             "ok": False,
             "status": "failed",
-            "error": f"http_{exc.code}",
-            "body": exc.read().decode("utf-8", errors="replace"),
-        }
-    except URLError as exc:
-        return {
-            "ok": False,
-            "status": "failed",
-            "error": str(exc.reason),
-            "body": "",
-        }
-
-    try:
-        parsed = json.loads(body)
-    except json.JSONDecodeError:
-        parsed = {}
-
-    if isinstance(parsed, dict) and parsed.get("errcode") not in (None, 0):
-        return {
-            "ok": False,
-            "status": "failed",
-            "error": str(parsed.get("errmsg") or "wecom_error"),
-            "body": body,
+            "error": f"wecom_{error_code}: {error_message}",
+            "body": response.get("body", ""),
         }
 
     return {
         "ok": True,
         "status": "sent",
         "error": "",
-        "body": body,
+        "body": response.get("body", ""),
         "message_id": "",
     }
 
@@ -399,18 +302,20 @@ def notify_staff(record: dict[str, Any], *, dry_run: bool = False) -> dict[str, 
             "channel": channel,
             "assigned_role": role,
             "target_env": WECOM_GROUP_WEBHOOK_ENV,
+            "recipient_env": user_env_name,
             "recipients": user_ids,
             "content": content,
             "error": f"missing {WECOM_GROUP_WEBHOOK_ENV}",
         }
 
-    if not group_webhook.startswith("https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key="):
+    if not _valid_group_webhook_url(group_webhook):
         return {
             "ok": False,
             "status": "pending_configuration",
             "channel": channel,
             "assigned_role": role,
             "target_env": WECOM_GROUP_WEBHOOK_ENV,
+            "recipient_env": user_env_name,
             "recipients": user_ids,
             "content": content,
             "error": f"invalid {WECOM_GROUP_WEBHOOK_ENV}",
@@ -423,9 +328,23 @@ def notify_staff(record: dict[str, Any], *, dry_run: bool = False) -> dict[str, 
             "channel": channel,
             "assigned_role": role,
             "target_env": WECOM_GROUP_WEBHOOK_ENV,
+            "recipient_env": user_env_name,
             "recipients": [],
             "content": content,
             "error": f"missing {user_env_name}",
+        }
+
+    if any(user_id.casefold() == "@all" for user_id in user_ids):
+        return {
+            "ok": False,
+            "status": "pending_configuration",
+            "channel": channel,
+            "assigned_role": role,
+            "target_env": WECOM_GROUP_WEBHOOK_ENV,
+            "recipient_env": user_env_name,
+            "recipients": user_ids,
+            "content": content,
+            "error": f"invalid {user_env_name}: @all is not allowed",
         }
 
     if dry_run:
@@ -435,6 +354,7 @@ def notify_staff(record: dict[str, Any], *, dry_run: bool = False) -> dict[str, 
             "channel": channel,
             "assigned_role": role,
             "target_env": WECOM_GROUP_WEBHOOK_ENV,
+            "recipient_env": user_env_name,
             "recipients": user_ids,
             "content": content,
             "error": "",
@@ -450,35 +370,66 @@ def notify_staff(record: dict[str, Any], *, dry_run: bool = False) -> dict[str, 
         "channel": channel,
         "assigned_role": role,
         "target_env": WECOM_GROUP_WEBHOOK_ENV,
+        "recipient_env": user_env_name,
         "recipients": user_ids,
         "content": content,
     }
 
 
-
 def notification_doctor() -> dict[str, Any]:
     group_webhook = os.environ.get(WECOM_GROUP_WEBHOOK_ENV, "").strip()
-    group_webhook_valid = group_webhook.startswith(
-        "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key="
-    )
+    group_webhook_valid = _valid_group_webhook_url(group_webhook)
     roles: dict[str, Any] = {}
+    resolved_recipients: dict[str, tuple[str, ...]] = {}
 
     for role in ROLE_USER_ENV:
         user_ids, user_env = users_for_role(role)
+        resolved_recipients[role] = tuple(sorted(set(user_ids)))
+        safe_recipients = bool(user_ids) and all(
+            user_id.casefold() != "@all" for user_id in user_ids
+        )
         roles[role] = {
-            "ready": bool(group_webhook_valid and user_ids),
+            "ready": bool(group_webhook_valid and safe_recipients),
             "mode": "group_webhook_mention",
             "target_env": WECOM_GROUP_WEBHOOK_ENV,
             "recipient_env": user_env,
             "recipient_count": len(user_ids),
+            "recipients_valid": safe_recipients,
         }
+
+    shared_mappings: list[dict[str, Any]] = []
+    signatures = {
+        signature
+        for signature in resolved_recipients.values()
+        if signature
+    }
+    for signature in sorted(signatures):
+        shared_roles = [
+            role
+            for role, recipient_signature in resolved_recipients.items()
+            if recipient_signature == signature
+        ]
+        if len(shared_roles) < 2:
+            continue
+        shared_mappings.append(
+            {
+                "type": "shared_recipient_mapping",
+                "roles": shared_roles,
+                "recipient_count": len(signature),
+            }
+        )
+        for role in shared_roles:
+            roles[role]["shared_with_roles"] = [
+                other_role for other_role in shared_roles if other_role != role
+            ]
 
     return {
         "preferred_mode": "group_webhook_mention",
-        "group_webhook_ready": bool(group_webhook),
+        "group_webhook_configured": bool(group_webhook),
+        "group_webhook_ready": group_webhook_valid,
         "group_webhook_valid": group_webhook_valid,
         "group_webhook_env": WECOM_GROUP_WEBHOOK_ENV,
         "legacy_private_fallback_enabled": False,
+        "recipient_mapping_warnings": shared_mappings,
         "roles": roles,
     }
-
