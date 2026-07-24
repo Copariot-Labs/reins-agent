@@ -208,6 +208,58 @@ class WeComWorkOrderTests(unittest.TestCase):
             self.assertIn('state="frozen"', worksheet)
             self.assertIn('<autoFilter ref="A1:O2"/>', worksheet)
 
+    def test_mirrors_workbook_to_configured_visible_export_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            reins_home = Path(directory) / "reins-home"
+            export_directory = Path(directory) / "staff-documents"
+            with patch.dict(
+                os.environ,
+                {
+                    "REINS_HOME": str(reins_home),
+                    "REINS_WECOM_EXPORT_DIR": str(export_directory),
+                    "REINS_WECOM_NOTIFY_GROUP_WEBHOOK": TEST_GROUP_WEBHOOK,
+                    "REINS_WECOM_NOTIFY_USERS_CLEANING": "cleaner-1",
+                },
+                clear=True,
+            ):
+                result = create_work_order(
+                    {
+                        "message": PRODUCTION_WECOM_TICKET,
+                        "notify": True,
+                        "dry_run": True,
+                    }
+                )
+
+            internal_workbook = Path(result["records_xlsx_path"])
+            visible_workbook = export_directory / "社区工单台账.xlsx"
+            self.assertTrue(internal_workbook.is_file())
+            self.assertTrue(visible_workbook.is_file())
+            with ZipFile(visible_workbook) as workbook:
+                worksheet = workbook.read("xl/worksheets/sheet1.xml").decode("utf-8")
+            self.assertIn("t_89751e8754e44289", worksheet)
+            self.assertNotIn("redacted-wechat-customer-reference", worksheet)
+
+    def test_workbook_fallback_removes_resident_identifier_line(self):
+        from reins.features.wecom.store import add_record, export_records_xlsx
+
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(os.environ, {"REINS_HOME": directory}, clear=True):
+                add_record(
+                    kind="work_order",
+                    message=(
+                        "居民反映楼道照明损坏\n"
+                        "居民标识：private-resident-reference\n"
+                        "请尽快处理"
+                    ),
+                    metadata={"external_id": "t_fallback_privacy"},
+                )
+                workbook_path = export_records_xlsx()
+
+            with ZipFile(workbook_path) as workbook:
+                worksheet = workbook.read("xl/worksheets/sheet1.xml").decode("utf-8")
+            self.assertIn("居民反映楼道照明损坏", worksheet)
+            self.assertNotIn("private-resident-reference", worksheet)
+
     def test_verified_repair_category_beats_ambiguous_bathroom_keyword(self):
         with tempfile.TemporaryDirectory() as directory:
             with patch.dict(

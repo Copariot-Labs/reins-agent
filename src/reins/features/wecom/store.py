@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from collections import Counter
 import json
+import os
+import re
+import shutil
 import sqlite3
 import threading
 from contextlib import closing, contextmanager
@@ -71,6 +74,9 @@ NOTIFICATION_STATUS_LABELS = {
 
 _CHINA_TZ = ZoneInfo("Asia/Shanghai")
 _EXPORT_THREAD_LOCK = threading.RLock()
+_RESIDENT_IDENTIFIER_LINE = re.compile(
+    r"^\s*(?:[-·]\s*)?(?:居民标识|客户标识|微信客户)\s*[：:].*$",
+)
 
 
 def _clean(value: Any) -> str:
@@ -119,7 +125,12 @@ def _work_order_issue(record: dict[str, Any], metadata: dict[str, Any]) -> str:
         if title and title not in description:
             return f"{title}\n{description}"
         return description
-    return title or _clean(record.get("message"))
+    if title:
+        return title
+    raw_message = _clean(record.get("message"))
+    return "\n".join(
+        line for line in raw_message.splitlines() if not _RESIDENT_IDENTIFIER_LINE.match(line)
+    ).strip()
 
 
 def _staff_work_order_values(record: dict[str, Any]) -> list[object]:
@@ -225,6 +236,34 @@ def get_faq_path() -> Path:
 
 def get_records_xlsx_path() -> Path:
     return ensure_wecom_dir() / "records.xlsx"
+
+
+def get_visible_records_xlsx_path() -> Path | None:
+    """Return the optional staff-visible workbook path.
+
+    The internal workbook remains under REINS_HOME. Administrators can set
+    REINS_WECOM_EXPORT_DIR to keep an automatically refreshed copy in a normal
+    folder such as Documents or a shared synced directory.
+    """
+    configured = os.environ.get("REINS_WECOM_EXPORT_DIR", "").strip()
+    if not configured:
+        return None
+    return Path(configured).expanduser() / "社区工单台账.xlsx"
+
+
+def _mirror_records_xlsx(source: Path) -> Path | None:
+    target = get_visible_records_xlsx_path()
+    if target is None:
+        return None
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+    try:
+        shutil.copy2(source, temporary)
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return target
 
 
 def connect() -> sqlite3.Connection:
@@ -564,13 +603,16 @@ def export_records_xlsx(path: Path | None = None) -> Path:
         headers = [header for _key, header, _width in STAFF_WORK_ORDER_COLUMNS]
         widths = [width for _key, _header, width in STAFF_WORK_ORDER_COLUMNS]
 
-        return write_xlsx(
+        exported_path = write_xlsx(
             output_path,
             sheet_name="工单台账",
             headers=headers,
             rows=values,
             column_widths=widths,
         )
+        if path is None:
+            _mirror_records_xlsx(exported_path)
+        return exported_path
 
 
 
@@ -607,6 +649,7 @@ def records_report(kind: str | None = None) -> dict[str, Any]:
         "by_assigned_role": dict(by_role),
         "by_source_channel": dict(by_source),
         "records_xlsx_path": str(export_path),
+        "visible_records_xlsx_path": str(get_visible_records_xlsx_path() or ""),
         "records_xlsx_scope": "work_order_staff_view",
         "records_xlsx_columns": [header for _key, header, _width in STAFF_WORK_ORDER_COLUMNS],
     }
@@ -628,6 +671,7 @@ def doctor() -> dict[str, Any]:
         "db_path": str(get_db_path()),
         "faq_path": str(get_faq_path()),
         "records_xlsx_path": str(records_path),
+        "visible_records_xlsx_path": str(get_visible_records_xlsx_path() or ""),
         "records_xlsx_scope": "work_order_staff_view",
         "records_xlsx_columns": [header for _key, header, _width in STAFF_WORK_ORDER_COLUMNS],
         "record_count": record_count,

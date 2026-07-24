@@ -36,6 +36,7 @@ import { financeRoutes } from './hermes/finance'
 import { browserRoutes } from './hermes/browser'
 import { computerUseRoutes } from './hermes/computer-use'
 import { wecomRoutes } from './hermes/wecom'
+import { workOrderRoutes } from './hermes/work-orders'
 import { presentationRoutes } from './hermes/presentations'
 
 /**
@@ -83,6 +84,7 @@ export function registerRoutes(app: any, authMiddleware: Array<(ctx: Context, ne
   app.use(browserRoutes.routes())              // Must be before proxy
   app.use(computerUseRoutes.routes())          // Must be before proxy
   app.use(wecomRoutes.routes())                // Must be before proxy
+  app.use(workOrderRoutes.routes())            // Must be before proxy
   app.use(presentationRoutes.routes())         // Must be before proxy
   app.use(proxyRoutes.routes())
 
