@@ -462,6 +462,7 @@ onUnmounted(() => { if (pollTimer) clearTimeout(pollTimer) })
             :maxlength="needsInitialDeck ? 30000 : 10000"
             @keydown.meta.enter.prevent="handleSend"
             @keydown.ctrl.enter.prevent="handleSend"
+            @keydown.enter.prevent="handleSend"
           />
           <NTooltip>
             <template #trigger>
@@ -474,7 +475,7 @@ onUnmounted(() => { if (pollTimer) clearTimeout(pollTimer) })
                 :aria-label="copy.send"
                 @click="handleSend"
               >
-                <span class="button-symbol send-symbol" aria-hidden="true">↑</span>
+                <span v-if="!sending" class="button-symbol send-symbol" aria-hidden="true">↑</span>
               </NButton>
             </template>
             {{ sending ? copy.sending : copy.send }}
@@ -605,7 +606,7 @@ onUnmounted(() => { if (pollTimer) clearTimeout(pollTimer) })
 }
 .style-swatch span { width: 13px; height: 13px; border-radius: 2px; }
 .style-swatch.active { border-color: $accent-primary; box-shadow: 0 0 0 1px $accent-primary; }
-.input-row { display: grid; grid-template-columns: minmax(0, 1fr) 42px; align-items: end; gap: 10px; margin-top: 10px; }
+.input-row { display: grid; grid-template-columns: minmax(0, 1fr) 42px; align-items: center; gap: 10px; margin-top: 10px; }
 
 @media (max-width: 960px) {
   .creation-controls { grid-template-columns: 1fr; }

@@ -80,8 +80,9 @@ function handleLogout() {
 <template>
   <aside class="sidebar" :class="{ open: appStore.sidebarOpen, collapsed: appStore.sidebarCollapsed }">
     <RouteLinkItem class="sidebar-logo" :to="{ name: 'hermes.chat' }">
-      <!-- <img :src="" alt="Hermes" class="logo-img" /> -->
-       <div class="logo-img"></div>
+       <div class="logo-img">
+        <img src="/logo.jpg" alt="Reins" class="logo-img" />
+       </div>
       <span class="logo-text">Reins</span>
       <!-- <video class="logo-dance" :src="isDark ? danceVideoDark : danceVideoLight" autoplay loop muted playsinline /> -->
     </RouteLinkItem>

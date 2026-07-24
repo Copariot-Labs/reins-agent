@@ -1339,7 +1339,7 @@ async function handleSessionModelCustomSubmit() {
     </div>
 
     <!-- Floating drawer button -->
-    <div class="drawer-button-wrapper">
+    <!-- <div class="drawer-button-wrapper">
       <div class="drawer-button" @click="showDrawer = true">
         <svg
           width="20"
@@ -1354,7 +1354,7 @@ async function handleSessionModelCustomSubmit() {
           <line x1="15" y1="3" x2="15" y2="21" />
         </svg>
       </div>
-    </div>
+    </div> -->
 
     <DrawerPanel v-model:show="showDrawer" :active-tab="drawerActiveTab" />
   </div>
