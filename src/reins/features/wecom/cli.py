@@ -89,7 +89,7 @@ def build_parser() -> argparse.ArgumentParser:
     records_list_parser.add_argument("--kind", default="", help="Filter by record kind.")
     records_list_parser.add_argument("--json", dest="json_output", action="store_true", help="Print JSON.")
 
-    records_export_parser = records_subparsers.add_parser("export", help="Export records to the shared Excel file.")
+    records_export_parser = records_subparsers.add_parser("export", help="Export the staff-facing work-order Excel file.")
     records_export_parser.add_argument("--json", dest="json_output", action="store_true", help="Print JSON.")
 
     records_report_parser = records_subparsers.add_parser("report", help="Summarize captured records.")

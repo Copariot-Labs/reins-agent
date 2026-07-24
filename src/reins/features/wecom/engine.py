@@ -280,7 +280,8 @@ def process_message(
             ai_fallback=not bool(match),
             metadata=metadata,
         )
-        records_xlsx_path = str(export_records_xlsx())
+        if kind_to_record == "work_order":
+            records_xlsx_path = str(export_records_xlsx())
 
     ai_fallback = match is None
     return {
@@ -311,5 +312,6 @@ def export_records() -> dict[str, Any]:
     return {
         "ok": True,
         "path": str(path),
-        "records": list_records(limit=500),
+        "scope": "work_order_staff_view",
+        "records": list_records(limit=500, kind="work_order"),
     }

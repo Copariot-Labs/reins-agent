@@ -3,79 +3,193 @@ from __future__ import annotations
 from collections import Counter
 import json
 import sqlite3
-from contextlib import contextmanager
+import threading
+from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
+from zoneinfo import ZoneInfo
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Reins currently targets macOS/Linux.
+    fcntl = None
 
 from reins.api.home import get_reins_home
 from reins.features.wecom.xlsx import write_xlsx
 
 
-BASE_RECORD_HEADERS = [
-    "id",
-    "created_at",
-    "kind",
-    "status",
-    "sender_id",
-    "sender_name",
-    "chat_id",
-    "chat_type",
-    "message",
-    "selected_meaning",
-    "matched_faq_id",
-    "reply",
-    "ai_fallback",
+STAFF_WORK_ORDER_COLUMNS = [
+    ("ticket_id", "工单编号", 24.0),
+    ("created_at", "创建时间", 19.0),
+    ("status", "状态", 14.0),
+    ("priority", "优先级", 10.0),
+    ("category", "分类", 18.0),
+    ("assigned_role", "负责部门", 16.0),
+    ("assignee", "负责人", 16.0),
+    ("location", "地点", 26.0),
+    ("issue", "居民诉求", 60.0),
+    ("handling_requirements", "处理要求", 36.0),
+    ("due_at", "截止时间", 19.0),
+    ("notification_status", "通知状态", 14.0),
+    ("result", "处理结果", 48.0),
+    ("responder", "处理人", 16.0),
+    ("updated_at", "最后更新时间", 19.0),
 ]
 
-WORK_ORDER_METADATA_HEADERS = [
-    "external_id",
-    "ticket_created_at",
-    "title",
-    "description",
-    "resident_ref",
-    "resident_name",
-    "resident_contact",
-    "location",
-    "category",
-    "original_category",
-    "priority",
-    "original_priority",
-    "assigned_role",
-    "assigned_role_label",
-    "source_channel",
-    "assignee",
-    "due_at",
-    "upstream_status",
-    "customer_assessment",
-    "handling_requirements",
-    "people_involved",
-    "current_danger",
-    "assignment_reason",
-    "priority_reason",
-    "notification_status",
-    "notification_target",
-    "notification_channel",
-    "notification_recipients",
-    "notification_message_id",
-    "notification_error",
-    "api_ticket_id",
-    "api_case_id",
-    "api_status",
-    "api_created_at",
-    "api_updated_at",
-    "api_received_at",
-    "notification_event_key",
-    "last_staff_reply",
-    "last_staff_reply_at",
-    "last_staff_responder",
-]
+STATUS_LABELS = {
+    "new": "待处理",
+    "open": "待处理",
+    "waiting_human_review": "待人工审核",
+    "pending_notification": "待通知",
+    "notified": "已通知",
+    "processing": "处理中",
+    "resolved": "已完成",
+    "closed": "已关闭",
+    "failed": "失败",
+}
 
-RECORD_HEADERS = [
-    *BASE_RECORD_HEADERS,
-    *WORK_ORDER_METADATA_HEADERS,
-    "metadata",
-]
+PRIORITY_LABELS = {
+    "critical": "紧急",
+    "emergency": "紧急",
+    "urgent": "紧急",
+    "high": "紧急",
+    "medium": "普通",
+    "normal": "普通",
+    "low": "低",
+}
+
+NOTIFICATION_STATUS_LABELS = {
+    "sent": "已发送",
+    "dry_run": "预览",
+    "pending_configuration": "待配置",
+    "skipped_duplicate": "已发送（重复跳过）",
+    "failed": "发送失败",
+    "disabled": "未启用",
+}
+
+
+_CHINA_TZ = ZoneInfo("Asia/Shanghai")
+_EXPORT_THREAD_LOCK = threading.RLock()
+
+
+def _clean(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value).strip()
+
+
+def _label(value: Any, labels: dict[str, str]) -> str:
+    clean = _clean(value)
+    if not clean:
+        return ""
+    return labels.get(clean.lower(), clean)
+
+
+def _format_datetime(value: Any) -> str:
+    clean = _clean(value)
+    if not clean:
+        return ""
+
+    normalized = clean[:-1] + "+00:00" if clean.endswith("Z") else clean
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return clean
+
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(_CHINA_TZ)
+    return parsed.strftime("%Y-%m-%d %H:%M")
+
+
+def _first_non_empty(*values: Any) -> str:
+    for value in values:
+        clean = _clean(value)
+        if clean:
+            return clean
+    return ""
+
+
+def _work_order_issue(record: dict[str, Any], metadata: dict[str, Any]) -> str:
+    description = _clean(metadata.get("description"))
+    title = _clean(metadata.get("title"))
+    if description:
+        if title and title not in description:
+            return f"{title}\n{description}"
+        return description
+    return title or _clean(record.get("message"))
+
+
+def _staff_work_order_values(record: dict[str, Any]) -> list[object]:
+    metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+
+    created_at = _first_non_empty(
+        metadata.get("ticket_created_at"),
+        metadata.get("api_created_at"),
+        record.get("created_at"),
+    )
+    updated_at = _first_non_empty(
+        metadata.get("last_staff_reply_at"),
+        metadata.get("api_updated_at"),
+        metadata.get("notified_at"),
+        metadata.get("analyzed_at"),
+        created_at,
+    )
+
+    values = {
+        "ticket_id": _first_non_empty(
+            metadata.get("external_id"),
+            metadata.get("ticket_id"),
+            metadata.get("api_ticket_id"),
+            record.get("id"),
+        ),
+        "created_at": _format_datetime(created_at),
+        "status": _label(record.get("status"), STATUS_LABELS),
+        "priority": _label(metadata.get("priority"), PRIORITY_LABELS),
+        "category": _clean(metadata.get("category")),
+        "assigned_role": _first_non_empty(
+            metadata.get("assigned_role_label"),
+            metadata.get("assigned_role"),
+        ),
+        "assignee": _clean(metadata.get("assignee")),
+        "location": _clean(metadata.get("location")),
+        "issue": _work_order_issue(record, metadata),
+        "handling_requirements": _clean(metadata.get("handling_requirements")),
+        "due_at": _format_datetime(metadata.get("due_at")),
+        "notification_status": _label(
+            metadata.get("notification_status"),
+            NOTIFICATION_STATUS_LABELS,
+        ),
+        "result": _first_non_empty(
+            metadata.get("last_staff_reply"),
+            record.get("reply"),
+        ),
+        "responder": _first_non_empty(
+            metadata.get("last_staff_responder"),
+            metadata.get("assignee"),
+        ),
+        "updated_at": _format_datetime(updated_at),
+    }
+    return [values[key] for key, _header, _width in STAFF_WORK_ORDER_COLUMNS]
+
+
+@contextmanager
+def _excel_export_lock(path: Path) -> Iterator[None]:
+    lock_path = path.with_name(f".{path.name}.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with _EXPORT_THREAD_LOCK:
+        with lock_path.open("a+b") as lock_file:
+            if fcntl is not None:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                if fcntl is not None:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
 
 
 def now_iso() -> str:
@@ -108,6 +222,8 @@ def connect() -> sqlite3.Connection:
     connection = sqlite3.connect(get_db_path(), timeout=30)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA busy_timeout = 5000")
+    connection.execute("PRAGMA foreign_keys = ON")
+    connection.execute("PRAGMA synchronous = NORMAL")
     try:
         connection.execute("PRAGMA journal_mode = WAL")
     except sqlite3.OperationalError as exc:
@@ -118,7 +234,7 @@ def connect() -> sqlite3.Connection:
 
 def migrate() -> None:
     ensure_wecom_dir()
-    with connect() as connection:
+    with closing(connect()) as connection:
         connection.executescript(
             """
             CREATE TABLE IF NOT EXISTS wecom_replies (
@@ -152,6 +268,12 @@ def migrate() -> None:
                 ai_fallback INTEGER NOT NULL DEFAULT 0,
                 metadata_json TEXT NOT NULL DEFAULT '{}'
             );
+
+            CREATE INDEX IF NOT EXISTS idx_wecom_records_kind_created_at
+                ON wecom_records(kind, created_at DESC);
+
+            CREATE INDEX IF NOT EXISTS idx_wecom_records_status_created_at
+                ON wecom_records(status, created_at DESC);
             """
         )
         connection.commit()
@@ -281,14 +403,12 @@ def add_record(
             (int(cursor.lastrowid),),
         ).fetchone()
 
-    record = _row_to_dict(row)
-    export_records_xlsx()
-    return record
+    return _row_to_dict(row)
 
 
 def get_record(record_id: int) -> dict[str, Any] | None:
     migrate()
-    with connect() as connection:
+    with closing(connect()) as connection:
         row = connection.execute(
             "SELECT * FROM wecom_records WHERE id = ?",
             (int(record_id),),
@@ -314,7 +434,7 @@ def find_record_by_metadata(
         params.append(kind)
 
     where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    with connect() as connection:
+    with closing(connect()) as connection:
         rows = connection.execute(
             f"""
             SELECT *
@@ -379,9 +499,7 @@ def update_record(
             (int(record_id),),
         ).fetchone()
 
-    record = _row_to_dict(row)
-    export_records_xlsx()
-    return record
+    return _row_to_dict(row)
 
 
 def list_records(limit: int = 50, kind: str | None = None) -> list[dict[str, Any]]:
@@ -397,7 +515,7 @@ def list_records(limit: int = 50, kind: str | None = None) -> list[dict[str, Any
     where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     params.append(limit)
 
-    with connect() as connection:
+    with closing(connect()) as connection:
         rows = connection.execute(
             f"""
             SELECT *
@@ -413,34 +531,38 @@ def list_records(limit: int = 50, kind: str | None = None) -> list[dict[str, Any
 
 
 def export_records_xlsx(path: Path | None = None) -> Path:
+    """Export the staff-facing work-order workbook.
+
+    SQLite remains the complete audit store. The Excel file intentionally
+    contains only operational columns staff need and excludes technical IDs,
+    raw metadata, routing diagnostics, API fields, and resident identifiers.
+    """
     migrate()
     output_path = path or get_records_xlsx_path()
 
-    with connect() as connection:
-        rows = connection.execute(
-            """
-            SELECT *
-            FROM wecom_records
-            ORDER BY id ASC
-            """
-        ).fetchall()
+    with _excel_export_lock(output_path):
+        with closing(connect()) as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM wecom_records
+                WHERE kind = 'work_order'
+                ORDER BY created_at DESC, id DESC
+                """
+            ).fetchall()
 
-    values = []
-    for row in rows:
-        data = _row_to_dict(row)
-        metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
-        values.append([
-            *[data.get(header, "") for header in BASE_RECORD_HEADERS],
-            *[metadata.get(header, "") for header in WORK_ORDER_METADATA_HEADERS],
-            data.get("metadata_json", ""),
-        ])
+        values = [_staff_work_order_values(_row_to_dict(row)) for row in rows]
+        headers = [header for _key, header, _width in STAFF_WORK_ORDER_COLUMNS]
+        widths = [width for _key, _header, width in STAFF_WORK_ORDER_COLUMNS]
 
-    return write_xlsx(
-        output_path,
-        sheet_name="WeCom Records",
-        headers=RECORD_HEADERS,
-        rows=values,
-    )
+        return write_xlsx(
+            output_path,
+            sheet_name="工单台账",
+            headers=headers,
+            rows=values,
+            column_widths=widths,
+        )
+
 
 
 def records_report(kind: str | None = None) -> dict[str, Any]:
@@ -476,6 +598,8 @@ def records_report(kind: str | None = None) -> dict[str, Any]:
         "by_assigned_role": dict(by_role),
         "by_source_channel": dict(by_source),
         "records_xlsx_path": str(export_path),
+        "records_xlsx_scope": "work_order_staff_view",
+        "records_xlsx_columns": [header for _key, header, _width in STAFF_WORK_ORDER_COLUMNS],
     }
 
 
@@ -485,7 +609,7 @@ def doctor() -> dict[str, Any]:
     migrate()
     records_path = export_records_xlsx()
 
-    with connect() as connection:
+    with closing(connect()) as connection:
         record_count = int(connection.execute("SELECT COUNT(*) FROM wecom_records").fetchone()[0])
         reply_count = int(connection.execute("SELECT COUNT(*) FROM wecom_replies").fetchone()[0])
 
@@ -495,6 +619,8 @@ def doctor() -> dict[str, Any]:
         "db_path": str(get_db_path()),
         "faq_path": str(get_faq_path()),
         "records_xlsx_path": str(records_path),
+        "records_xlsx_scope": "work_order_staff_view",
+        "records_xlsx_columns": [header for _key, header, _width in STAFF_WORK_ORDER_COLUMNS],
         "record_count": record_count,
         "reply_count": reply_count,
         "notifications": notification_doctor(),

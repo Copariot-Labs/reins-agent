@@ -379,68 +379,54 @@ def send_wecom_text(
 
 
 def notify_staff(record: dict[str, Any], *, dry_run: bool = False) -> dict[str, Any]:
+    """Notify the responsible staff member in the single shared WeCom group.
+
+    This function intentionally fails closed. It never falls back to private
+    application messages or a different group when the shared group webhook is
+    missing, preventing accidental delivery to the wrong destination.
+    """
     metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
     role = _string(metadata.get("assigned_role")) or "human_review"
     content = build_staff_notification(record)
     user_ids, user_env_name = users_for_role(role)
-
-    # New preferred mode: send one concise message to the shared operations
-    # group and mention the responsible member(s) using their internal UserIDs.
     group_webhook = os.environ.get(WECOM_GROUP_WEBHOOK_ENV, "").strip()
-    if group_webhook:
-        channel = "group_webhook_mention"
+    channel = "group_webhook_mention"
 
-        if dry_run:
-            return {
-                "ok": True,
-                "status": "dry_run",
-                "channel": channel,
-                "assigned_role": role,
-                "target_env": WECOM_GROUP_WEBHOOK_ENV,
-                "recipients": user_ids,
-                "content": content,
-                "error": "",
-            }
-
-        if not user_ids:
-            return {
-                "ok": False,
-                "status": "pending_configuration",
-                "channel": channel,
-                "assigned_role": role,
-                "target_env": WECOM_GROUP_WEBHOOK_ENV,
-                "recipients": [],
-                "content": content,
-                "error": f"missing {user_env_name}",
-            }
-
-        result = send_wecom_text(
-            group_webhook,
-            content,
-            mentioned_user_ids=user_ids,
-        )
+    if not group_webhook:
         return {
-            **result,
+            "ok": False,
+            "status": "pending_configuration",
             "channel": channel,
             "assigned_role": role,
             "target_env": WECOM_GROUP_WEBHOOK_ENV,
             "recipients": user_ids,
             "content": content,
+            "error": f"missing {WECOM_GROUP_WEBHOOK_ENV}",
         }
 
-    # Backward-compatible fallback. If the new shared-group webhook is not
-    # configured, preserve the old private-message/application behavior.
-    webhook_url, webhook_env_name = webhook_for_role(role)
+    if not group_webhook.startswith("https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key="):
+        return {
+            "ok": False,
+            "status": "pending_configuration",
+            "channel": channel,
+            "assigned_role": role,
+            "target_env": WECOM_GROUP_WEBHOOK_ENV,
+            "recipients": user_ids,
+            "content": content,
+            "error": f"invalid {WECOM_GROUP_WEBHOOK_ENV}",
+        }
 
-    if user_ids:
-        channel = "private_message"
-        target_env = user_env_name
-    elif webhook_url:
-        channel = "group_webhook_fallback"
-        target_env = webhook_env_name
-    else:
-        channel = "private_message"
-        target_env = user_env_name
+    if not user_ids:
+        return {
+            "ok": False,
+            "status": "pending_configuration",
+            "channel": channel,
+            "assigned_role": role,
+            "target_env": WECOM_GROUP_WEBHOOK_ENV,
+            "recipients": [],
+            "content": content,
+            "error": f"missing {user_env_name}",
+        }
 
     if dry_run:
         return {
@@ -448,115 +434,51 @@ def notify_staff(record: dict[str, Any], *, dry_run: bool = False) -> dict[str, 
             "status": "dry_run",
             "channel": channel,
             "assigned_role": role,
-            "target_env": target_env,
+            "target_env": WECOM_GROUP_WEBHOOK_ENV,
             "recipients": user_ids,
             "content": content,
             "error": "",
         }
 
-    if user_ids:
-        credentials = {
-            WECOM_CORP_ID_ENV: os.environ.get(WECOM_CORP_ID_ENV, "").strip(),
-            WECOM_APP_SECRET_ENV: os.environ.get(WECOM_APP_SECRET_ENV, "").strip(),
-            WECOM_APP_AGENT_ID_ENV: os.environ.get(WECOM_APP_AGENT_ID_ENV, "").strip(),
-        }
-        missing = [name for name, value in credentials.items() if not value]
-        if missing:
-            return {
-                "ok": False,
-                "status": "pending_configuration",
-                "channel": channel,
-                "assigned_role": role,
-                "target_env": target_env,
-                "recipients": user_ids,
-                "content": content,
-                "error": f"missing {', '.join(missing)}",
-            }
-
-        result = send_wecom_app_text(
-            corp_id=credentials[WECOM_CORP_ID_ENV],
-            app_secret=credentials[WECOM_APP_SECRET_ENV],
-            agent_id=credentials[WECOM_APP_AGENT_ID_ENV],
-            user_ids=user_ids,
-            content=content,
-        )
-        return {
-            **result,
-            "channel": channel,
-            "assigned_role": role,
-            "target_env": target_env,
-            "recipients": user_ids,
-            "content": content,
-        }
-
-    if not webhook_url:
-        return {
-            "ok": False,
-            "status": "pending_configuration",
-            "channel": channel,
-            "assigned_role": role,
-            "target_env": target_env,
-            "recipients": [],
-            "content": content,
-            "error": f"missing {user_env_name}",
-        }
-
-    result = send_wecom_text(webhook_url, content)
+    result = send_wecom_text(
+        group_webhook,
+        content,
+        mentioned_user_ids=user_ids,
+    )
     return {
         **result,
         "channel": channel,
         "assigned_role": role,
-        "target_env": target_env,
-        "recipients": [],
+        "target_env": WECOM_GROUP_WEBHOOK_ENV,
+        "recipients": user_ids,
         "content": content,
     }
 
 
+
 def notification_doctor() -> dict[str, Any]:
-    credentials = {
-        WECOM_CORP_ID_ENV: bool(os.environ.get(WECOM_CORP_ID_ENV, "").strip()),
-        WECOM_APP_SECRET_ENV: bool(os.environ.get(WECOM_APP_SECRET_ENV, "").strip()),
-        WECOM_APP_AGENT_ID_ENV: bool(os.environ.get(WECOM_APP_AGENT_ID_ENV, "").strip()),
-    }
-    app_credentials_ready = all(credentials.values())
-    shared_group_ready = bool(os.environ.get(WECOM_GROUP_WEBHOOK_ENV, "").strip())
+    group_webhook = os.environ.get(WECOM_GROUP_WEBHOOK_ENV, "").strip()
+    group_webhook_valid = group_webhook.startswith(
+        "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key="
+    )
     roles: dict[str, Any] = {}
 
     for role in ROLE_USER_ENV:
         user_ids, user_env = users_for_role(role)
-
-        if shared_group_ready:
-            mode = "group_webhook_mention"
-            ready = bool(user_ids)
-            target_env = WECOM_GROUP_WEBHOOK_ENV
-        else:
-            webhook_url, webhook_env = webhook_for_role(role)
-            if user_ids:
-                mode = "private_message"
-                ready = app_credentials_ready
-                target_env = user_env
-            elif webhook_url:
-                mode = "group_webhook_fallback"
-                ready = True
-                target_env = webhook_env
-            else:
-                mode = "not_configured"
-                ready = False
-                target_env = user_env
-
         roles[role] = {
-            "ready": ready,
-            "mode": mode,
-            "target_env": target_env,
+            "ready": bool(group_webhook_valid and user_ids),
+            "mode": "group_webhook_mention",
+            "target_env": WECOM_GROUP_WEBHOOK_ENV,
             "recipient_env": user_env,
             "recipient_count": len(user_ids),
         }
 
     return {
-        "preferred_mode": "group_webhook_mention" if shared_group_ready else "legacy",
-        "group_webhook_ready": shared_group_ready,
+        "preferred_mode": "group_webhook_mention",
+        "group_webhook_ready": bool(group_webhook),
+        "group_webhook_valid": group_webhook_valid,
         "group_webhook_env": WECOM_GROUP_WEBHOOK_ENV,
-        "app_credentials_ready": app_credentials_ready,
-        "credentials": credentials,
+        "legacy_private_fallback_enabled": False,
         "roles": roles,
     }
+
