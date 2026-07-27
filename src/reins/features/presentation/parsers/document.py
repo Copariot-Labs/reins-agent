@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 from reins.features.presentation.config import get_engine_config
+from reins.features.presentation.engines.utils import get_venv_python
 
 
 class PresentationDocumentIntakeError(RuntimeError):
@@ -24,7 +25,7 @@ def extract_pdf_markdown(
         )
 
     config = get_engine_config("ppt_master")
-    python_path = config["venv"] / "bin" / "python"
+    python_path = get_venv_python(config["venv"])
     converter_path = (
         config["path"]
         / "skills"

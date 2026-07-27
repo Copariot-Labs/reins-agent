@@ -1,10 +1,10 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { once } from 'events'
 import { readFile, realpath, stat } from 'fs/promises'
-import { homedir } from 'os'
 import { basename, extname, isAbsolute, join, relative, resolve } from 'path'
 import { PassThrough } from 'stream'
 import { logger } from '../logger'
+import { defaultReinsHome } from './reins-path'
 
 export type WorkModeName = 'work' | 'demo' | 'headless'
 
@@ -99,7 +99,7 @@ function resolveReinsBin(): string {
 function reinsHomeCandidates(): string[] {
   const candidates = [
     process.env.REINS_HOME?.trim(),
-    join(homedir(), '.reins'),
+    defaultReinsHome(),
   ].filter((value): value is string => Boolean(value))
 
   return [...new Set(candidates.map(value => resolve(value)))]

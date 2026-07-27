@@ -1,7 +1,8 @@
 import { existsSync, readFileSync, statSync } from 'fs';
 import { homedir } from 'os';
-import { basename, dirname, join, resolve } from 'path';
+import { join, resolve } from 'path';
 import { DatabaseSync } from 'node:sqlite';
+import { resolveReinsHome as resolveDefaultReinsHome } from './reins-path';
 
 export interface WorkOrderQuery {
   search: string;
@@ -198,21 +199,8 @@ function rowToWorkOrder(row: SqlRow): WorkOrderRecord {
   };
 }
 
-function resolveRootHomeFromHermes(value: string): string {
-  const home = resolve(value);
-  const parent = dirname(home);
-  if (basename(parent) === 'profiles') return dirname(parent);
-  return home;
-}
-
 export function getReinsHome(): string {
-  const reinsHome = process.env.REINS_HOME?.trim();
-  if (reinsHome) return resolve(reinsHome);
-
-  const hermesHome = process.env.HERMES_HOME?.trim();
-  if (hermesHome) return resolveRootHomeFromHermes(hermesHome);
-
-  return join(homedir(), '.reins');
+  return resolveDefaultReinsHome();
 }
 
 export function getWorkOrderDbPath(): string {

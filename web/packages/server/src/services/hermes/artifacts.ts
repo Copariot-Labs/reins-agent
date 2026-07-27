@@ -1,8 +1,7 @@
 import { execFile } from 'child_process'
-import { homedir } from 'os'
-import { join } from 'path'
 import { promisify } from 'util'
 import { logger } from '../logger'
+import { resolveReinsHome as resolveDefaultReinsHome } from './reins-path'
 
 const execFileAsync = promisify(execFile)
 const DEFAULT_ARTIFACT_TIMEOUT_MS = 240000
@@ -23,9 +22,7 @@ function resolveReinsBin(): string {
 }
 
 function resolveReinsHome(): string {
-  return process.env.REINS_HOME?.trim() ||
-    process.env.HERMES_HOME?.trim() ||
-    join(homedir(), '.reins')
+  return resolveDefaultReinsHome()
 }
 
 function artifactTimeoutMs(): number {

@@ -3,8 +3,8 @@ import { randomBytes } from 'crypto'
 import { once } from 'events'
 import { createReadStream } from 'fs'
 import { mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'fs/promises'
-import { homedir } from 'os'
-import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'path'
+import { basename, extname, isAbsolute, join, relative, resolve } from 'path'
+import { resolveReinsHome } from './reins-path'
 
 export type PresentationStyle = 'modern' | 'tech' | 'corporate' | 'creative' | 'minimal' | 'dark'
 export type PresentationOutputFormat = 'pptx' | 'html' | 'pdf'
@@ -118,21 +118,8 @@ function serviceError(message: string, code: string): Error & { code: string } {
   return Object.assign(new Error(message), { code })
 }
 
-function resolveRootHomeFromHermes(value: string): string {
-  const home = resolve(value)
-  const parent = dirname(home)
-  if (basename(parent) === 'profiles') return dirname(parent)
-  return home
-}
-
 export function getPresentationsHome(): string {
-  const reinsHome = process.env.REINS_HOME?.trim()
-  if (reinsHome) return join(resolve(reinsHome), 'presentations')
-
-  const hermesHome = process.env.HERMES_HOME?.trim()
-  if (hermesHome) return join(resolveRootHomeFromHermes(hermesHome), 'presentations')
-
-  return join(homedir(), '.reins', 'presentations')
+  return join(resolveReinsHome(), 'presentations')
 }
 
 function requiredText(value: unknown, field: string, maxLength: number): string {

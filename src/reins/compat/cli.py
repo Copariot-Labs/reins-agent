@@ -128,7 +128,8 @@ Examples:
   REINS_HOME=/tmp/reins-test reins debug-env
 
 Environment:
-  REINS_HOME   Reins data directory, defaults to ~/.reins
+  REINS_HOME   Reins data directory. Defaults to ~/.reins on macOS/Linux
+               and %LOCALAPPDATA%\\reins on Windows.
 """
     )
 

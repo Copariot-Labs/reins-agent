@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Sequence
 
@@ -15,7 +16,28 @@ def _get_web_root() -> Path:
 
 
 def _get_venv_python(project_root: Path) -> Path:
+    if os.name == "nt":
+        return project_root / ".venv" / "Scripts" / "python.exe"
+
     return project_root / ".venv" / "bin" / "python"
+
+
+def _activation_command() -> str:
+    if os.name == "nt":
+        return r".venv\Scripts\Activate.ps1"
+
+    return "source .venv/bin/activate"
+
+
+def _find_npm_bin() -> str | None:
+    candidates = ["npm.cmd", "npm"] if os.name == "nt" else ["npm"]
+
+    for candidate in candidates:
+        path = shutil.which(candidate)
+        if path:
+            return path
+
+    return None
 
 
 def _find_reins_bin() -> str | None:
@@ -30,7 +52,12 @@ def run_web(argv: Sequence[str] | None = None) -> int:
     project_root = get_project_root()
     web_root = _get_web_root()
     hermes_agent_root = project_root / "vendor" / "hermes-agent"
-    bridge_python = _get_venv_python(project_root)
+    configured_bridge_python = os.environ.get("HERMES_AGENT_BRIDGE_PYTHON")
+    bridge_python = (
+        Path(os.path.expandvars(configured_bridge_python)).expanduser().resolve()
+        if configured_bridge_python
+        else _get_venv_python(project_root)
+    )
 
     if not web_root.exists():
         print(f"Web UI directory not found: {web_root}")
@@ -53,21 +80,31 @@ def run_web(argv: Sequence[str] | None = None) -> int:
         return 1
 
     reins_bin = _find_reins_bin()
+    npm_bin = _find_npm_bin()
 
     if reins_bin is None:
         print("Could not find `reins` on PATH.")
         print("Activate your virtual environment and reinstall Reins:")
-        print("  source .venv/bin/activate")
+        print(f"  {_activation_command()}")
         print("  uv pip install -e .")
+        return 1
+
+    if npm_bin is None:
+        print("Could not find `npm` on PATH.")
+        print("Install Node.js 23+ and npm, then run:")
+        print("  cd web")
+        print("  npm install")
         return 1
 
     if not bridge_python.exists():
         print(f"Bridge Python not found: {bridge_python}")
         print("Create the virtual environment and install Reins:")
         print("  uv venv")
-        print("  source .venv/bin/activate")
+        print(f"  {_activation_command()}")
         print("  uv pip install -e vendor/hermes-agent")
         print("  uv pip install -e .")
+        print()
+        print(f"Current Python: {sys.executable}")
         return 1
 
     env = os.environ.copy()
@@ -79,16 +116,17 @@ def run_web(argv: Sequence[str] | None = None) -> int:
     env["HERMES_AGENT_ROOT"] = str(hermes_agent_root)
     env["HERMES_AGENT_BRIDGE_PYTHON"] = str(bridge_python)
 
-    command = ["npm", "run", "dev"]
+    command = [npm_bin, "run", "dev"]
 
     if argv and argv[0] == "start":
-        command = ["npm", "run", "start"]
+        command = [npm_bin, "run", "start"]
 
     print("Starting Reins Web UI")
     print(f"Project root:                 {project_root}")
     print(f"Web root:                     {web_root}")
     print(f"REINS_HOME:                   {env['REINS_HOME']}")
     print(f"REINS_BIN:                    {env['REINS_BIN']}")
+    print(f"npm:                          {npm_bin}")
     print(f"HERMES_HOME:                  {env['HERMES_HOME']}")
     print(f"HERMES_BIN:                   {env['HERMES_BIN']}")
     print(f"HERMES_WEB_UI_HOME:           {env['HERMES_WEB_UI_HOME']}")

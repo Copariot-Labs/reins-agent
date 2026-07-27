@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import sys
 from dataclasses import dataclass
 from typing import Any
 
@@ -174,6 +175,18 @@ def should_handle_artifact_chat(message: str) -> bool:
     return True
 
 
+def open_command_for_path(path: str, *, platform: str | None = None) -> str:
+    current_platform = platform or sys.platform
+
+    if current_platform == "win32":
+        return f'start "" "{path}"'
+
+    if current_platform == "darwin":
+        return f'open "{path}"'
+
+    return f'xdg-open "{path}"'
+
+
 def _format_success_message(*, title: str, kind: str, path: str) -> str:
     return "\n".join(
         [
@@ -183,7 +196,7 @@ def _format_success_message(*, title: str, kind: str, path: str) -> str:
             f"Path: {path}",
             "",
             "Open it with:",
-            f'open "{path}"',
+            open_command_for_path(path),
         ]
     )
 

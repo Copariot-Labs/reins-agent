@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync } from 'fs';
 import { mkdir, writeFile } from 'fs/promises';
-import { basename, dirname, join, resolve } from 'path';
-import { homedir } from 'os';
+import { join } from 'path';
 import { DatabaseSync } from 'node:sqlite';
+import { resolveReinsHome } from './reins-path';
 
 export type FinanceTransactionType = 'income' | 'expense';
 
@@ -123,21 +123,8 @@ INSERT OR IGNORE INTO finance_schema_migrations (id, applied_at)
 VALUES ('001_init.sql', datetime('now'));
 `;
 
-function resolveRootHomeFromHermes(value: string): string {
-  const home = resolve(value);
-  const parent = dirname(home);
-  if (basename(parent) === 'profiles') return dirname(parent);
-  return home;
-}
-
 export function getReinsHome(): string {
-  const reinsHome = process.env.REINS_HOME?.trim();
-  if (reinsHome) return resolve(reinsHome);
-
-  const hermesHome = process.env.HERMES_HOME?.trim();
-  if (hermesHome) return resolveRootHomeFromHermes(hermesHome);
-
-  return join(homedir(), '.reins');
+  return resolveReinsHome();
 }
 
 export function getFinanceHome(): string {
