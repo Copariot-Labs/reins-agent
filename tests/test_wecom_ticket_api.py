@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 from subprocess import CompletedProcess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -28,6 +29,7 @@ from reins.features.wecom.ticket_service import (
     build_systemd_unit,
     build_windows_task_script,
     install_service,
+    service_python_path,
     service_status,
     stop_service,
     uninstall_service,
@@ -531,6 +533,28 @@ class WeComTicketAPITests(unittest.TestCase):
         self.assertIn("WantedBy=default.target", unit)
         self.assertIn(str(script_path), unit)
 
+    def test_ubuntu_service_preserves_virtualenv_python_symlink(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            virtual_env = root / ".venv"
+            virtualenv_python = virtual_env / "bin" / "python"
+            virtualenv_python.parent.mkdir(parents=True)
+            virtualenv_python.symlink_to(Path(sys.executable))
+            with patch.dict(
+                os.environ,
+                {
+                    "REINS_HOME": str(root / "reins"),
+                    "VIRTUAL_ENV": str(virtual_env),
+                },
+                clear=True,
+            ):
+                selected = service_python_path()
+                script = build_linux_poller_script(interval=12)
+
+        self.assertEqual(selected, virtualenv_python)
+        self.assertNotEqual(selected, virtualenv_python.resolve())
+        self.assertIn(str(virtualenv_python), script)
+
     def test_ubuntu_service_installs_and_starts_systemd_user_unit(self):
         reloaded = CompletedProcess(["systemctl"], returncode=0, stdout="", stderr="")
         enabled = CompletedProcess(["systemctl"], returncode=0, stdout="", stderr="")
@@ -552,12 +576,16 @@ class WeComTicketAPITests(unittest.TestCase):
                     ):
                         with patch("reins.features.wecom.ticket_service.sys.platform", "linux"):
                             with patch(
-                                "reins.features.wecom.ticket_service._systemctl",
-                                side_effect=[reloaded, enabled, started],
-                            ) as systemctl:
-                                result = install_service(interval=12)
-                                script_exists = script_path.is_file()
-                                unit_exists = unit_path.is_file()
+                                "reins.features.wecom.ticket_service._service_python_error",
+                                return_value="",
+                            ):
+                                with patch(
+                                    "reins.features.wecom.ticket_service._systemctl",
+                                    side_effect=[reloaded, enabled, started],
+                                ) as systemctl:
+                                    result = install_service(interval=12)
+                                    script_exists = script_path.is_file()
+                                    unit_exists = unit_path.is_file()
 
         self.assertTrue(result["ok"])
         self.assertTrue(result["installed"])
@@ -573,6 +601,32 @@ class WeComTicketAPITests(unittest.TestCase):
             systemctl.call_args_list[2].args[0],
             ["restart", SYSTEMD_UNIT_NAME],
         )
+
+    def test_service_install_rejects_python_that_cannot_import_reins(self):
+        python_path = Path("/opt/reins/.venv/bin/python")
+        with patch("reins.features.wecom.ticket_service.sys.platform", "linux"):
+            with patch(
+                "reins.features.wecom.ticket_service.service_python_path",
+                return_value=python_path,
+            ):
+                with patch(
+                    "reins.features.wecom.ticket_service._service_python_error",
+                    return_value=(
+                        f"service Python cannot import Reins: {python_path}\n"
+                        "ModuleNotFoundError: No module named 'reins'"
+                    ),
+                ):
+                    with patch(
+                        "reins.features.wecom.ticket_service._install_linux_service"
+                    ) as install_linux:
+                        result = install_service(interval=12)
+
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["installed"])
+        self.assertFalse(result["running"])
+        self.assertEqual(result["python_path"], str(python_path))
+        self.assertIn("cannot import Reins", result["error"])
+        install_linux.assert_not_called()
 
     def test_ubuntu_service_status_parses_systemd_properties(self):
         status = CompletedProcess(

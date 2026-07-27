@@ -10,6 +10,7 @@ import sys
 from typing import Any, Sequence
 
 from reins.api.home import get_reins_home
+from reins.compat.bootstrap import get_project_root
 
 
 SERVICE_LABEL = "ai.reins.wecom-ticket-poller"
@@ -51,6 +52,67 @@ def service_target() -> str:
     return f"gui/{os.getuid()}/{SERVICE_LABEL}"
 
 
+def service_python_path() -> Path:
+    """Return a Python path without resolving virtualenv symlinks.
+
+    On Ubuntu, resolving ``.venv/bin/python`` commonly produces
+    ``/usr/bin/python3``. Executing that resolved path bypasses the virtual
+    environment and cannot import the editable Reins installation.
+    """
+    candidates: list[Path] = []
+    configured = os.environ.get("REINS_SERVICE_PYTHON", "").strip()
+    if configured:
+        candidates.append(Path(os.path.expandvars(configured)).expanduser())
+
+    virtual_env = os.environ.get("VIRTUAL_ENV", "").strip()
+    if virtual_env:
+        venv_root = Path(os.path.expandvars(virtual_env)).expanduser()
+        candidates.append(
+            venv_root / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        )
+
+    project_root = get_project_root()
+    candidates.append(
+        project_root
+        / ".venv"
+        / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    )
+    candidates.append(Path(sys.executable))
+
+    for candidate in candidates:
+        absolute = candidate if candidate.is_absolute() else candidate.absolute()
+        if absolute.is_file():
+            return absolute
+    return Path(sys.executable)
+
+
+def _service_python_error(python_path: Path) -> str:
+    env = os.environ.copy()
+    env.pop("PYTHONHOME", None)
+    env.pop("PYTHONPATH", None)
+    try:
+        result = subprocess.run(
+            [str(python_path), "-c", "import reins.main"],
+            cwd=python_path.parent,
+            env=env,
+            capture_output=True,
+            check=False,
+            text=True,
+            errors="replace",
+            timeout=15,
+        )
+    except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired) as exc:
+        return f"could not run service Python {python_path}: {exc}"
+    if result.returncode == 0:
+        return ""
+    detail = (result.stderr or result.stdout or "could not import reins.main").strip()
+    return (
+        f"service Python cannot import Reins: {python_path}\n{detail}\n"
+        "Activate the project virtual environment and run `uv pip install -e .`, "
+        "or set REINS_SERVICE_PYTHON to the correct venv Python path."
+    )
+
+
 def _platform_error() -> dict[str, Any] | None:
     if sys.platform in {"darwin", "win32"} or sys.platform.startswith("linux"):
         return None
@@ -66,7 +128,7 @@ def build_service_definition(*, interval: float = 30.0) -> dict[str, Any]:
     return {
         "Label": SERVICE_LABEL,
         "ProgramArguments": [
-            sys.executable,
+            str(service_python_path()),
             "-m",
             "reins.main",
             "wecom",
@@ -132,7 +194,7 @@ def build_windows_task_script(*, interval: float = 30.0) -> str:
             "$env:PYTHONIOENCODING = 'utf-8'",
             "$env:PYTHONUNBUFFERED = '1'",
             "$env:PYTHONUTF8 = '1'",
-            f"$python = {_powershell_quote(Path(sys.executable).resolve())}",
+            f"$python = {_powershell_quote(service_python_path())}",
             "$arguments = @(",
             argument_lines,
             ")",
@@ -159,7 +221,7 @@ def build_linux_poller_script(*, interval: float = 30.0) -> str:
     reins_home = get_reins_home()
     logs_dir = reins_home / "logs"
     arguments = [
-        str(Path(sys.executable).resolve()),
+        str(service_python_path()),
         "-m",
         "reins.main",
         "wecom",
@@ -496,6 +558,16 @@ def install_service(*, interval: float = 30.0) -> dict[str, Any]:
     unsupported = _platform_error()
     if unsupported:
         return unsupported
+    python_path = service_python_path()
+    python_error = _service_python_error(python_path)
+    if python_error:
+        return {
+            "ok": False,
+            "installed": False,
+            "running": False,
+            "python_path": str(python_path),
+            "error": python_error,
+        }
     if sys.platform == "win32":
         return _install_windows_service(interval=interval)
     if sys.platform.startswith("linux"):
