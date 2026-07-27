@@ -1,57 +1,75 @@
 # Reins Agent
 
-Reins Agent is a local-first personal agent product built on top of the upstream Hermes Agent runtime. Reins owns the product wrapper, local data home, finance tools, reports, Web UI integration, and user-facing commands. Hermes Agent remains the upstream core for the agent loop, chat runtime, models, skills, gateway, memory, and related platform features.
+Reins Agent is a local-first personal agent product built on top of the upstream Hermes Agent runtime. Reins owns the product wrapper, local data home, Finance tools, WeCom work-order tools, artifacts, presentations, and Web UI integration. Hermes remains the upstream core for chat, models, memory, skills, gateway, and the agent loop.
 
-The `vendor/hermes-agent/` directory is treated as upstream source. Do not modify it for Reins product work; update it from the Hermes Agent repository when needed.
+`vendor/hermes-agent/` is upstream source. Do not patch it for Reins product work unless you are intentionally updating the vendored runtime.
 
-## Features
-
-- `reins` CLI wrapper with Reins-owned commands and Hermes pass-through commands.
-- Isolated Reins data directory under `~/.reins` by default.
-- Optional migration from an existing `~/.hermes` directory.
-- Local finance module with natural-language transaction parsing, SQLite storage, reports, CSV export, and Hermes-compatible plugin tools.
-- Work Mode execution surface for backend-first agent work, streamed narration, visible desktop actions, and artifact/source summaries.
-- Web dashboard in `web/`, including a Finance section for summaries, recent transactions, tables, and CSV export.
-
-## Repository Layout
+## Repository
 
 ```text
 .
-├── src/reins/                  # Reins Python package and CLI wrapper
-│   ├── compat/                 # Hermes compatibility layer and Reins-owned commands
-│   └── features/finance/       # Finance parser, repository, reports, tools, exports
-├── web/                        # Vue/Koa Hermes Web UI with Reins finance dashboard
+├── src/reins/                  # Reins Python package and CLI
+│   ├── compat/                 # Hermes compatibility, bootstrap, env, web launcher
+│   └── features/               # Reins-owned product features
+│       ├── finance/            # Local finance parser, SQLite, reports, CSV, plugin
+│       ├── wecom/              # WeCom work orders, ticket API polling, Excel ledger
+│       ├── artifacts/          # Chat-triggered Office/text artifact creation
+│       └── presentation/       # Presentation jobs and engines
+├── web/                        # Vue/Koa Web UI
 ├── scripts/                    # Local helper scripts
-├── vendor/hermes-agent/        # Upstream Hermes Agent runtime, do not edit here
-└── pyproject.toml              # Reins package metadata
+├── external/                   # Optional local engines/assets
+├── vendor/hermes-agent/        # Vendored Hermes runtime
+└── pyproject.toml
 ```
 
 ## Requirements
 
 - Python 3.11+
-- Node.js 23+ for the Web UI
+- `uv`
+- Node.js 23+
 - npm
-- Git submodules initialized for `vendor/hermes-agent/`
+- Git submodules initialized
 
 ## Setup
 
+macOS/Linux:
+
 ```bash
-# Clone the Reins repository
 git clone https://github.com/Copariot-Labs/reins-agent.git
 cd reins-agent
-
-# Initialize Hermes upstream submodule
 git submodule update --init --recursive
 
 uv venv
 source .venv/bin/activate
-
 uv pip install -e vendor/hermes-agent
 uv pip install -e .
 
 cd web
 npm install
 cd ..
+```
+
+Windows PowerShell:
+
+```powershell
+git clone https://github.com/Copariot-Labs/reins-agent.git
+cd reins-agent
+git submodule update --init --recursive
+
+uv venv
+.\.venv\Scripts\Activate.ps1
+uv pip install -e vendor/hermes-agent
+uv pip install -e .
+
+cd web
+npm install
+cd ..
+```
+
+If PowerShell blocks venv activation, run this in the same terminal and activate again:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
 ```
 
 Check the install:
@@ -62,174 +80,75 @@ reins about
 reins debug-env
 ```
 
-## Data Directories
+## Data And Env
 
-Reins defaults to:
-
-```text
-~/.reins
-```
-
-Important paths:
+Default Reins data homes:
 
 ```text
-~/.reins/finance/finance.sqlite       # Finance SQLite database
-~/.reins/finance/export/              # Finance CSV exports
-~/.reins/web-ui/                      # Web UI runtime state when launched by Reins
-~/.reins/plugins/reins-finance/       # Installed finance plugin
+macOS/Linux: ~/.reins
+Windows:     %LOCALAPPDATA%\reins
 ```
 
-## CLI Usage
+Core paths:
 
-Show help:
+```text
+<REINS_HOME>/finance/finance.sqlite
+<REINS_HOME>/wecom/wecom.sqlite
+<REINS_HOME>/wecom/records.xlsx
+<REINS_HOME>/artifacts/
+<REINS_HOME>/presentations/
+<REINS_HOME>/web-ui/
+<REINS_HOME>/plugins/
+<REINS_HOME>/.env
+```
+
+`reins` sets `HERMES_HOME` to `REINS_HOME` so Hermes data stays inside the Reins product home. `REINS_HOME` and `HERMES_HOME` both support absolute paths, `~`, `$VAR`, `${VAR}`, and Windows `%VAR%` expansion.
+
+## CLI Basics
 
 ```bash
 reins --help
+reins chat
+reins chat "hello"
+reins doctor
+reins model
+reins tools
+reins config
+reins sessions
 ```
 
 Reins-owned commands:
 
 ```bash
-reins version
-reins about
+reins finance --help
+reins wecom --help
+reins artifacts --help
+reins presentation --help
+reins web
 reins migrate hermes
 reins update
-reins finance --help
-reins workmode --help
-reins web
 reins debug-env
-```
-
-Hermes pass-through commands still work through `reins`, for example:
-
-```bash
-reins chat
-reins doctor
-reins model
-reins tools
-reins config
-reins gateway
-reins sessions
-```
-
-Direct chat prompts are normalized for the Hermes CLI:
-
-```bash
-reins chat "hello"
-```
-
-Finance-looking direct chat messages may be handled by the Reins finance preprocessor:
-
-```bash
-reins chat "今天买咖啡 28"
-```
-
-## Finance
-
-Run a database health check:
-
-```bash
-reins finance doctor
-```
-
-Parse a transaction without recording it:
-
-```bash
-reins finance parse "今天买咖啡 28"
-```
-
-Record expenses and income:
-
-```bash
-reins finance add "今天买咖啡 28"
-reins finance add "昨天打车 45"
-reins finance add "收到客户转账 3000"
-```
-
-List and report:
-
-```bash
-reins finance list
-reins finance list --month 2026-06
-reins finance report
-reins finance report --month 2026-06
-```
-
-Void a transaction:
-
-```bash
-reins finance void 1
-```
-
-Export CSV:
-
-```bash
-reins finance export csv
-reins finance export csv --month 2026-06
-reins finance export csv --output ~/Desktop/reins-finance.csv
-reins finance export csv --include-voided
-```
-
-Install the finance plugin into the Reins plugin directory:
-
-```bash
-reins finance install-plugin
-reins plugins enable reins-finance
-```
-
-The installed plugin exposes finance parsing, recording, listing, and summary tools to the Hermes runtime.
-
-## Work Mode
-
-Work Mode follows the community assistant reference pattern: backend execution first, visible desktop behavior only where useful, streamed status events, and final artifact/source reporting.
-
-Run a task from the CLI:
-
-```bash
-reins workmode run "generate an operations report" --mode work
-reins workmode run "generate an operations report" --mode headless
-```
-
-Check local dependencies and artifact paths:
-
-```bash
-reins workmode doctor
-```
-
-The Web UI exposes the same event stream at:
-
-```text
-/#/reins/workmode
 ```
 
 ## Web UI
 
-Start the Web UI through Reins:
+Start the development Web UI through Reins:
 
 ```bash
 reins web
 ```
 
-This launches the `web/` app with Reins-specific environment values:
-
-```text
-REINS_HOME
-HERMES_HOME
-HERMES_BIN
-HERMES_WEB_UI_HOME
-HERMES_AGENT_ROOT
-HERMES_AGENT_BRIDGE_PYTHON
-```
-
-The development Web UI runs the backend and frontend together. By default, the client is served on port `8649` and the backend on port `8647`.
-
-You can also use the helper script:
+Helper scripts:
 
 ```bash
 scripts/start-reins-web.sh
 ```
 
-For direct web development:
+```powershell
+.\scripts\start-reins-web.ps1
+```
+
+Direct web development:
 
 ```bash
 cd web
@@ -238,51 +157,182 @@ npm run build
 npm test
 ```
 
-The Web UI includes a Finance dashboard at:
+Default development ports:
 
 ```text
-/#/reins/finance
+backend:  8647
+frontend: 8649
 ```
 
-It reads from the Reins finance database, displays monthly totals and transactions, and exports CSV data through the dashboard.
+## Finance CLI
 
-## Migrating From Hermes
+```bash
+reins finance doctor
+reins finance parse "今天买咖啡 28"
+reins finance add "今天买咖啡 28"
+reins finance list
+reins finance list --month 2026-06
+reins finance report
+reins finance export csv
+reins finance export csv --output ~/Desktop/reins-finance.csv
+reins finance install-plugin
+reins plugins enable reins-finance
+```
 
-To copy existing Hermes data from `~/.hermes` into `~/.reins`:
+Windows export example:
+
+```powershell
+reins finance export csv --output "$env:USERPROFILE\Desktop\reins-finance.csv"
+```
+
+## WeCom CLI
+
+The WeCom feature handles community work-order intake, local SQLite records, staff-facing Excel export, responsible-role routing, group notification, staff replies, and ticket API polling.
+
+Run a health check:
+
+```bash
+reins wecom doctor
+```
+
+Restart or reinstall the service
+
+```bash
+reins wecom ticket-api service stop
+reins wecom ticket-api service start
+reins wecom ticket-api service status
+```
+
+Create a work order:
+
+```bash
+reins wecom work-order add \
+  --external-id T-1001 \
+  --title "楼道照明损坏" \
+  --description "居民反馈 3 号楼 2 单元楼道灯不亮" \
+  --location "3号楼2单元" \
+  --category "物业维修" \
+  --priority normal \
+  --notify \
+  --json
+```
+
+Notify or update an existing work order:
+
+```bash
+reins wecom work-order notify --external-id T-1001 --dry-run --json
+reins wecom work-order reply --external-id T-1001 --message "已安排维修，今晚完成" --responder "物业" --json
+```
+
+Inspect records and export the Excel ledger:
+
+```bash
+reins wecom records list --limit 20 --json
+reins wecom records report --json
+reins wecom records export --json
+```
+
+Poll the internal ticket API:
+
+```bash
+reins wecom ticket-api doctor --json
+reins wecom ticket-api inspect --limit 5 --json
+reins wecom ticket-api poll --dry-run --json
+reins wecom ticket-api poll --watch --json-lines
+reins wecom ticket-api cursor --now --json
+reins wecom ticket-api cursor --reset --json
+```
+
+Install the WeCom Hermes plugin:
+
+```bash
+reins wecom install-plugin
+reins plugins enable reins-wecom
+```
+
+Common WeCom environment values go in `<REINS_HOME>/.env`:
+
+```dotenv
+REINS_WECOM_NOTIFY_GROUP_WEBHOOK=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...
+REINS_WECOM_NOTIFY_USERS_PROPERTY=user_a,user_b
+REINS_WECOM_NOTIFY_USERS_CLEANING=user_c
+REINS_WECOM_NOTIFY_USERS_POLICE=user_d
+REINS_WECOM_NOTIFY_USERS_HOSPITAL=user_e
+REINS_WECOM_NOTIFY_USERS_COMMUNITY=user_f
+REINS_WECOM_NOTIFY_USERS_DEFAULT=user_admin
+REINS_WECOM_REPLY_BOT_NAME=社区美女
+
+REINS_TICKET_API_URL=https://example.com/internal/tickets
+REINS_TICKET_API_TOKEN=replace-me
+REINS_TICKET_API_STATUSES=pending_dispatch,dispatched,reopened,notification_failed
+REINS_TICKET_API_POLL_INTERVAL=30
+REINS_TICKET_API_LIMIT=20
+
+REINS_WECOM_EXPORT_DIR=/absolute/path/for/staff-documents
+```
+
+`reins wecom ticket-api service ...` manages a macOS `launchd` poller only. On Windows, run `reins wecom ticket-api poll --watch --json-lines` in a terminal or wire that command into your own scheduled task/service wrapper.
+
+## Artifacts And Presentations
+
+Artifacts can create local DOCX/XLSX/PPTX/TXT/JSON files from chat-style requests:
+
+```bash
+reins artifacts --help
+reins chat "create a maintenance notice document for residents"
+```
+
+Presentation jobs:
+
+```bash
+reins presentation --help
+reins presentation doctor
+```
+
+Optional presentation engines live under `external/`; configure and verify them with the presentation doctor before relying on them in development.
+
+## Migration
+
+Copy existing Hermes data into the Reins home:
 
 ```bash
 reins migrate hermes
 ```
 
-The migration copies files that do not already exist and writes a marker file:
+Source defaults:
 
 ```text
-~/.reins/.migrated-from-hermes
+macOS/Linux: ~/.hermes
+Windows:     %LOCALAPPDATA%\hermes
 ```
 
-The original `~/.hermes` directory is not deleted. To rerun migration:
+The migration copies missing files only and writes:
+
+```text
+<REINS_HOME>/.migrated-from-hermes
+```
+
+## Developer Checks
+
+Useful checks before handing off changes:
 
 ```bash
-reins migrate hermes --force
+.venv/bin/python -m compileall -q src/reins
+.venv/bin/python -m unittest tests.test_windows_compat
+reins finance doctor
+reins wecom doctor
+
+cd web
+npm test
+npm run build
 ```
+
+On Windows, replace `.venv/bin/python` with `.\.venv\Scripts\python.exe`.
 
 ## Development Notes
 
-- Keep Reins product code in `src/reins/` and `web/`.
-- Keep `vendor/hermes-agent/` aligned with the upstream Hermes Agent repository.
-- Prefer adding Reins-specific behavior in the compatibility layer instead of patching upstream Hermes code.
-- Finance storage is local SQLite and should remain usable without network access.
-- The Web UI package has its own README and development docs under `web/`.
-
-## Verification
-
-Useful local checks:
-
-```bash
-reins finance doctor
-reins finance add "今天买咖啡 28"
-reins finance report
-
-cd web
-npm run build
-```
+- Keep product code in `src/reins/` and `web/`.
+- Keep `vendor/hermes-agent/` aligned with upstream Hermes instead of patching it casually.
+- Store Reins-specific runtime files under `REINS_HOME`.
+- Keep feature storage local-first and usable without network access when possible.
+- Use platform-aware paths and subprocess commands; avoid hardcoded `.venv/bin`, `/tmp`, `open`, or shell-only npm scripts.
