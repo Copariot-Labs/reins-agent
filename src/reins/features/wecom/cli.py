@@ -198,12 +198,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     ticket_service_parser = ticket_api_subparsers.add_parser(
         "service",
-        help="Manage the background ticket poller on macOS or Windows.",
+        help="Manage the background ticket poller on macOS, Windows, or Linux.",
     )
     ticket_service_subparsers = ticket_service_parser.add_subparsers(dest="ticket_service_command")
     ticket_service_install = ticket_service_subparsers.add_parser(
         "install",
-        help="Install and start the launchd or Windows Task Scheduler poller.",
+        help="Install and start the launchd, Task Scheduler, or systemd poller.",
     )
     ticket_service_install.add_argument("--interval", type=float, default=None, help="Poll interval in seconds (minimum 5).")
     ticket_service_install.add_argument(

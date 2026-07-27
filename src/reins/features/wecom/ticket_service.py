@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import plistlib
 import re
+import shlex
 import subprocess
 import sys
 from typing import Any, Sequence
@@ -13,6 +14,7 @@ from reins.api.home import get_reins_home
 
 SERVICE_LABEL = "ai.reins.wecom-ticket-poller"
 WINDOWS_TASK_NAME = "Reins WeCom Ticket Poller"
+SYSTEMD_UNIT_NAME = "reins-wecom-ticket-poller.service"
 WINDOWS_TASK_STATE_LABELS = {
     0: "unknown",
     1: "disabled",
@@ -30,16 +32,31 @@ def windows_task_script_path(*, home: Path | None = None) -> Path:
     return (home or get_reins_home()) / "wecom" / "ticket-poller.ps1"
 
 
+def linux_poller_script_path(*, home: Path | None = None) -> Path:
+    return (home or get_reins_home()) / "wecom" / "ticket-poller.sh"
+
+
+def systemd_unit_path(*, config_home: Path | None = None) -> Path:
+    if config_home is None:
+        configured = os.environ.get("XDG_CONFIG_HOME", "").strip()
+        config_home = (
+            Path(os.path.expandvars(configured)).expanduser()
+            if configured
+            else Path.home() / ".config"
+        )
+    return config_home / "systemd" / "user" / SYSTEMD_UNIT_NAME
+
+
 def service_target() -> str:
     return f"gui/{os.getuid()}/{SERVICE_LABEL}"
 
 
 def _platform_error() -> dict[str, Any] | None:
-    if sys.platform in {"darwin", "win32"}:
+    if sys.platform in {"darwin", "win32"} or sys.platform.startswith("linux"):
         return None
     return {
         "ok": False,
-        "error": "ticket poller service management supports macOS and Windows only",
+        "error": "ticket poller service management supports macOS, Windows, and Linux only",
     }
 
 
@@ -138,6 +155,99 @@ def write_windows_task_script(*, interval: float = 30.0, home: Path | None = Non
     return script_path
 
 
+def build_linux_poller_script(*, interval: float = 30.0) -> str:
+    reins_home = get_reins_home()
+    logs_dir = reins_home / "logs"
+    arguments = [
+        str(Path(sys.executable).resolve()),
+        "-m",
+        "reins.main",
+        "wecom",
+        "ticket-api",
+        "poll",
+        "--watch",
+        "--json-lines",
+        "--interval",
+        str(max(5.0, float(interval))),
+    ]
+    command = " ".join(shlex.quote(argument) for argument in arguments)
+    return "\n".join(
+        [
+            "#!/bin/sh",
+            "set -eu",
+            "umask 077",
+            f"export REINS_HOME={shlex.quote(str(reins_home))}",
+            f"export HERMES_HOME={shlex.quote(str(reins_home))}",
+            "export PYTHONIOENCODING=utf-8",
+            "export PYTHONUNBUFFERED=1",
+            "export PYTHONUTF8=1",
+            f"mkdir -p {shlex.quote(str(logs_dir))}",
+            f"exec >>{shlex.quote(str(logs_dir / 'ticket-poller.log'))} "
+            f"2>>{shlex.quote(str(logs_dir / 'ticket-poller.error.log'))}",
+            f"exec {command}",
+            "",
+        ]
+    )
+
+
+def write_linux_poller_script(*, interval: float = 30.0, home: Path | None = None) -> Path:
+    script_path = linux_poller_script_path(home=home)
+    script_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = script_path.with_name(f".{script_path.name}.tmp")
+    temporary.write_text(build_linux_poller_script(interval=interval), encoding="utf-8")
+    temporary.chmod(0o700)
+    temporary.replace(script_path)
+    return script_path
+
+
+def _systemd_quote(value: str | Path) -> str:
+    escaped = (
+        str(value)
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("$", "$$")
+        .replace("%", "%%")
+    )
+    return f'"{escaped}"'
+
+
+def build_systemd_unit(*, interval: float = 30.0) -> str:
+    script_path = linux_poller_script_path()
+    return "\n".join(
+        [
+            "[Unit]",
+            "Description=Reins WeCom Ticket Poller",
+            "StartLimitIntervalSec=0",
+            "",
+            "[Service]",
+            "Type=simple",
+            f"ExecStart={_systemd_quote(script_path)}",
+            "Restart=always",
+            "RestartSec=10",
+            "KillMode=control-group",
+            "TimeoutStopSec=30",
+            "",
+            "[Install]",
+            "WantedBy=default.target",
+            "",
+        ]
+    )
+
+
+def write_systemd_unit(
+    *,
+    interval: float = 30.0,
+    config_home: Path | None = None,
+) -> Path:
+    unit_path = systemd_unit_path(config_home=config_home)
+    unit_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = unit_path.with_name(f".{unit_path.name}.tmp")
+    temporary.write_text(build_systemd_unit(interval=interval), encoding="utf-8")
+    temporary.chmod(0o600)
+    temporary.replace(unit_path)
+    return unit_path
+
+
 def _launchctl(arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["launchctl", *arguments],
@@ -181,6 +291,25 @@ def _powershell(arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
         startupinfo=startupinfo,
         creationflags=creationflags,
     )
+
+
+def _systemctl(arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
+    command = ["systemctl", "--user", *arguments]
+    try:
+        return subprocess.run(
+            command,
+            capture_output=True,
+            check=False,
+            text=True,
+            errors="replace",
+        )
+    except FileNotFoundError:
+        return subprocess.CompletedProcess(
+            command,
+            returncode=127,
+            stdout="",
+            stderr="systemctl was not found; install and boot Ubuntu with systemd",
+        )
 
 
 def _command_error(result: subprocess.CompletedProcess[str], command: str) -> str:
@@ -315,12 +444,62 @@ def _install_windows_service(*, interval: float) -> dict[str, Any]:
     }
 
 
+def _linux_service_details() -> dict[str, Any]:
+    reins_home = get_reins_home()
+    return {
+        "unit_name": SYSTEMD_UNIT_NAME,
+        "unit_path": str(systemd_unit_path()),
+        "script_path": str(linux_poller_script_path()),
+        "log_path": str(reins_home / "logs" / "ticket-poller.log"),
+        "error_log_path": str(reins_home / "logs" / "ticket-poller.error.log"),
+    }
+
+
+def _install_linux_service(*, interval: float) -> dict[str, Any]:
+    write_linux_poller_script(interval=interval)
+    write_systemd_unit(interval=interval)
+
+    reloaded = _systemctl(["daemon-reload"])
+    if reloaded.returncode != 0:
+        return {
+            "ok": False,
+            "installed": True,
+            "running": False,
+            **_linux_service_details(),
+            "error": _command_error(reloaded, "systemctl --user daemon-reload"),
+        }
+
+    enabled = _systemctl(["enable", SYSTEMD_UNIT_NAME])
+    if enabled.returncode != 0:
+        return {
+            "ok": False,
+            "installed": True,
+            "running": False,
+            **_linux_service_details(),
+            "error": _command_error(enabled, "systemctl --user enable"),
+        }
+
+    started = _systemctl(["restart", SYSTEMD_UNIT_NAME])
+    return {
+        "ok": started.returncode == 0,
+        "installed": True,
+        "running": started.returncode == 0,
+        **_linux_service_details(),
+        "error": "" if started.returncode == 0 else _command_error(
+            started,
+            "systemctl --user restart",
+        ),
+    }
+
+
 def install_service(*, interval: float = 30.0) -> dict[str, Any]:
     unsupported = _platform_error()
     if unsupported:
         return unsupported
     if sys.platform == "win32":
         return _install_windows_service(interval=interval)
+    if sys.platform.startswith("linux"):
+        return _install_linux_service(interval=interval)
 
     plist_path = write_service_definition(interval=interval)
     _launchctl(["bootout", service_target()])
@@ -361,12 +540,45 @@ def _start_windows_service() -> dict[str, Any]:
     }
 
 
+def _start_linux_service() -> dict[str, Any]:
+    if not systemd_unit_path().is_file():
+        return {
+            "ok": False,
+            "installed": False,
+            "running": False,
+            **_linux_service_details(),
+            "error": "service is not installed; run `reins wecom ticket-api service install`",
+        }
+    reloaded = _systemctl(["daemon-reload"])
+    if reloaded.returncode != 0:
+        return {
+            "ok": False,
+            "installed": True,
+            "running": False,
+            **_linux_service_details(),
+            "error": _command_error(reloaded, "systemctl --user daemon-reload"),
+        }
+    started = _systemctl(["start", SYSTEMD_UNIT_NAME])
+    return {
+        "ok": started.returncode == 0,
+        "installed": True,
+        "running": started.returncode == 0,
+        **_linux_service_details(),
+        "error": "" if started.returncode == 0 else _command_error(
+            started,
+            "systemctl --user start",
+        ),
+    }
+
+
 def start_service() -> dict[str, Any]:
     unsupported = _platform_error()
     if unsupported:
         return unsupported
     if sys.platform == "win32":
         return _start_windows_service()
+    if sys.platform.startswith("linux"):
+        return _start_linux_service()
 
     plist_path = service_plist_path()
     if not plist_path.is_file():
@@ -427,12 +639,36 @@ def _stop_windows_service() -> dict[str, Any]:
     }
 
 
+def _stop_linux_service() -> dict[str, Any]:
+    if not systemd_unit_path().is_file():
+        return {
+            "ok": True,
+            "installed": False,
+            "running": False,
+            **_linux_service_details(),
+            "error": "",
+        }
+    stopped = _systemctl(["stop", SYSTEMD_UNIT_NAME])
+    return {
+        "ok": stopped.returncode == 0,
+        "installed": True,
+        "running": False,
+        **_linux_service_details(),
+        "error": "" if stopped.returncode == 0 else _command_error(
+            stopped,
+            "systemctl --user stop",
+        ),
+    }
+
+
 def stop_service() -> dict[str, Any]:
     unsupported = _platform_error()
     if unsupported:
         return unsupported
     if sys.platform == "win32":
         return _stop_windows_service()
+    if sys.platform.startswith("linux"):
+        return _stop_linux_service()
 
     result = _launchctl(["bootout", service_target()])
     error = _command_error(result, "launchctl")
@@ -469,12 +705,63 @@ def _windows_service_status() -> dict[str, Any]:
     }
 
 
+def _linux_service_status() -> dict[str, Any]:
+    unit_path = systemd_unit_path()
+    if not unit_path.is_file():
+        return {
+            "ok": True,
+            "installed": False,
+            "loaded": False,
+            "running": False,
+            "state": "not_installed",
+            "pid": None,
+            **_linux_service_details(),
+            "error": "",
+        }
+
+    result = _systemctl(
+        [
+            "show",
+            SYSTEMD_UNIT_NAME,
+            "--property=LoadState",
+            "--property=ActiveState",
+            "--property=SubState",
+            "--property=MainPID",
+            "--no-pager",
+        ]
+    )
+    properties: dict[str, str] = {}
+    for line in (result.stdout or "").splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            properties[key.strip()] = value.strip()
+    raw_pid = properties.get("MainPID", "")
+    pid = int(raw_pid) if raw_pid.isdigit() and raw_pid != "0" else None
+    active_state = properties.get("ActiveState", "")
+    sub_state = properties.get("SubState", "")
+    return {
+        "ok": result.returncode == 0,
+        "installed": True,
+        "loaded": properties.get("LoadState") == "loaded",
+        "running": active_state == "active",
+        "state": sub_state or active_state or "unknown",
+        "pid": pid,
+        **_linux_service_details(),
+        "error": "" if result.returncode == 0 else _command_error(
+            result,
+            "systemctl --user show",
+        ),
+    }
+
+
 def service_status() -> dict[str, Any]:
     unsupported = _platform_error()
     if unsupported:
         return unsupported
     if sys.platform == "win32":
         return _windows_service_status()
+    if sys.platform.startswith("linux"):
+        return _linux_service_status()
 
     plist_path = service_plist_path()
     result = _launchctl(["print", service_target()])
@@ -524,12 +811,51 @@ def _uninstall_windows_service() -> dict[str, Any]:
     }
 
 
+def _uninstall_linux_service() -> dict[str, Any]:
+    unit_path = systemd_unit_path()
+    script_path = linux_poller_script_path()
+    if unit_path.is_file():
+        disabled = _systemctl(["disable", "--now", SYSTEMD_UNIT_NAME])
+        if disabled.returncode != 0:
+            return {
+                "ok": False,
+                "installed": True,
+                "running": False,
+                **_linux_service_details(),
+                "error": _command_error(
+                    disabled,
+                    "systemctl --user disable --now",
+                ),
+            }
+
+    for path in (unit_path, script_path):
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
+    reloaded = _systemctl(["daemon-reload"])
+    _systemctl(["reset-failed", SYSTEMD_UNIT_NAME])
+    return {
+        "ok": reloaded.returncode == 0,
+        "installed": False,
+        "running": False,
+        **_linux_service_details(),
+        "error": "" if reloaded.returncode == 0 else _command_error(
+            reloaded,
+            "systemctl --user daemon-reload",
+        ),
+    }
+
+
 def uninstall_service() -> dict[str, Any]:
     unsupported = _platform_error()
     if unsupported:
         return unsupported
     if sys.platform == "win32":
         return _uninstall_windows_service()
+    if sys.platform.startswith("linux"):
+        return _uninstall_linux_service()
 
     stopped = stop_service()
     plist_path = service_plist_path()

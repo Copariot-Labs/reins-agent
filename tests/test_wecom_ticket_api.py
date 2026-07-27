@@ -21,12 +21,16 @@ from reins.features.wecom.ticket_api import (
 )
 from reins.features.wecom.ticket_service import (
     SERVICE_LABEL,
+    SYSTEMD_UNIT_NAME,
     WINDOWS_TASK_NAME,
+    build_linux_poller_script,
     build_service_definition,
+    build_systemd_unit,
     build_windows_task_script,
     install_service,
     service_status,
     stop_service,
+    uninstall_service,
 )
 from reins.features.wecom.work_order import create_work_order, parse_work_order_message
 
@@ -503,6 +507,147 @@ class WeComTicketAPITests(unittest.TestCase):
         self.assertTrue(result["installed"])
         self.assertTrue(result["running"])
         self.assertEqual(result["state"], "running")
+
+    def test_ubuntu_runner_and_systemd_unit_are_utf8_and_secret_free(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            reins_home = root / "社区数据"
+            script_path = reins_home / "wecom" / "ticket-poller.sh"
+            with patch.dict(os.environ, {"REINS_HOME": str(reins_home)}, clear=True):
+                with patch(
+                    "reins.features.wecom.ticket_service.linux_poller_script_path",
+                    return_value=script_path,
+                ):
+                    script = build_linux_poller_script(interval=12)
+                    unit = build_systemd_unit(interval=12)
+
+        self.assertIn("export PYTHONUTF8=1", script)
+        self.assertIn("ticket-api poll --watch --json-lines", script)
+        self.assertIn("社区数据", script)
+        self.assertNotIn("REINS_TICKET_API_TOKEN", script)
+        self.assertNotIn("REINS_WECOM_NOTIFY_GROUP_WEBHOOK", script)
+        self.assertIn(f"Description=Reins WeCom Ticket Poller", unit)
+        self.assertIn("Restart=always", unit)
+        self.assertIn("WantedBy=default.target", unit)
+        self.assertIn(str(script_path), unit)
+
+    def test_ubuntu_service_installs_and_starts_systemd_user_unit(self):
+        reloaded = CompletedProcess(["systemctl"], returncode=0, stdout="", stderr="")
+        enabled = CompletedProcess(["systemctl"], returncode=0, stdout="", stderr="")
+        started = CompletedProcess(["systemctl"], returncode=0, stdout="", stderr="")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            reins_home = root / "reins"
+            script_path = reins_home / "wecom" / "ticket-poller.sh"
+            unit_path = root / ".config" / "systemd" / "user" / SYSTEMD_UNIT_NAME
+            with patch.dict(os.environ, {"REINS_HOME": str(reins_home)}, clear=True):
+                with patch(
+                    "reins.features.wecom.ticket_service.linux_poller_script_path",
+                    return_value=script_path,
+                ):
+                    with patch(
+                        "reins.features.wecom.ticket_service.systemd_unit_path",
+                        return_value=unit_path,
+                    ):
+                        with patch("reins.features.wecom.ticket_service.sys.platform", "linux"):
+                            with patch(
+                                "reins.features.wecom.ticket_service._systemctl",
+                                side_effect=[reloaded, enabled, started],
+                            ) as systemctl:
+                                result = install_service(interval=12)
+                                script_exists = script_path.is_file()
+                                unit_exists = unit_path.is_file()
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["installed"])
+        self.assertTrue(result["running"])
+        self.assertTrue(script_exists)
+        self.assertTrue(unit_exists)
+        self.assertEqual(systemctl.call_args_list[0].args[0], ["daemon-reload"])
+        self.assertEqual(
+            systemctl.call_args_list[1].args[0],
+            ["enable", SYSTEMD_UNIT_NAME],
+        )
+        self.assertEqual(
+            systemctl.call_args_list[2].args[0],
+            ["restart", SYSTEMD_UNIT_NAME],
+        )
+
+    def test_ubuntu_service_status_parses_systemd_properties(self):
+        status = CompletedProcess(
+            ["systemctl"],
+            returncode=0,
+            stdout=(
+                "LoadState=loaded\n"
+                "ActiveState=active\n"
+                "SubState=running\n"
+                "MainPID=4321\n"
+            ),
+            stderr="",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            unit_path = root / SYSTEMD_UNIT_NAME
+            unit_path.write_text("[Unit]\n", encoding="utf-8")
+            with patch.dict(os.environ, {"REINS_HOME": str(root / 'reins')}, clear=True):
+                with patch(
+                    "reins.features.wecom.ticket_service.systemd_unit_path",
+                    return_value=unit_path,
+                ):
+                    with patch("reins.features.wecom.ticket_service.sys.platform", "linux"):
+                        with patch(
+                            "reins.features.wecom.ticket_service._systemctl",
+                            return_value=status,
+                        ):
+                            result = service_status()
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["installed"])
+        self.assertTrue(result["loaded"])
+        self.assertTrue(result["running"])
+        self.assertEqual(result["state"], "running")
+        self.assertEqual(result["pid"], 4321)
+
+    def test_ubuntu_service_uninstall_disables_and_removes_files(self):
+        disabled = CompletedProcess(["systemctl"], returncode=0, stdout="", stderr="")
+        reloaded = CompletedProcess(["systemctl"], returncode=0, stdout="", stderr="")
+        reset = CompletedProcess(["systemctl"], returncode=0, stdout="", stderr="")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script_path = root / "reins" / "wecom" / "ticket-poller.sh"
+            unit_path = root / ".config" / "systemd" / "user" / SYSTEMD_UNIT_NAME
+            script_path.parent.mkdir(parents=True)
+            unit_path.parent.mkdir(parents=True)
+            script_path.write_text("#!/bin/sh\n", encoding="utf-8")
+            unit_path.write_text("[Unit]\n", encoding="utf-8")
+            with patch.dict(os.environ, {"REINS_HOME": str(root / "reins")}, clear=True):
+                with patch(
+                    "reins.features.wecom.ticket_service.linux_poller_script_path",
+                    return_value=script_path,
+                ):
+                    with patch(
+                        "reins.features.wecom.ticket_service.systemd_unit_path",
+                        return_value=unit_path,
+                    ):
+                        with patch("reins.features.wecom.ticket_service.sys.platform", "linux"):
+                            with patch(
+                                "reins.features.wecom.ticket_service._systemctl",
+                                side_effect=[disabled, reloaded, reset],
+                            ) as systemctl:
+                                result = uninstall_service()
+                                script_exists = script_path.exists()
+                                unit_exists = unit_path.exists()
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["installed"])
+        self.assertFalse(script_exists)
+        self.assertFalse(unit_exists)
+        self.assertEqual(
+            systemctl.call_args_list[0].args[0],
+            ["disable", "--now", SYSTEMD_UNIT_NAME],
+        )
+        self.assertEqual(systemctl.call_args_list[1].args[0], ["daemon-reload"])
 
 
 if __name__ == "__main__":

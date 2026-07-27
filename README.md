@@ -206,9 +206,20 @@ reins wecom ticket-api service start
 reins wecom ticket-api service uninstall
 ```
 
-The same commands manage a user `launchd` agent on macOS and the
-`Reins WeCom Ticket Poller` Task Scheduler task on Windows. Installation starts
-the poller immediately; it starts again when the Windows user signs in.
+The same commands manage:
+
+- macOS: a user `launchd` agent.
+- Windows: the `Reins WeCom Ticket Poller` Task Scheduler task.
+- Ubuntu/Linux: the `reins-wecom-ticket-poller.service` systemd user unit.
+
+Installation starts the poller immediately and enables it for future user
+sessions. Ubuntu logs are stored under `<REINS_HOME>/logs/`. On a headless
+Ubuntu server that must continue after logout, an administrator may also enable
+systemd user lingering for the Reins account:
+
+```bash
+sudo loginctl enable-linger <reins-user>
+```
 
 Create a work order:
 
