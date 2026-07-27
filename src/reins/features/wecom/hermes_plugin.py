@@ -35,6 +35,8 @@ def _work_order_result(result: dict[str, Any]) -> dict[str, Any]:
             "error": notification.get("error", ""),
         },
         "records_xlsx_path": result.get("records_xlsx_path", ""),
+        "records_xlsx_ok": bool(result.get("records_xlsx_ok", True)),
+        "records_xlsx_error": result.get("records_xlsx_error", ""),
     }
 
 
@@ -187,6 +189,8 @@ def register_staff_reply(ctx) -> None:
                 "status": record.get("status", ""),
                 "last_staff_responder": metadata.get("last_staff_responder", ""),
                 "records_xlsx_path": result.get("records_xlsx_path", ""),
+                "records_xlsx_ok": bool(result.get("records_xlsx_ok", True)),
+                "records_xlsx_error": result.get("records_xlsx_error", ""),
             }
         )
 

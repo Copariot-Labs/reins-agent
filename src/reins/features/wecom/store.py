@@ -8,15 +8,20 @@ import shutil
 import sqlite3
 import threading
 from contextlib import closing, contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 try:
     import fcntl
-except ImportError:  # pragma: no cover - Reins currently targets macOS/Linux.
+except ImportError:  # pragma: no cover - unavailable on Windows.
     fcntl = None
+
+try:
+    import msvcrt
+except ImportError:  # pragma: no cover - unavailable on macOS/Linux.
+    msvcrt = None
 
 from reins.api.home import get_reins_home
 from reins.features.wecom.xlsx import write_xlsx
@@ -72,7 +77,10 @@ NOTIFICATION_STATUS_LABELS = {
 }
 
 
-_CHINA_TZ = ZoneInfo("Asia/Shanghai")
+try:
+    _CHINA_TZ = ZoneInfo("Asia/Shanghai")
+except ZoneInfoNotFoundError:  # Keep current China operations usable on minimal Windows installs.
+    _CHINA_TZ = timezone(timedelta(hours=8), name="Asia/Shanghai")
 _EXPORT_THREAD_LOCK = threading.RLock()
 _RESIDENT_IDENTIFIER_LINE = re.compile(
     r"^\s*(?:[-·]\s*)?(?:居民标识|客户标识|微信客户)\s*[：:].*$",
@@ -204,11 +212,21 @@ def _excel_export_lock(path: Path) -> Iterator[None]:
         with lock_path.open("a+b") as lock_file:
             if fcntl is not None:
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            elif msvcrt is not None:
+                lock_file.seek(0, os.SEEK_END)
+                if lock_file.tell() == 0:
+                    lock_file.write(b"\0")
+                    lock_file.flush()
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
             try:
                 yield
             finally:
                 if fcntl is not None:
                     fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                elif msvcrt is not None:
+                    lock_file.seek(0)
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
 
 
 
@@ -248,7 +266,7 @@ def get_visible_records_xlsx_path() -> Path | None:
     configured = os.environ.get("REINS_WECOM_EXPORT_DIR", "").strip()
     if not configured:
         return None
-    return Path(configured).expanduser() / "社区工单台账.xlsx"
+    return Path(os.path.expandvars(configured)).expanduser() / "社区工单台账.xlsx"
 
 
 def _mirror_records_xlsx(source: Path) -> Path | None:
@@ -615,10 +633,27 @@ def export_records_xlsx(path: Path | None = None) -> Path:
         return exported_path
 
 
+def export_records_xlsx_safely(path: Path | None = None) -> tuple[Path, str]:
+    """Refresh the workbook without blocking ticket storage or notification.
+
+    Excel on Windows locks an open workbook and prevents atomic replacement.
+    SQLite remains authoritative, so callers can continue their operational
+    workflow and refresh the workbook after staff close it.
+    """
+    output_path = path or get_records_xlsx_path()
+    try:
+        return export_records_xlsx(path), ""
+    except PermissionError as exc:
+        return output_path, (
+            "Excel workbook refresh is pending because the file is open or locked. "
+            f"Close the workbook and run `reins wecom records export`: {exc}"
+        )
+
+
 
 def records_report(kind: str | None = None) -> dict[str, Any]:
     records = list_records(limit=500, kind=kind)
-    export_path = export_records_xlsx()
+    export_path, export_error = export_records_xlsx_safely()
 
     def metadata_value(record: dict[str, Any], key: str) -> str:
         metadata = record.get("metadata")
@@ -649,6 +684,8 @@ def records_report(kind: str | None = None) -> dict[str, Any]:
         "by_assigned_role": dict(by_role),
         "by_source_channel": dict(by_source),
         "records_xlsx_path": str(export_path),
+        "records_xlsx_ok": not export_error,
+        "records_xlsx_error": export_error,
         "visible_records_xlsx_path": str(get_visible_records_xlsx_path() or ""),
         "records_xlsx_scope": "work_order_staff_view",
         "records_xlsx_columns": [header for _key, header, _width in STAFF_WORK_ORDER_COLUMNS],
@@ -659,7 +696,7 @@ def doctor() -> dict[str, Any]:
     from reins.features.wecom.notifier import notification_doctor
 
     migrate()
-    records_path = export_records_xlsx()
+    records_path, export_error = export_records_xlsx_safely()
 
     with closing(connect()) as connection:
         record_count = int(connection.execute("SELECT COUNT(*) FROM wecom_records").fetchone()[0])
@@ -671,6 +708,8 @@ def doctor() -> dict[str, Any]:
         "db_path": str(get_db_path()),
         "faq_path": str(get_faq_path()),
         "records_xlsx_path": str(records_path),
+        "records_xlsx_ok": not export_error,
+        "records_xlsx_error": export_error,
         "visible_records_xlsx_path": str(get_visible_records_xlsx_path() or ""),
         "records_xlsx_scope": "work_order_staff_view",
         "records_xlsx_columns": [header for _key, header, _width in STAFF_WORK_ORDER_COLUMNS],

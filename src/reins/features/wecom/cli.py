@@ -198,10 +198,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     ticket_service_parser = ticket_api_subparsers.add_parser(
         "service",
-        help="Manage the standalone macOS ticket poller service.",
+        help="Manage the background ticket poller on macOS or Windows.",
     )
     ticket_service_subparsers = ticket_service_parser.add_subparsers(dest="ticket_service_command")
-    ticket_service_install = ticket_service_subparsers.add_parser("install", help="Install and start the launchd poller.")
+    ticket_service_install = ticket_service_subparsers.add_parser(
+        "install",
+        help="Install and start the launchd or Windows Task Scheduler poller.",
+    )
     ticket_service_install.add_argument("--interval", type=float, default=None, help="Poll interval in seconds (minimum 5).")
     ticket_service_install.add_argument(
         "--replay-existing",
@@ -246,6 +249,14 @@ def _print(value: Any, *, json_output: bool) -> None:
 
 def _print_json_line(value: Any) -> None:
     print(json.dumps(value, ensure_ascii=False, separators=(",", ":")), flush=True)
+
+
+def _load_wecom_env() -> None:
+    env_path = get_reins_home() / ".env"
+    try:
+        load_dotenv(env_path, override=False, encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        load_dotenv(env_path, override=False, encoding="latin-1")
 
 
 def _ticket_api_config(args: argparse.Namespace) -> TicketAPIConfig:
@@ -325,7 +336,7 @@ def _work_order_reply_payload(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    load_dotenv(get_reins_home() / ".env", override=False)
+    _load_wecom_env()
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
 
@@ -400,8 +411,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
 
         if args.records_command == "export":
-            _print(export_records(), json_output=args.json_output)
-            return 0
+            result = export_records()
+            _print(result, json_output=args.json_output)
+            return 0 if result.get("ok") else 1
 
         if args.records_command == "report":
             _print(records_report(kind=args.kind or None), json_output=args.json_output)

@@ -7,7 +7,13 @@ from typing import Any
 from datetime import datetime, timezone
 
 from reins.features.wecom.notifier import notify_staff
-from reins.features.wecom.store import add_record, export_records_xlsx, find_record_by_metadata, get_record, update_record
+from reins.features.wecom.store import (
+    add_record,
+    export_records_xlsx_safely,
+    find_record_by_metadata,
+    get_record,
+    update_record,
+)
 
 
 FIELD_ALIASES = {
@@ -665,7 +671,8 @@ def create_work_order(payload: dict[str, Any]) -> dict[str, Any]:
             metadata=metadata,
         )
 
-    records_xlsx_path = str(export_records_xlsx())
+    records_xlsx_path_value, records_xlsx_error = export_records_xlsx_safely()
+    records_xlsx_path = str(records_xlsx_path_value)
     notification: dict[str, Any] | None = None
     if _bool(payload.get("notify")) or _bool(payload.get("send_notification") or payload.get("sendNotification")):
         previous_metadata = existing.get("metadata") if existing and isinstance(existing.get("metadata"), dict) else {}
@@ -689,7 +696,8 @@ def create_work_order(payload: dict[str, Any]) -> dict[str, Any]:
         else:
             notification = notify_staff(record, dry_run=_bool(payload.get("dry_run") or payload.get("dryRun")))
             record = _apply_notification_result(record, notification)
-            records_xlsx_path = str(export_records_xlsx())
+            records_xlsx_path_value, records_xlsx_error = export_records_xlsx_safely()
+            records_xlsx_path = str(records_xlsx_path_value)
 
     return {
         "ok": True,
@@ -701,6 +709,8 @@ def create_work_order(payload: dict[str, Any]) -> dict[str, Any]:
         "work_order": metadata,
         "record": record,
         "records_xlsx_path": records_xlsx_path,
+        "records_xlsx_ok": not records_xlsx_error,
+        "records_xlsx_error": records_xlsx_error,
     }
 
 
@@ -708,11 +718,14 @@ def notify_work_order(payload: dict[str, Any]) -> dict[str, Any]:
     record = _record_from_payload(payload)
     notification = notify_staff(record, dry_run=_bool(payload.get("dry_run") or payload.get("dryRun")))
     record = _apply_notification_result(record, notification)
+    records_xlsx_path, records_xlsx_error = export_records_xlsx_safely()
     return {
         "ok": bool(notification.get("ok")),
         "notification": notification,
         "record": record,
-        "records_xlsx_path": str(export_records_xlsx()),
+        "records_xlsx_path": str(records_xlsx_path),
+        "records_xlsx_ok": not records_xlsx_error,
+        "records_xlsx_error": records_xlsx_error,
     }
 
 
@@ -750,9 +763,12 @@ def record_staff_reply(payload: dict[str, Any]) -> dict[str, Any]:
         reply=message,
         metadata=metadata,
     )
+    records_xlsx_path, records_xlsx_error = export_records_xlsx_safely()
     return {
         "ok": True,
         "record_updated": True,
         "record": updated,
-        "records_xlsx_path": str(export_records_xlsx()),
+        "records_xlsx_path": str(records_xlsx_path),
+        "records_xlsx_ok": not records_xlsx_error,
+        "records_xlsx_error": records_xlsx_error,
     }

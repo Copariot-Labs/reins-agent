@@ -11,6 +11,7 @@ from zipfile import ZipFile
 from reins.features.wecom import notifier
 from reins.features.wecom.hermes_plugin import register as register_hermes_tools
 from reins.features.wecom.plugin_installer import install_hermes_plugin
+from reins.features.wecom.store import _excel_export_lock, export_records_xlsx_safely
 from reins.features.wecom.work_order import create_work_order, parse_work_order_message
 
 
@@ -532,6 +533,77 @@ class WeComWorkOrderTests(unittest.TestCase):
             with ZipFile(workbook_path) as workbook:
                 worksheet = workbook.read("xl/worksheets/sheet1.xml").decode("utf-8")
             self.assertIn("t_a04299d4b5e34bb4", worksheet)
+
+    def test_locked_excel_workbook_does_not_block_staff_notification(self):
+        sent_notification = {
+            "ok": True,
+            "status": "sent",
+            "channel": "group_webhook_mention",
+            "assigned_role": "property",
+            "target_env": "REINS_WECOM_NOTIFY_GROUP_WEBHOOK",
+            "recipient_env": "REINS_WECOM_NOTIFY_USERS_PROPERTY",
+            "recipients": ["property-1"],
+            "content": "notification",
+            "error": "",
+            "message_id": "",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            workbook_path = Path(directory) / "wecom" / "records.xlsx"
+            with patch.dict(os.environ, {"REINS_HOME": directory}, clear=True):
+                with patch(
+                    "reins.features.wecom.work_order.export_records_xlsx_safely",
+                    return_value=(workbook_path, "Excel workbook refresh is pending"),
+                ):
+                    with patch(
+                        "reins.features.wecom.work_order.notify_staff",
+                        return_value=sent_notification,
+                    ) as notify:
+                        result = create_work_order(
+                            {
+                                "message": MENTIONED_POWER_OUTAGE_TICKET,
+                                "notify": True,
+                            }
+                        )
+
+        notify.assert_called_once()
+        self.assertEqual(result["notification"]["status"], "sent")
+        self.assertEqual(result["record"]["status"], "notified")
+        self.assertFalse(result["records_xlsx_ok"])
+        self.assertIn("refresh is pending", result["records_xlsx_error"])
+
+    def test_safe_excel_export_reports_windows_file_lock(self):
+        locked_path = Path("C:/Users/Tester/AppData/Local/reins/wecom/records.xlsx")
+        with patch(
+            "reins.features.wecom.store.export_records_xlsx",
+            side_effect=PermissionError(13, "file is being used by another process"),
+        ):
+            path, error = export_records_xlsx_safely(locked_path)
+
+        self.assertEqual(path, locked_path)
+        self.assertIn("open or locked", error)
+        self.assertIn("records export", error)
+
+    def test_windows_excel_export_uses_process_lock(self):
+        class FakeMsvcrt:
+            LK_LOCK = 1
+            LK_UNLCK = 2
+
+            def __init__(self):
+                self.calls = []
+
+            def locking(self, file_descriptor, mode, size):
+                self.calls.append((file_descriptor, mode, size))
+
+        fake_msvcrt = FakeMsvcrt()
+        with tempfile.TemporaryDirectory() as directory:
+            workbook_path = Path(directory) / "records.xlsx"
+            with patch("reins.features.wecom.store.fcntl", None):
+                with patch("reins.features.wecom.store.msvcrt", fake_msvcrt):
+                    with _excel_export_lock(workbook_path):
+                        pass
+
+        self.assertEqual([call[1] for call in fake_msvcrt.calls], [1, 2])
+        self.assertEqual([call[2] for call in fake_msvcrt.calls], [1, 1])
 
     def test_doctor_reports_roles_that_share_the_same_recipient_mapping(self):
         with patch.dict(

@@ -11,7 +11,7 @@ from uuid import uuid4
 from reins.features.wecom.store import (
     add_record,
     add_reply,
-    export_records_xlsx,
+    export_records_xlsx_safely,
     get_faq_path,
     list_records,
 )
@@ -266,6 +266,7 @@ def process_message(
 
     record = None
     records_xlsx_path = ""
+    records_xlsx_error = ""
     if kind_to_record:
         record = add_record(
             kind=kind_to_record,
@@ -281,7 +282,8 @@ def process_message(
             metadata=metadata,
         )
         if kind_to_record == "work_order":
-            records_xlsx_path = str(export_records_xlsx())
+            exported_path, records_xlsx_error = export_records_xlsx_safely()
+            records_xlsx_path = str(exported_path)
 
     ai_fallback = match is None
     return {
@@ -304,14 +306,17 @@ def process_message(
         "record_kind": kind_to_record,
         "record": record,
         "records_xlsx_path": records_xlsx_path,
+        "records_xlsx_ok": not records_xlsx_error,
+        "records_xlsx_error": records_xlsx_error,
     }
 
 
 def export_records() -> dict[str, Any]:
-    path = export_records_xlsx()
+    path, error = export_records_xlsx_safely()
     return {
-        "ok": True,
+        "ok": not error,
         "path": str(path),
+        "error": error,
         "scope": "work_order_staff_view",
         "records": list_records(limit=500, kind="work_order"),
     }

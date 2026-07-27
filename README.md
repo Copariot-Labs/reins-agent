@@ -195,13 +195,20 @@ Run a health check:
 reins wecom doctor
 ```
 
-Restart or reinstall the service
+After configuring the ticket API and WeCom values in `.env`, install the
+background poller:
 
 ```bash
+reins wecom ticket-api service install
+reins wecom ticket-api service status
 reins wecom ticket-api service stop
 reins wecom ticket-api service start
-reins wecom ticket-api service status
+reins wecom ticket-api service uninstall
 ```
+
+The same commands manage a user `launchd` agent on macOS and the
+`Reins WeCom Ticket Poller` Task Scheduler task on Windows. Installation starts
+the poller immediately; it starts again when the Windows user signs in.
 
 Create a work order:
 
@@ -259,6 +266,7 @@ REINS_WECOM_NOTIFY_USERS_CLEANING=user_c
 REINS_WECOM_NOTIFY_USERS_POLICE=user_d
 REINS_WECOM_NOTIFY_USERS_HOSPITAL=user_e
 REINS_WECOM_NOTIFY_USERS_COMMUNITY=user_f
+REINS_WECOM_NOTIFY_USERS_HUMAN_REVIEW=user_admin
 REINS_WECOM_NOTIFY_USERS_DEFAULT=user_admin
 REINS_WECOM_REPLY_BOT_NAME=社区美女
 
@@ -271,7 +279,24 @@ REINS_TICKET_API_LIMIT=20
 REINS_WECOM_EXPORT_DIR=/absolute/path/for/staff-documents
 ```
 
-`reins wecom ticket-api service ...` manages a macOS `launchd` poller only. On Windows, run `reins wecom ticket-api poll --watch --json-lines` in a terminal or wire that command into your own scheduled task/service wrapper.
+The notification webhook must belong to the shared WeCom group. Recipient
+values must be internal WeCom UserIDs so the group robot can create real
+mentions.
+
+Windows `.env` path example:
+
+```dotenv
+REINS_WECOM_EXPORT_DIR=%USERPROFILE%\Documents\Reins
+```
+
+WeCom timestamps are rendered in `Asia/Shanghai` (UTC+8). The Windows poller
+forces UTF-8 for Chinese ticket content and logs. Keep `<REINS_HOME>/.env`
+encoded as UTF-8.
+
+SQLite is the authoritative work-order store. On Windows, staff may keep the
+Excel ledger open: ticket recording and WeCom notification continue, and the
+command reports that the workbook refresh is pending. Close Excel and run
+`reins wecom records export` to refresh it.
 
 ## Artifacts And Presentations
 

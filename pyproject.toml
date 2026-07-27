@@ -5,6 +5,7 @@ description = "A local-first personal agent powered by an upstream agent runtime
 requires-python = ">=3.11"
 dependencies = [
     "python-dotenv>=1.0",
+    "tzdata>=2025.2; platform_system == 'Windows'",
     "python-docx>=1.1",
     "openpyxl>=3.1",
     "python-pptx>=0.6.23",

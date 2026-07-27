@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
-from reins.features.wecom.cli import main as wecom_main
+from reins.features.wecom.cli import _load_wecom_env, main as wecom_main
 from reins.features.wecom.ticket_api import (
     TicketAPIConfig,
     fetch_tickets,
@@ -21,7 +21,11 @@ from reins.features.wecom.ticket_api import (
 )
 from reins.features.wecom.ticket_service import (
     SERVICE_LABEL,
+    WINDOWS_TASK_NAME,
     build_service_definition,
+    build_windows_task_script,
+    install_service,
+    service_status,
     stop_service,
 )
 from reins.features.wecom.work_order import create_work_order, parse_work_order_message
@@ -81,6 +85,19 @@ class FakeResponse:
 
 
 class WeComTicketAPITests(unittest.TestCase):
+    def test_windows_utf8_bom_env_loads_chinese_values(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env_path = Path(directory) / ".env"
+            env_path.write_text(
+                "REINS_TICKET_API_TOKEN=china-token\n"
+                "REINS_WECOM_REPLY_BOT_NAME=社区助手\n",
+                encoding="utf-8-sig",
+            )
+            with patch.dict(os.environ, {"REINS_HOME": directory}, clear=True):
+                _load_wecom_env()
+                self.assertEqual(os.environ["REINS_TICKET_API_TOKEN"], "china-token")
+                self.assertEqual(os.environ["REINS_WECOM_REPLY_BOT_NAME"], "社区助手")
+
     def test_parses_real_api_markdown_ticket_number(self):
         parsed = parse_work_order_message(POWER_OUTAGE_MARKDOWN)
 
@@ -418,6 +435,74 @@ class WeComTicketAPITests(unittest.TestCase):
         self.assertTrue(stopped["ok"])
         self.assertFalse(stopped["running"])
         self.assertEqual(stopped["error"], "")
+
+    def test_windows_task_script_runs_utf8_poller_without_secrets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            reins_home = Path(directory) / "社区数据"
+            with patch.dict(os.environ, {"REINS_HOME": str(reins_home)}, clear=True):
+                script = build_windows_task_script(interval=12)
+
+        self.assertIn("$env:PYTHONUTF8 = '1'", script)
+        self.assertIn("'ticket-api'", script)
+        self.assertIn("'--watch'", script)
+        self.assertIn("'--json-lines'", script)
+        self.assertIn("'12.0'", script)
+        self.assertIn("社区数据", script)
+        self.assertNotIn("REINS_TICKET_API_TOKEN", script)
+        self.assertNotIn("REINS_WECOM_NOTIFY_GROUP_WEBHOOK", script)
+
+    def test_windows_service_installs_and_starts_scheduled_task(self):
+        created = CompletedProcess(["schtasks.exe"], returncode=0, stdout="SUCCESS", stderr="")
+        configured = CompletedProcess(["powershell.exe"], returncode=0, stdout="", stderr="")
+        started = CompletedProcess(["schtasks.exe"], returncode=0, stdout="SUCCESS", stderr="")
+
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(os.environ, {"REINS_HOME": directory}, clear=True):
+                with patch("reins.features.wecom.ticket_service.sys.platform", "win32"):
+                    with patch(
+                        "reins.features.wecom.ticket_service._schtasks",
+                        side_effect=[created, started],
+                    ) as schtasks:
+                        with patch(
+                            "reins.features.wecom.ticket_service._powershell",
+                            return_value=configured,
+                        ) as powershell:
+                            result = install_service(interval=12)
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["installed"])
+        self.assertTrue(result["running"])
+        create_args = schtasks.call_args_list[0].args[0]
+        self.assertEqual(create_args[:4], ["/Create", "/TN", WINDOWS_TASK_NAME, "/SC"])
+        self.assertIn("ONLOGON", create_args)
+        self.assertIn("powershell.exe", create_args[create_args.index("/TR") + 1])
+        settings_command = powershell.call_args.args[0][-1]
+        self.assertIn("ExecutionTimeLimit", settings_command)
+        self.assertIn("RestartCount 999", settings_command)
+        self.assertIn("MultipleInstances IgnoreNew", settings_command)
+        self.assertEqual(
+            schtasks.call_args_list[1].args[0],
+            ["/Run", "/TN", WINDOWS_TASK_NAME],
+        )
+
+    def test_windows_service_status_uses_language_independent_state_code(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(os.environ, {"REINS_HOME": directory}, clear=True):
+                with patch("reins.features.wecom.ticket_service.sys.platform", "win32"):
+                    with patch(
+                        "reins.features.wecom.ticket_service._windows_task_exists",
+                        return_value=True,
+                    ):
+                        with patch(
+                            "reins.features.wecom.ticket_service._windows_task_state",
+                            return_value=(4, ""),
+                        ):
+                            result = service_status()
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["installed"])
+        self.assertTrue(result["running"])
+        self.assertEqual(result["state"], "running")
 
 
 if __name__ == "__main__":

@@ -126,7 +126,7 @@ class TicketAPIConfig:
                 default=15.0,
                 minimum=1.0,
             ),
-            cursor_path=Path(selected_cursor).expanduser()
+            cursor_path=Path(os.path.expandvars(str(selected_cursor))).expanduser()
             if selected_cursor
             else get_reins_home() / "wecom" / "ticket-api-cursor.json",
         )
