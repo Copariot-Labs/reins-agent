@@ -88,6 +88,10 @@ systemd_quote() {
   printf '"%s"' "$value"
 }
 
+shell_quote() {
+  printf '%q' "$1"
+}
+
 desktop_exec_quote() {
   local value="$1"
   value="${value//\\/\\\\}"
@@ -281,36 +285,47 @@ fi
 
 SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 WEB_UNIT="$SYSTEMD_USER_DIR/reins-web.service"
+WEB_RUNTIME="$HOME/.local/bin/reins-web-runtime"
 RUNTIME_PATH="$PROJECT_DIR/.venv/bin:$(dirname -- "$NODE_BIN"):/usr/local/bin:/usr/bin:/bin"
+
+log "Generating the production Web UI runtime"
+write_atomic "$WEB_RUNTIME" 700 <<EOF
+#!/bin/bash
+
+set -Eeuo pipefail
+umask 077
+
+export NODE_ENV=production
+export PORT=8648
+export BIND_HOST=127.0.0.1
+export REINS_HOME=$(shell_quote "$REINS_HOME")
+export HERMES_HOME=$(shell_quote "$REINS_HOME")
+export HERMES_WEB_UI_HOME=$(shell_quote "$REINS_HOME/web-ui")
+export HERMES_AGENT_ROOT=$(shell_quote "$PROJECT_DIR/vendor/hermes-agent")
+export HERMES_AGENT_BRIDGE_PYTHON=$(shell_quote "$PYTHON_BIN")
+export REINS_BIN=$(shell_quote "$REINS_BIN")
+export HERMES_BIN=$(shell_quote "$REINS_BIN")
+export WORKSPACE_BASE=$(shell_quote "$WORKSPACE_DIR")
+export PATH=$(shell_quote "$RUNTIME_PATH")
+export PYTHONIOENCODING=utf-8
+export PYTHONUTF8=1
+export SHELL=/bin/bash
+
+cd -- $(shell_quote "$WEB_ROOT")
+exec $(shell_quote "$NODE_BIN") $(shell_quote "$WEB_SERVER")
+EOF
 
 log "Generating the production Web UI service"
 write_atomic "$WEB_UNIT" 600 <<EOF
 [Unit]
 Description=Reins Web Interface
-StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-WorkingDirectory=$(systemd_quote "$WEB_ROOT")
-Environment=$(systemd_quote "NODE_ENV=production")
-Environment=$(systemd_quote "PORT=8648")
-Environment=$(systemd_quote "BIND_HOST=127.0.0.1")
-Environment=$(systemd_quote "REINS_HOME=$REINS_HOME")
-Environment=$(systemd_quote "HERMES_HOME=$REINS_HOME")
-Environment=$(systemd_quote "HERMES_WEB_UI_HOME=$REINS_HOME/web-ui")
-Environment=$(systemd_quote "HERMES_AGENT_ROOT=$PROJECT_DIR/vendor/hermes-agent")
-Environment=$(systemd_quote "HERMES_AGENT_BRIDGE_PYTHON=$PYTHON_BIN")
-Environment=$(systemd_quote "REINS_BIN=$REINS_BIN")
-Environment=$(systemd_quote "HERMES_BIN=$REINS_BIN")
-Environment=$(systemd_quote "WORKSPACE_BASE=$WORKSPACE_DIR")
-Environment=$(systemd_quote "PATH=$RUNTIME_PATH")
-Environment=$(systemd_quote "PYTHONIOENCODING=utf-8")
-Environment=$(systemd_quote "PYTHONUTF8=1")
-ExecStart=$(systemd_quote "$NODE_BIN") $(systemd_quote "$WEB_SERVER")
+ExecStart=$(systemd_quote "$WEB_RUNTIME")
 Restart=always
 RestartSec=5
 TimeoutStopSec=30
-UMask=0077
 
 [Install]
 WantedBy=default.target
@@ -327,8 +342,19 @@ fi
 
 log "Starting the production Web UI"
 systemctl --user daemon-reload
+if command -v systemd-analyze >/dev/null 2>&1; then
+  if ! systemd-analyze --user verify "$WEB_UNIT"; then
+    die "systemd rejected the generated unit: $WEB_UNIT"
+  fi
+fi
 systemctl --user enable reins-web.service
-systemctl --user restart reins-web.service
+if ! systemctl --user restart reins-web.service; then
+  if command -v systemd-analyze >/dev/null 2>&1; then
+    systemd-analyze --user verify "$WEB_UNIT" || true
+  fi
+  systemctl --user status reins-web.service --no-pager || true
+  die "could not restart reins-web.service"
+fi
 
 if ! wait_for_web; then
   systemctl --user status reins-web.service --no-pager || true

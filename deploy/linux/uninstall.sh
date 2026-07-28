@@ -109,6 +109,7 @@ if command -v systemctl >/dev/null 2>&1; then
 fi
 rm -f -- "$SYSTEMD_USER_DIR/reins-web.service"
 rm -f -- "$SYSTEMD_USER_DIR/reins-gateway.service"
+rm -f -- "$HOME/.local/bin/reins-web-runtime"
 
 log "Removing desktop launchers"
 rm -f -- "$HOME/.local/bin/reins-open"
