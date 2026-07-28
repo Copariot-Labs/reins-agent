@@ -164,6 +164,59 @@ backend:  8647
 frontend: 8649
 ```
 
+## Ubuntu Desktop Deployment
+
+Use the Ubuntu installer for a normal-user desktop deployment. It discovers the
+repository, Python, Node.js, Reins data, workspace, and localized desktop paths
+at runtime; builds the production Web UI; installs a `systemd --user` Web
+service; installs and enables the WeCom plugin and supported poller; and creates
+a desktop launcher.
+
+Prerequisites:
+
+- Run the installer while logged into the Ubuntu desktop as the target user.
+- Do not run it with `sudo`.
+- Install Python 3.11+, `uv`, Node.js 23+, npm, `curl`, and `xdg-utils`.
+- Configure `<REINS_HOME>/.env` before installing the WeCom poller.
+
+Install or update:
+
+```bash
+chmod +x deploy/linux/install.sh
+deploy/linux/install.sh
+```
+
+The installer is idempotent, so rerun it after pulling application updates.
+It binds the production Web UI to `127.0.0.1:8648`, enables user lingering for
+startup at system boot, and uses the Web UI as the gateway lifecycle owner.
+Custom data and workspace paths are remembered under `~/.config/reins/`.
+
+Useful options:
+
+```bash
+deploy/linux/install.sh --skip-build
+deploy/linux/install.sh --skip-wecom
+deploy/linux/install.sh --no-linger
+deploy/linux/install.sh --no-desktop
+deploy/linux/install.sh --reins-home /absolute/data/path
+deploy/linux/install.sh --workspace /absolute/workspace/path
+```
+
+Check the installation:
+
+```bash
+systemctl --user status reins-web.service
+curl -fsS http://127.0.0.1:8648/health
+reins wecom ticket-api service status
+journalctl --user -u reins-web.service -f
+```
+
+Uninstall services and launchers while preserving application code and data:
+
+```bash
+deploy/linux/uninstall.sh
+```
+
 ## Finance CLI
 
 ```bash
