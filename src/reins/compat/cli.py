@@ -13,6 +13,7 @@ REINS_OWNED_COMMANDS = {
     "migrate",
     "finance",
     "computer",
+    "avatar",
     "wechat",
     "wecom",
     "artifacts",
@@ -107,6 +108,7 @@ Reins commands:
   reins migrate hermes
   reins update
   reins finance
+  reins avatar
   reins presentation
   reins wecom
   reins debug-env
@@ -125,6 +127,9 @@ Examples:
   reins -t computer_use chat
   reins wecom process --message "退款一直没到账" --json
   reins finance --help
+  reins avatar install
+  reins avatar doctor
+  reins avatar dev
   REINS_HOME=/tmp/reins-test reins debug-env
 
 Environment:
@@ -199,6 +204,11 @@ def handle_reins_owned_command(argv: Sequence[str]) -> int:
         from reins.features.finance.cli import main as finance_main
 
         return finance_main(argv[1:])
+
+    if command == "avatar":
+        from reins.features.avatar.cli import main as avatar_main
+
+        return avatar_main(argv[1:])
 
     if command == "computer":
         from reins.features.computer.cli import main as computer_main
