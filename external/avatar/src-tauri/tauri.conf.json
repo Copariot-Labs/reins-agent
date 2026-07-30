@@ -1,7 +1,7 @@
 {
-  "productName": "Meuxe",
+  "productName": "Reins",
   "version": "0.1.0",
-  "identifier": "com.meuxe.app",
+  "identifier": "com.copariot.reins.ling",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Meuxe",
+        "title": "Reins",
         "width": 1200,
         "height": 800,
         "minWidth": 800,
@@ -26,11 +26,7 @@
       "assetProtocol": {
         "enable": true,
         "scope": {
-          "allow": [
-            "$APPDATA/**",
-            "$APPLOCALDATA/**",
-            "$RESOURCE/**"
-          ],
+          "allow": ["$APPDATA/**", "$APPLOCALDATA/**", "$RESOURCE/**"],
           "requireLiteralLeadingDot": false
         }
       }

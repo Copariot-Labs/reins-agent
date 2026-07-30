@@ -1,5 +1,6 @@
 mod acp;
 mod commands;
+mod reins;
 mod tray;
 mod window;
 

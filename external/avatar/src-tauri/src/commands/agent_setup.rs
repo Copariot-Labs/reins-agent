@@ -344,30 +344,80 @@ fn status_from_resolution(preset: &str, resolution: AgentResolution) -> AgentPre
     }
 }
 
-pub async fn check_preset(data_dir: &Path, preset: &str) -> AgentPresetSetupStatus {
+pub async fn check_preset(
+    data_dir: &Path,
+    preset: &str,
+) -> AgentPresetSetupStatus {
     match preset {
-        "opencode" | "claude" | "codex" => {
-            let resolution = resolve_agent(data_dir, preset).await;
-            status_from_resolution(preset, resolution)
+        "reins" => {
+            match crate::reins::describe_reins_acp_command() {
+                Ok(command) => {
+                    AgentPresetSetupStatus {
+                        preset: preset.to_string(),
+                        ready: true,
+                        managed_install: false,
+                        system_path: true,
+                        needs_node: false,
+                        detail: format!(
+                            "Reins Agent is connected through: {command}"
+                        ),
+                        install_source:
+                            AgentInstallSource::System,
+                        system_command: Some(command),
+                    }
+                }
+
+                Err(detail) => {
+                    AgentPresetSetupStatus {
+                        preset: preset.to_string(),
+                        ready: false,
+                        managed_install: false,
+                        system_path: false,
+                        needs_node: false,
+                        detail,
+                        install_source:
+                            AgentInstallSource::None,
+                        system_command: None,
+                    }
+                }
+            }
         }
+
+        "opencode" | "claude" | "codex" => {
+            let resolution =
+                resolve_agent(data_dir, preset).await;
+
+            status_from_resolution(
+                preset,
+                resolution,
+            )
+        }
+
         "custom" => AgentPresetSetupStatus {
             preset: preset.to_string(),
             ready: true,
             managed_install: false,
             system_path: false,
             needs_node: false,
-            detail: "You will provide the agent command.".into(),
-            install_source: AgentInstallSource::None,
+            detail:
+                "You will provide the agent command."
+                    .into(),
+            install_source:
+                AgentInstallSource::None,
             system_command: None,
         },
+
         other => AgentPresetSetupStatus {
             preset: other.to_string(),
             ready: false,
             managed_install: false,
             system_path: false,
             needs_node: false,
-            detail: format!("Unknown preset: {other}"),
-            install_source: AgentInstallSource::None,
+            detail: format!(
+                "Unknown preset: {other}"
+            ),
+            install_source:
+                AgentInstallSource::None,
             system_command: None,
         },
     }
@@ -403,13 +453,33 @@ async fn run_npm_global_install(package: &str) -> Result<(), String> {
     }
 }
 
-fn preset_npm_package(preset: &str) -> Result<&'static str, String> {
+fn preset_npm_package(
+    preset: &str,
+) -> Result<&'static str, String> {
     match preset {
         "opencode" => Ok("opencode-ai"),
-        "claude" => Ok("@agentclientprotocol/claude-agent-acp"),
-        "codex" => Ok("@agentclientprotocol/codex-acp"),
-        "custom" => Err("Nothing to install for a custom agent.".into()),
-        other => Err(format!("Unknown preset: {other}")),
+
+        "claude" => Ok(
+            "@agentclientprotocol/claude-agent-acp",
+        ),
+
+        "codex" => Ok(
+            "@agentclientprotocol/codex-acp",
+        ),
+
+        "reins" => Err(
+            "Reins Agent is installed and managed by the Reins project."
+                .into(),
+        ),
+
+        "custom" => Err(
+            "Nothing to install for a custom agent."
+                .into(),
+        ),
+
+        other => Err(format!(
+            "Unknown preset: {other}"
+        )),
     }
 }
 
@@ -426,21 +496,35 @@ pub async fn install_global_package(preset: &str) -> Result<(), String> {
 }
 
 /// If no system/managed/npx agent is available, run a global npm install once.
-pub async fn ensure_agent_installed_globally(data_dir: &Path, preset: &str) -> Result<(), String> {
-    if preset == "custom" {
+pub async fn ensure_agent_installed_globally(
+    data_dir: &Path,
+    preset: &str,
+) -> Result<(), String> {
+    if matches!(preset, "custom" | "reins") {
         return Ok(());
     }
-    let resolution = resolve_agent(data_dir, preset).await;
-    if resolution.source != AgentInstallSource::None {
+
+    let resolution =
+        resolve_agent(data_dir, preset).await;
+
+    if resolution.source
+        != AgentInstallSource::None
+    {
         return Ok(());
     }
+
     install_global_package(preset).await?;
-    let after = resolve_agent(data_dir, preset).await;
+
+    let after =
+        resolve_agent(data_dir, preset).await;
+
     if after.source == AgentInstallSource::None {
         return Err(
-            "Global install finished but the agent CLI is still not on PATH. Restart the app or open a new terminal, then try again.".into(),
+            "Global installation finished, but the agent CLI is still unavailable. Restart the application and try again."
+                .into(),
         );
     }
+
     Ok(())
 }
 
@@ -448,13 +532,28 @@ pub async fn install_preset(
     data_dir: &Path,
     preset: &str,
 ) -> Result<AgentSetupStatusResponse, String> {
+    if preset == "reins" {
+        let status =
+            full_status(data_dir, preset).await;
+
+        if status.agent.ready {
+            return Ok(status);
+        }
+
+        return Err(status.agent.detail);
+    }
+
     install_global_package(preset).await?;
 
-    let prerequisites = check_prerequisites().await;
-    let agent = check_preset(data_dir, preset).await;
+    let prerequisites =
+        check_prerequisites().await;
+
+    let agent =
+        check_preset(data_dir, preset).await;
+
     if !agent.ready {
         return Err(format!(
-            "Global install finished but the agent is still not ready: {}",
+            "Global installation finished, but the agent is still not ready: {}",
             agent.detail
         ));
     }
@@ -464,7 +563,6 @@ pub async fn install_preset(
         agent,
     })
 }
-
 pub async fn full_status(data_dir: &Path, preset: &str) -> AgentSetupStatusResponse {
     let prerequisites = check_prerequisites().await;
     let agent = check_preset(data_dir, preset).await;

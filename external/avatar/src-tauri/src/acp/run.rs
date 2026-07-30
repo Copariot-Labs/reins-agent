@@ -48,8 +48,8 @@ fn write_companion_home_context(
     persona_context: &str,
 ) -> std::io::Result<()> {
     let agents_md = format!(
-        "# Meuxe companion session\n\n\
-You are the user's AI companion in **Meuxe** — not OpenCode, not Codex, and not a generic coding assistant.\n\
+        "# Reins Agent Companion session\n\n\
+You are the user's virtual companion in **Reins Agent Companion**. Reins Agent provides your reasoning, tools, and actions.\n\
 When asked who you are, answer as the companion in the persona below.\n\
 Follow all expression-tag rules in the persona for avatar reactions.\n\n\
 {persona}\n",
@@ -65,6 +65,10 @@ Follow all expression-tag rules in the persona for avatar reactions.\n\n\
 
 pub async fn resolve_acp_agent(config: &AgentConfig, data_dir: &Path) -> Result<AcpAgent, String> {
     match config.preset.as_str() {
+        "reins" => {
+            let args = crate::reins::resolve_reins_acp_argv()?;
+            AcpAgent::from_args(args).map_err(|e| e.to_string())
+        }
         "opencode" => {
             let args = crate::commands::agent_setup::resolve_opencode_argv(data_dir).await;
             AcpAgent::from_args(args).map_err(|e| e.to_string())
@@ -112,7 +116,10 @@ pub async fn run_acp_chat_stream(params: RunAcpChatStreamParams) -> Result<(), S
     ensure_companion_home(&state.data_dir).map_err(|e| e.to_string())?;
     write_companion_home_context(&companion_home, &persona_context).map_err(|e| e.to_string())?;
 
-    if agent_config.preset != "custom" {
+    if !matches!(
+        agent_config.preset.as_str(),
+        "custom" | "reins"
+    ) {
         crate::commands::agent_setup::ensure_agent_installed_globally(
             &state.data_dir,
             &agent_config.preset,
@@ -137,7 +144,7 @@ pub async fn run_acp_chat_stream(params: RunAcpChatStreamParams) -> Result<(), S
 
     Client
         .builder()
-        .name("meuxe")
+        .name("avatar")
         .on_receive_request(
             async move |request: RequestPermissionRequest, responder, _connection| {
                 let option_id = request.options.first().map(|opt| opt.option_id.clone());
@@ -224,7 +231,10 @@ pub async fn run_acp_chat_stream(params: RunAcpChatStreamParams) -> Result<(), S
                                                     );
                                                     let _ = app.emit(
                                                         "chat:text-chunk",
-                                                        serde_json::json!({ "text": chunk }),
+                                                        serde_json::json!({
+                                                            "request_id": request_id,
+                                                            "text": chunk
+                                                        }),
                                                     );
                                                 }
                                             }
