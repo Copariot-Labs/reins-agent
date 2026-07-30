@@ -1,4 +1,4 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 fn main() {
-    meuxe_desktop::run();
+    reins_desktop::run();
 }

@@ -6,7 +6,7 @@ import { useAudioAnalyser } from "./useAudioAnalyser";
 export type { SentenceTask } from "../audio/orderedAudioQueue";
 
 interface CurrentPlayback {
-  audio: HTMLAudioElement;
+  stop: () => void;
   finish: () => void;
 }
 
@@ -58,13 +58,19 @@ export function useAudioQueue() {
         audio.onerror = null;
         audio.src = "";
         audio.load();
-        if (currentPlaybackRef.current?.audio === audio) {
+        if (currentPlaybackRef.current?.finish === finish) {
           currentPlaybackRef.current = null;
         }
         resolve();
       };
 
-      currentPlaybackRef.current = { audio, finish };
+      currentPlaybackRef.current = {
+        finish,
+        stop: () => {
+          audio.pause();
+          finish();
+        },
+      };
 
       audio.oncanplay = () => {
         connectRef.current(audio);
@@ -102,10 +108,55 @@ export function useAudioQueue() {
     });
   }, []);
 
-  const stopCurrentAudio = useCallback(() => {
+  const playSpeechFallback = useCallback((text: string): Promise<void> => {
+    return new Promise((resolve) => {
+      const synth = window.speechSynthesis;
+      if (!text.trim() || !synth || typeof SpeechSynthesisUtterance === "undefined") {
+        resolve();
+        return;
+      }
+
+      disconnectRef.current();
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      let settled = false;
+
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        utterance.onend = null;
+        utterance.onerror = null;
+        if (currentPlaybackRef.current?.finish === finish) {
+          currentPlaybackRef.current = null;
+        }
+        resolve();
+      };
+
+      currentPlaybackRef.current = {
+        finish,
+        stop: () => {
+          synth.cancel();
+          finish();
+        },
+      };
+
+      utterance.onend = finish;
+      utterance.onerror = finish;
+
+      try {
+        synth.cancel();
+        synth.speak(utterance);
+      } catch (error) {
+        console.warn("[AudioQueue] Web Speech fallback failed:", error);
+        finish();
+      }
+    });
+  }, []);
+
+  const stopCurrentPlayback = useCallback(() => {
     const current = currentPlaybackRef.current;
     if (!current) return;
-    current.audio.pause();
+    current.stop();
     current.finish();
   }, []);
 
@@ -128,12 +179,18 @@ export function useAudioQueue() {
           continue;
         }
 
-        setSpeaking(true);
-        setSpeakingSentence(action.task.text);
-        onExpressionChangeRef.current?.(action.task.expression);
-        await playAudioChunk(action.audio);
-        if (queueRef.current.activeRequestId() !== action.requestId) break;
-        queueRef.current.advance(action.requestId, action.index);
+        if (action.kind === "play" || action.kind === "speak") {
+          setSpeaking(true);
+          setSpeakingSentence(action.task.text);
+          onExpressionChangeRef.current?.(action.task.expression);
+          if (action.kind === "play") {
+            await playAudioChunk(action.audio);
+          } else {
+            await playSpeechFallback(action.task.text);
+          }
+          if (queueRef.current.activeRequestId() !== action.requestId) break;
+          queueRef.current.advance(action.requestId, action.index);
+        }
       }
     } finally {
       playingRef.current = false;
@@ -144,7 +201,7 @@ export function useAudioQueue() {
         queueMicrotask(() => processQueueRef.current());
       }
     }
-  }, [playAudioChunk]);
+  }, [playAudioChunk, playSpeechFallback]);
 
   const processQueueRef = useRef(processQueue);
   useEffect(() => {
@@ -157,13 +214,13 @@ export function useAudioQueue() {
   }, []);
 
   const beginRequest = useCallback((requestId: string) => {
-    stopCurrentAudio();
+    stopCurrentPlayback();
     queueRef.current.begin(requestId);
     setSpeaking(false);
     setSpeakingSentence(null);
     setSpeechSessionActive(true);
     processQueueRef.current();
-  }, [stopCurrentAudio]);
+  }, [stopCurrentPlayback]);
 
   const addSentence = useCallback((requestId: string, task: SentenceTask) => {
     return processAcceptedMutation(queueRef.current.addSentence(requestId, task));
@@ -190,18 +247,18 @@ export function useAudioQueue() {
   }, [processAcceptedMutation]);
 
   const clearQueue = useCallback(() => {
-    stopCurrentAudio();
+    stopCurrentPlayback();
     queueRef.current.clear();
     setSpeaking(false);
     setSpeakingSentence(null);
     setSpeechSessionActive(false);
     onExpressionChangeRef.current?.(neutralExpressionRef.current);
-  }, [stopCurrentAudio]);
+  }, [stopCurrentPlayback]);
 
   useEffect(() => () => {
-    stopCurrentAudio();
+    stopCurrentPlayback();
     queueRef.current.clear();
-  }, [stopCurrentAudio]);
+  }, [stopCurrentPlayback]);
 
   const setOnExpressionChange = useCallback((cb: (expr: string) => void) => {
     onExpressionChangeRef.current = cb;

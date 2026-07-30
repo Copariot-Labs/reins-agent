@@ -2537,36 +2537,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "meuxe-desktop"
-version = "0.1.0"
-dependencies = [
- "agent-client-protocol",
- "base64 0.22.1",
- "bytes",
- "chrono",
- "dashmap",
- "futures",
- "http",
- "meuxe-core",
- "percent-encoding",
- "regex",
- "reqwest 0.12.28",
- "rfd",
- "serde",
- "serde_json",
- "shell-words",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-shell",
- "tempfile",
- "tokio",
- "tokio-util",
- "whisper-rs",
-]
-
-[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3650,6 +3620,36 @@ name = "regex-syntax"
 version = "0.8.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
+
+[[package]]
+name = "reins-desktop"
+version = "0.1.0"
+dependencies = [
+ "agent-client-protocol",
+ "base64 0.22.1",
+ "bytes",
+ "chrono",
+ "dashmap",
+ "futures",
+ "http",
+ "meuxe-core",
+ "percent-encoding",
+ "regex",
+ "reqwest 0.12.28",
+ "rfd",
+ "serde",
+ "serde_json",
+ "shell-words",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-shell",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "whisper-rs",
+]
 
 [[package]]
 name = "reqwest"

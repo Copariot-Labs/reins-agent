@@ -24,7 +24,7 @@ describe("OrderedAudioQueue", () => {
     expect(queue.peekNext()).toMatchObject({ kind: "play", index: 2 });
   });
 
-  it("skips a failed middle sentence and exposes the next ready audio", () => {
+  it("falls back to speech for a failed middle sentence and then exposes the next audio", () => {
     const queue = new OrderedAudioQueue();
     queue.begin("r1");
     [0, 1, 2].forEach((index) => queue.addSentence("r1", task(index)));
@@ -33,7 +33,7 @@ describe("OrderedAudioQueue", () => {
     queue.addAudio("r1", 2, "a2");
 
     queue.advance("r1", 0);
-    expect(queue.peekNext()).toEqual({ kind: "skip", requestId: "r1", index: 1 });
+    expect(queue.peekNext()).toMatchObject({ kind: "speak", requestId: "r1", index: 1 });
     queue.advance("r1", 1);
     expect(queue.peekNext()).toMatchObject({ kind: "play", index: 2 });
   });
@@ -66,7 +66,7 @@ describe("OrderedAudioQueue", () => {
     failed.addSentence("r1", task(0));
     failed.failAudio("r1", 0);
     failed.addAudio("r1", 0, "late-success");
-    expect(failed.peekNext()).toMatchObject({ kind: "skip", index: 0 });
+    expect(failed.peekNext()).toMatchObject({ kind: "speak", index: 0 });
 
     const ready = new OrderedAudioQueue();
     ready.begin("r1");
@@ -84,6 +84,7 @@ describe("OrderedAudioQueue", () => {
     expect(queue.peekNext()).toEqual({ kind: "wait" });
 
     queue.failAudio("r1", 0);
+    expect(queue.peekNext()).toMatchObject({ kind: "speak", index: 0 });
     queue.advance("r1", 0);
     expect(queue.peekNext()).toEqual({ kind: "complete", requestId: "r1" });
     queue.acknowledgeComplete("r1");

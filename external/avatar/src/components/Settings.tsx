@@ -750,7 +750,7 @@ export function Settings({
           )}
           {!SETTINGS_TTS_PRESETS[ttsProvider]?.needs_key && (
             <div className='mb-5 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700'>
-              Meuxe TTS is built in — no API key required.
+              Reins TTS is built in — no API key required.
             </div>
           )}
 

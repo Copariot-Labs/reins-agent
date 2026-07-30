@@ -4,7 +4,7 @@ export interface SentenceTask {
   text: string;
 }
 
-type AudioStatus = "pending" | "ready" | "failed";
+type AudioStatus = "pending" | "ready" | "fallback" | "failed";
 
 interface QueueEntry {
   task?: SentenceTask;
@@ -21,6 +21,12 @@ export type QueueDecision =
       index: number;
       task: SentenceTask;
       audio: string;
+    }
+  | {
+      kind: "speak";
+      requestId: string;
+      index: number;
+      task: SentenceTask;
     }
   | { kind: "complete"; requestId: string };
 
@@ -77,7 +83,7 @@ export class OrderedAudioQueue {
 
     const entry = this.entryFor(index);
     if (entry.status === "pending") {
-      entry.status = "failed";
+      entry.status = "fallback";
     }
     return "accepted";
   }
@@ -104,6 +110,14 @@ export class OrderedAudioQueue {
     const entry = this.entries.get(this.nextToPlay);
     if (entry?.status === "failed") {
       return { kind: "skip", requestId: this.requestId, index: this.nextToPlay };
+    }
+    if (entry?.status === "fallback" && entry.task) {
+      return {
+        kind: "speak",
+        requestId: this.requestId,
+        index: this.nextToPlay,
+        task: entry.task,
+      };
     }
     if (entry?.status === "ready" && entry.task && entry.audio !== undefined) {
       return {

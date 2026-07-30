@@ -17,13 +17,36 @@ const sentence = (index: number) => ({
   text: `sentence-${index}`,
 });
 
+class FakeSpeechSynthesisUtterance {
+  text: string;
+  onend: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+
+  constructor(text: string) {
+    this.text = text;
+  }
+}
+
 describe("useAudioQueue", () => {
+  let speechSpeak: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
     FakeAudio.reset();
     installFakeAudio();
+    speechSpeak = vi.fn((utterance: FakeSpeechSynthesisUtterance) => {
+      utterance.onend?.();
+    });
+    vi.stubGlobal("SpeechSynthesisUtterance", FakeSpeechSynthesisUtterance);
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: {
+        cancel: vi.fn(),
+        speak: speechSpeak,
+      },
+    });
   });
 
-  it("skips a failed middle sentence and plays index 2", async () => {
+  it("speaks a failed middle sentence with Web Speech and then plays index 2", async () => {
     const { result } = renderHook(() => useAudioQueue());
 
     act(() => {
@@ -38,6 +61,8 @@ describe("useAudioQueue", () => {
       FakeAudio.instances[0].finish();
     });
 
+    expect(speechSpeak).toHaveBeenCalledOnce();
+    expect(speechSpeak.mock.calls[0][0].text).toBe("sentence-1");
     expect(FakeAudio.instances[1].src).toContain("a2");
   });
 

@@ -8,20 +8,20 @@ export interface TtsPresetUi {
 
 export const TTS_PRESETS_UI: Record<string, TtsPresetUi> = {
   tiktok: {
-    name: "Meuxe TTS",
+    name: 'Reins TTS',
     needs_key: false,
-    hint: "Built into Meuxe — no key needed",
+    hint: 'Built into Reins — no key needed',
   },
   elevenlabs: {
-    name: "ElevenLabs",
+    name: 'ElevenLabs',
     needs_key: true,
-    hint: "Studio voices (API key)",
+    hint: 'Studio voices (API key)',
   },
   openai_tts: {
-    name: "OpenAI",
+    name: 'OpenAI',
     needs_key: true,
-    hint: "OpenAI speech (API key)",
+    hint: 'OpenAI speech (API key)',
   },
 };
 
-export const DEFAULT_TTS_PROVIDER = "tiktok";
+export const DEFAULT_TTS_PROVIDER = 'tiktok';
