@@ -10,7 +10,12 @@ import {
   getVoices,
 } from '../api/tauri';
 import { ACP_AGENT_PRESET_IDS, ACP_AGENT_PRESETS } from '../lib/agentPresets';
-import { DEFAULT_TTS_PROVIDER, TTS_PRESETS_UI } from '../lib/ttsPresets';
+import {
+  DEFAULT_TTS_PROVIDER,
+  DEFAULT_TTS_VOICE,
+  TTS_PRESETS_UI,
+} from '../lib/ttsPresets';
+import { previewSystemChineseVoice } from '../audio/systemSpeech';
 import { AgentPresetCard } from './agents/AgentPresetCard';
 import { AgentPresetIcon } from './agents/AgentPresetIcon';
 import { AgentSetupPanel } from './agents/AgentSetupPanel';
@@ -36,6 +41,7 @@ const SETTINGS_TTS_PRESETS: Record<
   string,
   { name: string; needs_key: boolean }
 > = {
+  system: TTS_PRESETS_UI.system,
   tiktok: TTS_PRESETS_UI.tiktok,
   elevenlabs: TTS_PRESETS_UI.elevenlabs,
 };
@@ -281,7 +287,9 @@ export function Settings({
   const [userAbout, setUserAbout] = useState('');
   const [ttsProvider, setTtsProvider] = useState(DEFAULT_TTS_PROVIDER);
   const [ttsApiKey, setTtsApiKey] = useState('');
-  const [ttsVoice, setTtsVoice] = useState('jp_001');
+  const [ttsVoice, setTtsVoice] = useState(DEFAULT_TTS_VOICE);
+  const [voicePreviewing, setVoicePreviewing] = useState(false);
+  const [voicePreviewError, setVoicePreviewError] = useState('');
   const [agentPreset, setAgentPreset] = useState('reins');
   const [agentProgram, setAgentProgram] = useState('');
   const [agentArgs, setAgentArgs] = useState('');
@@ -329,7 +337,7 @@ export function Settings({
         setUserAbout(cfg.user?.about || '');
         setTtsProvider(cfg.tts?.provider || DEFAULT_TTS_PROVIDER);
         setTtsApiKey('');
-        setTtsVoice(cfg.tts?.voice || 'jp_001');
+        setTtsVoice(cfg.tts?.voice || DEFAULT_TTS_VOICE);
         setAgentPreset(cfg.agent?.preset || 'reins');
         setAgentProgram(cfg.agent?.program || '');
         setAgentArgs((cfg.agent?.args || []).join(' '));
@@ -338,7 +346,16 @@ export function Settings({
   }, []);
 
   useEffect(() => {
-    getVoices(ttsProvider).then(setVoices).catch(console.error);
+    getVoices(ttsProvider)
+      .then((availableVoices) => {
+        setVoices(availableVoices);
+        setTtsVoice((currentVoice) =>
+          availableVoices.some((voice) => voice.id === currentVoice)
+            ? currentVoice
+            : availableVoices[0]?.id || DEFAULT_TTS_VOICE,
+        );
+      })
+      .catch(console.error);
   }, [ttsProvider]);
 
   const handleSave = async () => {
@@ -367,6 +384,20 @@ export function Settings({
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleSystemVoicePreview = async () => {
+    setVoicePreviewError('');
+    setVoicePreviewing(true);
+    try {
+      await previewSystemChineseVoice(ttsVoice);
+    } catch (error) {
+      setVoicePreviewError(
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setVoicePreviewing(false);
+    }
   };
 
   if (!config)
@@ -750,7 +781,9 @@ export function Settings({
           )}
           {!SETTINGS_TTS_PRESETS[ttsProvider]?.needs_key && (
             <div className='mb-5 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700'>
-              Reins TTS is built in — no API key required.
+              {ttsProvider === 'system'
+                ? 'System Chinese uses Mandarin voices installed on this device.'
+                : 'Reins TTS is built in — no API key required.'}
             </div>
           )}
 
@@ -779,6 +812,25 @@ export function Settings({
               </svg>
             </div>
           </div>
+
+          {ttsProvider === 'system' && (
+            <div className='mb-5 -mt-3'>
+              <button
+                type='button'
+                onClick={handleSystemVoicePreview}
+                disabled={voicePreviewing}
+                className='flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-blue-600 transition-colors hover:bg-slate-50 disabled:opacity-50'
+              >
+                <SpeakerIcon />
+                {voicePreviewing ? 'Playing Mandarin…' : 'Preview Chinese voice'}
+              </button>
+              {voicePreviewError && (
+                <p className='mt-2 text-xs text-red-600'>
+                  {voicePreviewError}
+                </p>
+              )}
+            </div>
+          )}
 
           <button
             onClick={handleSave}

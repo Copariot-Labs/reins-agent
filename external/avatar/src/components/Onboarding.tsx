@@ -14,7 +14,12 @@ import {
 } from '../lib/agentPresets';
 import { COMPANION_VIBE_PACKS } from '../lib/companionVibes';
 import { buildCompanionPersonalityDraft } from '../lib/companionCharacterDraft';
-import { DEFAULT_TTS_PROVIDER, TTS_PRESETS_UI } from '../lib/ttsPresets';
+import {
+  DEFAULT_TTS_PROVIDER,
+  DEFAULT_TTS_VOICE,
+  TTS_PRESETS_UI,
+} from '../lib/ttsPresets';
+import { previewSystemChineseVoice } from '../audio/systemSpeech';
 import { AgentPresetCard } from './agents/AgentPresetCard';
 import { AgentSetupPanel } from './agents/AgentSetupPanel';
 import { CompanionAvatarPreview } from './onboarding/CompanionAvatarPreview';
@@ -81,7 +86,11 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
       program: '',
       args: '',
     },
-    tts: { provider: DEFAULT_TTS_PROVIDER, api_key: '', voice: 'jp_001' },
+    tts: {
+      provider: DEFAULT_TTS_PROVIDER,
+      api_key: '',
+      voice: DEFAULT_TTS_VOICE,
+    },
     companion: {
       name: '',
       personality: '',
@@ -184,6 +193,10 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
     setPreviewError('');
     setPreviewing(true);
     try {
+      if (form.tts.provider === 'system') {
+        await previewSystemChineseVoice(form.tts.voice);
+        return;
+      }
       const data = await previewVoice(
         form.tts.provider,
         form.tts.voice,

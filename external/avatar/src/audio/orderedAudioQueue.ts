@@ -9,6 +9,7 @@ type AudioStatus = "pending" | "ready" | "fallback" | "failed";
 interface QueueEntry {
   task?: SentenceTask;
   audio?: string;
+  fallbackVoice?: string;
   status: AudioStatus;
 }
 
@@ -27,6 +28,7 @@ export type QueueDecision =
       requestId: string;
       index: number;
       task: SentenceTask;
+      voice?: string;
     }
   | { kind: "complete"; requestId: string };
 
@@ -79,11 +81,20 @@ export class OrderedAudioQueue {
   }
 
   failAudio(requestId: string, index: number): MutationResult {
+    return this.useSystemSpeech(requestId, index);
+  }
+
+  useSystemSpeech(
+    requestId: string,
+    index: number,
+    voice?: string,
+  ): MutationResult {
     if (!this.isActive(requestId)) return "ignored";
 
     const entry = this.entryFor(index);
     if (entry.status === "pending") {
       entry.status = "fallback";
+      entry.fallbackVoice = voice;
     }
     return "accepted";
   }
@@ -117,6 +128,7 @@ export class OrderedAudioQueue {
         requestId: this.requestId,
         index: this.nextToPlay,
         task: entry.task,
+        voice: entry.fallbackVoice,
       };
     }
     if (entry?.status === "ready" && entry.task && entry.audio !== undefined) {

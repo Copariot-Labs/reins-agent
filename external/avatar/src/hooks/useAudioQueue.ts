@@ -1,7 +1,9 @@
 import { useRef, useCallback, useState, useEffect } from "react";
 import { OrderedAudioQueue } from "../audio/orderedAudioQueue";
 import type { SentenceTask } from "../audio/orderedAudioQueue";
+import { configureSystemChineseVoice } from "../audio/systemSpeech";
 import { useAudioAnalyser } from "./useAudioAnalyser";
+import type { AudioLevels } from "./useAudioAnalyser";
 
 export type { SentenceTask } from "../audio/orderedAudioQueue";
 
@@ -9,6 +11,16 @@ interface CurrentPlayback {
   stop: () => void;
   finish: () => void;
 }
+
+interface SystemSpeechLipSyncState {
+  active: boolean;
+  text: string;
+  startedAt: number;
+  boundaryAt: number;
+  boundaryIndex: number;
+}
+
+const PAUSE_CHARACTER = /[\s,.!?;:，。！？；：、]/;
 
 export function useAudioQueue() {
   const [speaking, setSpeaking] = useState(false);
@@ -20,7 +32,18 @@ export function useAudioQueue() {
   const onExpressionChangeRef = useRef<((expr: string) => void) | null>(null);
   const onAudioDoneRef = useRef<((requestId: string) => void) | null>(null);
   const neutralExpressionRef = useRef("neutral");
-  const { connectAudio, getAudioLevels, disconnect } = useAudioAnalyser();
+  const systemSpeechLipSyncRef = useRef<SystemSpeechLipSyncState>({
+    active: false,
+    text: "",
+    startedAt: 0,
+    boundaryAt: 0,
+    boundaryIndex: 0,
+  });
+  const {
+    connectAudio,
+    getAudioLevels: getAnalysedAudioLevels,
+    disconnect,
+  } = useAudioAnalyser();
 
   const connectRef = useRef(connectAudio);
   const disconnectRef = useRef(disconnect);
@@ -108,7 +131,7 @@ export function useAudioQueue() {
     });
   }, []);
 
-  const playSpeechFallback = useCallback((text: string): Promise<void> => {
+  const playSpeechFallback = useCallback((text: string, voice?: string): Promise<void> => {
     return new Promise((resolve) => {
       const synth = window.speechSynthesis;
       if (!text.trim() || !synth || typeof SpeechSynthesisUtterance === "undefined") {
@@ -119,11 +142,22 @@ export function useAudioQueue() {
       disconnectRef.current();
 
       const utterance = new SpeechSynthesisUtterance(text);
+      configureSystemChineseVoice(utterance, voice);
+      const lipSyncState = systemSpeechLipSyncRef.current;
+      lipSyncState.active = true;
+      lipSyncState.text = text;
+      lipSyncState.startedAt = performance.now();
+      lipSyncState.boundaryAt = lipSyncState.startedAt;
+      lipSyncState.boundaryIndex = 0;
       let settled = false;
 
       const finish = () => {
         if (settled) return;
         settled = true;
+        lipSyncState.active = false;
+        lipSyncState.text = "";
+        utterance.onstart = null;
+        utterance.onboundary = null;
         utterance.onend = null;
         utterance.onerror = null;
         if (currentPlaybackRef.current?.finish === finish) {
@@ -140,6 +174,14 @@ export function useAudioQueue() {
         },
       };
 
+      utterance.onstart = () => {
+        lipSyncState.startedAt = performance.now();
+        lipSyncState.boundaryAt = lipSyncState.startedAt;
+      };
+      utterance.onboundary = (event) => {
+        lipSyncState.boundaryAt = performance.now();
+        lipSyncState.boundaryIndex = event.charIndex;
+      };
       utterance.onend = finish;
       utterance.onerror = finish;
 
@@ -152,6 +194,47 @@ export function useAudioQueue() {
       }
     });
   }, []);
+
+  const getAudioLevels = useCallback((): AudioLevels => {
+    const state = systemSpeechLipSyncRef.current;
+    if (!state.active) {
+      return getAnalysedAudioLevels();
+    }
+
+    const now = performance.now();
+    const elapsed = Math.max(0, (now - state.startedAt) / 1000);
+    const boundaryAge = Math.max(0, (now - state.boundaryAt) / 1000);
+    const estimatedIndex = Math.min(
+      Math.max(0, state.text.length - 1),
+      state.boundaryIndex + Math.floor(boundaryAge * 4.5),
+    );
+    const currentCharacter = state.text[estimatedIndex] ?? "";
+    const pauseScale = PAUSE_CHARACTER.test(currentCharacter) ? 0.12 : 1;
+
+    const syllablePulse = Math.pow(
+      Math.max(0, Math.sin(elapsed * Math.PI * 7.2)),
+      0.55,
+    );
+    const boundaryPulse =
+      boundaryAge < 0.18
+        ? Math.sin((boundaryAge / 0.18) * Math.PI)
+        : 0;
+    const phraseShape = 0.82 + Math.sin(elapsed * 2.1) * 0.12;
+    const mouthOpen = Math.min(
+      0.92,
+      (0.08 + syllablePulse * 0.62 + boundaryPulse * 0.18) *
+        phraseShape *
+        pauseScale,
+    );
+    const mouthForm =
+      Math.sin(elapsed * 5.3) * 0.38 + Math.sin(elapsed * 2.7) * 0.16;
+
+    return {
+      volume: mouthOpen,
+      mouthOpen,
+      mouthForm: Math.max(-0.65, Math.min(0.65, mouthForm)),
+    };
+  }, [getAnalysedAudioLevels]);
 
   const stopCurrentPlayback = useCallback(() => {
     const current = currentPlaybackRef.current;
@@ -186,7 +269,7 @@ export function useAudioQueue() {
           if (action.kind === "play") {
             await playAudioChunk(action.audio);
           } else {
-            await playSpeechFallback(action.task.text);
+            await playSpeechFallback(action.task.text, action.voice);
           }
           if (queueRef.current.activeRequestId() !== action.requestId) break;
           queueRef.current.advance(action.requestId, action.index);
@@ -234,6 +317,12 @@ export function useAudioQueue() {
     return processAcceptedMutation(queueRef.current.failAudio(requestId, index));
   }, [processAcceptedMutation]);
 
+  const useSystemSpeech = useCallback((requestId: string, index: number, voice: string) => {
+    return processAcceptedMutation(
+      queueRef.current.useSystemSpeech(requestId, index, voice),
+    );
+  }, [processAcceptedMutation]);
+
   const markTextDone = useCallback((requestId: string) => {
     return processAcceptedMutation(queueRef.current.markTextDone(requestId));
   }, [processAcceptedMutation]);
@@ -257,6 +346,11 @@ export function useAudioQueue() {
 
   useEffect(() => () => {
     stopCurrentPlayback();
+    systemSpeechLipSyncRef.current = {
+      ...systemSpeechLipSyncRef.current,
+      active: false,
+      text: "",
+    };
     queueRef.current.clear();
   }, [stopCurrentPlayback]);
 
@@ -280,6 +374,7 @@ export function useAudioQueue() {
     addSentence,
     addAudio,
     failAudio,
+    useSystemSpeech,
     markTextDone,
     failRequest,
     clearQueue,

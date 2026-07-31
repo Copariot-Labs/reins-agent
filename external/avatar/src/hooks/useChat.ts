@@ -39,6 +39,12 @@ interface AudioFailedPayload {
   message: string;
 }
 
+interface SystemSpeechPayload {
+  request_id: string;
+  index: number;
+  voice: string;
+}
+
 interface ChatErrorPayload {
   request_id: string;
   message: string;
@@ -114,6 +120,9 @@ export function useChat() {
   const onAudioFailedRef = useRef<((data: AudioFailedPayload) => void) | null>(
     null,
   );
+  const onSystemSpeechRef = useRef<
+    ((data: SystemSpeechPayload) => void) | null
+  >(null);
   const onDoneRef = useRef<((data: DonePayload) => void) | null>(null);
   const onErrorRef = useRef<((requestId: string) => void) | null>(null);
   const unlistenersRef = useRef<UnlistenFn[]>([]);
@@ -229,6 +238,14 @@ export function useChat() {
         },
       );
 
+      const unlistenSystemSpeech = await listen<SystemSpeechPayload>(
+        'chat:system-speech',
+        (event) => {
+          if (event.payload.request_id !== requestId) return;
+          onSystemSpeechRef.current?.(event.payload);
+        },
+      );
+
       const unlistenToolStart = await listen<ToolCallStartPayload>(
         'chat:tool-call-start',
         (event) => {
@@ -289,7 +306,11 @@ export function useChat() {
         unlistenToolStart();
         unlistenToolResult();
         unlistenToolConfirm();
-        unlistenersRef.current = [unlistenAudio, unlistenAudioFailed];
+        unlistenersRef.current = [
+          unlistenAudio,
+          unlistenAudioFailed,
+          unlistenSystemSpeech,
+        ];
       });
 
       const unlistenError = await listen<ChatErrorPayload>(
@@ -334,6 +355,7 @@ export function useChat() {
         unlistenSentence,
         unlistenAudio,
         unlistenAudioFailed,
+        unlistenSystemSpeech,
         unlistenDone,
         unlistenError,
         unlistenToolStart,
@@ -367,6 +389,13 @@ export function useChat() {
     [],
   );
 
+  const setOnSystemSpeech = useCallback(
+    (cb: (data: SystemSpeechPayload) => void) => {
+      onSystemSpeechRef.current = cb;
+    },
+    [],
+  );
+
   const setOnDone = useCallback((cb: (data: DonePayload) => void) => {
     onDoneRef.current = cb;
   }, []);
@@ -385,6 +414,7 @@ export function useChat() {
     setOnSentence,
     setOnAudio,
     setOnAudioFailed,
+    setOnSystemSpeech,
     setOnDone,
     setOnError,
     toolCalls,

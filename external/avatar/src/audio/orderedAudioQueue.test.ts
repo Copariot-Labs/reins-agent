@@ -38,6 +38,19 @@ describe("OrderedAudioQueue", () => {
     expect(queue.peekNext()).toMatchObject({ kind: "play", index: 2 });
   });
 
+  it("carries the selected system Chinese voice with the sentence", () => {
+    const queue = new OrderedAudioQueue();
+    queue.begin("r1");
+    queue.addSentence("r1", task(0));
+    queue.useSystemSpeech("r1", 0, "zh-CN-Tingting");
+
+    expect(queue.peekNext()).toMatchObject({
+      kind: "speak",
+      index: 0,
+      voice: "zh-CN-Tingting",
+    });
+  });
+
   it("ignores stale events after a new request begins", () => {
     const queue = new OrderedAudioQueue();
     queue.begin("old");

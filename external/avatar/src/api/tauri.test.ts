@@ -229,6 +229,30 @@ describe('tauri api utilities', () => {
       expect(invoke).toHaveBeenCalledWith('tts_voices', { provider: 'openai' });
     });
 
+    it('returns local Chinese voices without invoking the backend', async () => {
+      const chineseVoice = {
+        default: false,
+        lang: 'zh-CN',
+        localService: true,
+        name: 'Tingting',
+        voiceURI: 'zh-CN-Tingting',
+      };
+      Object.defineProperty(window, 'speechSynthesis', {
+        configurable: true,
+        value: {
+          getVoices: vi.fn(() => [chineseVoice]),
+        },
+      });
+
+      const voices = await tauriApi.getVoices('system');
+
+      expect(voices).toContainEqual({
+        id: 'zh-CN-Tingting',
+        name: 'Tingting - zh-CN',
+      });
+      expect(invoke).not.toHaveBeenCalled();
+    });
+
     it('previewVoice calls tts_preview', async () => {
       await tauriApi.previewVoice('openai', 'alloy', 'my-key', 'Hello world');
       expect(invoke).toHaveBeenCalledWith('tts_preview', {

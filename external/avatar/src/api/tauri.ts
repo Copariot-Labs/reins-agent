@@ -1,4 +1,5 @@
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { listSystemChineseVoices } from "../audio/systemSpeech";
 
 // Asset paths — in the Tauri app, resolve to convertFileSrc URLs via the backend.
 // In browser-only dev (npm run dev), fall back to Vite /static/ middleware.
@@ -233,6 +234,9 @@ export async function saveExpressions(
 
 // TTS
 export async function getVoices(provider: string) {
+  if (provider === "system") {
+    return listSystemChineseVoices();
+  }
   return invoke<{ id: string; name: string }[]>("tts_voices", { provider });
 }
 

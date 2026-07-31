@@ -138,6 +138,13 @@ struct AudioFailedEvent {
 }
 
 #[derive(Clone, serde::Serialize)]
+struct SystemSpeechEvent {
+    request_id: String,
+    index: u32,
+    voice: String,
+}
+
+#[derive(Clone, serde::Serialize)]
 pub(crate) struct ChatDoneEvent {
     pub(crate) request_id: String,
     pub(crate) state_update: serde_json::Value,
@@ -307,6 +314,23 @@ fn spawn_tts_for_sentence(
     index: u32,
     text: String,
 ) {
+    if tts_config.provider == "system" {
+        let voice = if tts_config.voice.is_empty() {
+            "zh-CN".to_string()
+        } else {
+            tts_config.voice.clone()
+        };
+        let _ = app.emit(
+            "chat:system-speech",
+            SystemSpeechEvent {
+                request_id: request_id.to_string(),
+                index,
+                voice,
+            },
+        );
+        return;
+    }
+
     let tts_cfg = tts_config.clone();
     let app_tts = app.clone();
     let request_id = request_id.to_string();

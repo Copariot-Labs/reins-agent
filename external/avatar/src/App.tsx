@@ -145,6 +145,7 @@ function App() {
     setOnSentence,
     setOnAudio,
     setOnAudioFailed,
+    setOnSystemSpeech,
     setOnDone,
     setOnError,
     toolCalls,
@@ -159,6 +160,7 @@ function App() {
     addSentence,
     addAudio,
     failAudio,
+    useSystemSpeech,
     markTextDone,
     failRequest,
     clearQueue,
@@ -244,6 +246,9 @@ function App() {
     setOnAudioFailed((payload) => {
       failAudio(payload.request_id, payload.index);
     });
+    setOnSystemSpeech((payload) => {
+      useSystemSpeech(payload.request_id, payload.index, payload.voice);
+    });
     setOnDone((payload) => {
       markTextDone(payload.request_id);
     });
@@ -254,11 +259,13 @@ function App() {
     setOnSentence,
     setOnAudio,
     setOnAudioFailed,
+    setOnSystemSpeech,
     setOnDone,
     setOnError,
     addSentence,
     addAudio,
     failAudio,
+    useSystemSpeech,
     markTextDone,
     failRequest,
   ]);
