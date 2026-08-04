@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, memo } from "react";
 import { useVRM } from "../hooks/useVRM";
 import type { AnimationInfo } from "../types";
 import { LoadingOverlay } from "./LoadingOverlay";
+import { useLanguage } from "../i18n/LanguageContext";
 
 interface Props {
   modelPath: string | null;
@@ -31,6 +32,7 @@ export const VRMCanvas = memo(function VRMCanvas({
   framing,
   getAudioLevels,
 }: Props) {
+  const { tr } = useLanguage();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const {
     loadModel,
@@ -92,21 +94,28 @@ export const VRMCanvas = memo(function VRMCanvas({
     >
       <LoadingOverlay
         visible={modelLoading}
-        message="Loading VRM model..."
-        subMessage="Please wait"
+        message={tr('Loading VRM model...', '正在加载 VRM 模型...')}
+        subMessage={tr('Please wait', '请稍候')}
         variant="model"
       />
       {!modelPath && !showMiniUi && (
         <div className="text-slate-500 text-center px-6">
-          <p className="text-lg font-medium">No VRM model loaded</p>
+          <p className="text-lg font-medium">
+            {tr('No VRM model loaded', '尚未加载 VRM 模型')}
+          </p>
           <p className="text-sm mt-2 text-slate-400">
-            Add a <code className="text-slate-600">.vrm</code> file to <code className="text-slate-600">models/vrm/</code>
+            {tr('Add a', '请将')}{' '}
+            <code className="text-slate-600">.vrm</code>{' '}
+            {tr('file to', '文件添加到')}{' '}
+            <code className="text-slate-600">models/vrm/</code>
           </p>
         </div>
       )}
       {!modelPath && showMiniUi && (
         <div className="text-amber-200/50 text-center">
-          <p className="text-lg">No VRM model loaded</p>
+          <p className="text-lg">
+            {tr('No VRM model loaded', '尚未加载 VRM 模型')}
+          </p>
         </div>
       )}
       <canvas

@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import type { ChatMessage, ChatTimelineItem } from "../types";
 import { MicButton } from "./MicButton";
 import { ToolCallBubble } from "./ToolCallBubble";
+import { useLanguage } from "../i18n/LanguageContext";
 
 interface Props {
   timeline: ChatTimelineItem[];
@@ -195,6 +196,7 @@ const ChatInput = memo(function ChatInput({
   inputRef: React.RefObject<HTMLInputElement | null>;
   floating?: boolean;
 }) {
+  const { tr } = useLanguage();
   const [input, setInput] = useState("");
   const typingTimeoutRef = useRef<number | null>(null);
 
@@ -242,7 +244,7 @@ const ChatInput = memo(function ChatInput({
             type="text"
             value={input}
             onChange={handleInputChange}
-            placeholder="Say something..."
+            placeholder={tr('Say something...', '说点什么...')}
             className={`w-full text-slate-700 rounded-2xl pl-5 pr-12 py-3 text-[14px] outline-none transition-all placeholder-slate-400 disabled:opacity-50 ${
               floating
                 ? "border border-white/60 bg-white/95 shadow-inner shadow-slate-900/5 focus:bg-white focus:ring-2 focus:ring-indigo-100 focus:border-indigo-200"
@@ -302,6 +304,7 @@ export function ChatPanel({
   hideInput = false,
   appearance = "light",
 }: Props) {
+  const { tr } = useLanguage();
   const dark = appearance === "dark";
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const internalInputRef = useRef<HTMLInputElement>(null);
@@ -372,9 +375,14 @@ export function ChatPanel({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
             </div>
-            <p className={`text-sm font-medium ${dark ? "text-white/60" : "text-slate-500"}`}>Say hello to {characterName}</p>
+            <p className={`text-sm font-medium ${dark ? "text-white/60" : "text-slate-500"}`}>
+              {tr(`Say hello to ${characterName}`, `向 ${characterName} 打个招呼吧`)}
+            </p>
             <p className={`mt-1 max-w-xs text-xs leading-relaxed ${dark ? "text-white/35" : "text-slate-400"}`}>
-              Share what&apos;s on your mind—a small update, a worry, or just because you want company.
+              {tr(
+                "Share what's on your mind—a small update, a worry, or just because you want company.",
+                '分享此刻的想法、最近的小事或烦恼，也可以只是想有人陪伴。',
+              )}
             </p>
           </div>
         )}
@@ -419,7 +427,9 @@ export function ChatPanel({
                   <span className="w-2 h-2 rounded-full bg-blue-400/60 animate-bounce" />
                 </div>
                 <span className="text-xs font-semibold uppercase tracking-wide">
-                  {hasAnyTool ? "Continuing" : "Thinking"}
+                  {hasAnyTool
+                    ? tr('Continuing', '继续处理中')
+                    : tr('Thinking', '思考中')}
                 </span>
               </div>
             </div>
@@ -436,7 +446,9 @@ export function ChatPanel({
                   <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
                   <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" />
                 </div>
-                <span className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">Speaking...</span>
+                <span className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+                  {tr('Speaking...', '正在说话...')}
+                </span>
               </div>
             </div>
           </div>
@@ -450,7 +462,11 @@ export function ChatPanel({
         <div className="px-4 py-1.5 bg-blue-50/60 backdrop-blur-sm border-t border-blue-100/40 flex items-center justify-between text-[10px] text-blue-600/70 font-medium uppercase tracking-widest z-10">
           <div className="flex items-center gap-2">
             {speaking && <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping" />}
-            <span>{speaking ? "Playing audio" : "Generating voice"}</span>
+            <span>
+              {speaking
+                ? tr('Playing audio', '正在播放语音')
+                : tr('Generating voice', '正在生成语音')}
+            </span>
           </div>
           <span className="opacity-70">{characterName}</span>
         </div>

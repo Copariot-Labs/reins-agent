@@ -1,4 +1,5 @@
 import { BG_PRESETS } from "../../constants/bgPresets";
+import { useLanguage } from "../../i18n/LanguageContext";
 
 const STAGE_BACKGROUNDS = [
   { name: "Transparent (match app)", value: "transparent" },
@@ -17,22 +18,37 @@ export function AvatarViewportSettings({
   onZoomChange: (zoom: number) => void;
   onBackgroundChange: (bg: string) => void;
 }) {
+  const { tr } = useLanguage();
   const pct = Math.round(zoom * 100);
+
+  const backgroundName = (name: string) => {
+    const names: Record<string, string> = {
+      "Transparent (match app)": "透明（跟随应用）",
+      Light: "浅色",
+      "Warm Sunset": "暖色夕阳",
+      "Cozy Room": "温馨房间",
+      "Cherry Blossom": "樱花",
+      "Forest Night": "森林夜色",
+      "Ocean Dusk": "海洋黄昏",
+      Midnight: "午夜",
+    };
+    return tr(name, names[name] ?? name);
+  };
 
   return (
     <div className="space-y-6">
       <p className="text-sm text-slate-500 leading-relaxed">
-        Adjust zoom and background on the main screen. Use the <span className="font-semibold text-slate-600">FULL / HALF</span> button below the settings icon for framing.
+        {tr("Adjust zoom and background on the main screen. Use the", "调整主界面的缩放和背景。使用设置图标下方的")} <span className="font-semibold text-slate-600">{tr("FULL / HALF", "全身 / 半身")}</span> {tr("button below the settings icon for framing.", "按钮调整取景范围。")}
       </p>
 
       <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-        <h3 className="text-sm font-semibold text-slate-800">Zoom</h3>
+        <h3 className="text-sm font-semibold text-slate-800">{tr("Zoom", "缩放")}</h3>
         <div className="mt-3 flex items-center gap-3">
           <button
             type="button"
             onClick={() => onZoomChange(Math.round(Math.max(30, pct - 5)) / 100)}
             className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
-            aria-label="Zoom out"
+            aria-label={tr("Zoom out", "缩小")}
           >
             −
           </button>
@@ -41,7 +57,7 @@ export function AvatarViewportSettings({
             type="button"
             onClick={() => onZoomChange(Math.round(Math.min(200, pct + 5)) / 100)}
             className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
-            aria-label="Zoom in"
+            aria-label={tr("Zoom in", "放大")}
           >
             +
           </button>
@@ -49,7 +65,7 @@ export function AvatarViewportSettings({
       </section>
 
       <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-        <h3 className="text-sm font-semibold text-slate-800">Background behind avatar</h3>
+        <h3 className="text-sm font-semibold text-slate-800">{tr("Background behind avatar", "虚拟形象背景")}</h3>
         <div className="mt-3 grid gap-2">
           {STAGE_BACKGROUNDS.map((preset) => (
             <button
@@ -68,7 +84,7 @@ export function AvatarViewportSettings({
                   background: preset.value === "transparent" ? "#f1f5f9" : preset.value,
                 }}
               />
-              {preset.name}
+              {backgroundName(preset.name)}
             </button>
           ))}
         </div>

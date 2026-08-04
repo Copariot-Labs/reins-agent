@@ -5,6 +5,7 @@ import {
   type AgentSetupStatusResponse,
 } from "../../api/tauri";
 import { ACP_AGENT_PRESETS, type AcpAgentPresetId } from "../../lib/agentPresets";
+import { useLanguage } from "../../i18n/LanguageContext";
 
 export function AgentSetupPanel({
   preset,
@@ -16,6 +17,7 @@ export function AgentSetupPanel({
   /** Shorter, non-technical copy for onboarding */
   friendly?: boolean;
 }) {
+  const { tr } = useLanguage();
   const [status, setStatus] = useState<AgentSetupStatusResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [installing, setInstalling] = useState(false);
@@ -76,15 +78,28 @@ export function AgentSetupPanel({
     <div className="rounded-2xl border border-slate-200/90 bg-slate-50/80 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs font-semibold text-slate-600">
-          {friendly ? "Agent on your system" : "Agent CLI"}
+          {friendly
+            ? tr('Agent on your system', '本机智能体')
+            : tr('Agent CLI', '智能体 CLI')}
         </span>
-        {loading && <span className="text-xs text-slate-400">Checking…</span>}
+        {loading && (
+          <span className="text-xs text-slate-400">
+            {tr('Checking…', '正在检查...')}
+          </span>
+        )}
       </div>
 
       {status && !loading && agent && (
         <div className="mt-3 space-y-3">
           <div className="flex flex-wrap gap-2">
-            <StatusPill ok={agent.ready} label={agent.ready ? `${title} ready` : `${title} needed`} />
+            <StatusPill
+              ok={agent.ready}
+              label={
+                agent.ready
+                  ? tr(`${title} ready`, `${title} 已就绪`)
+                  : tr(`${title} needed`, `需要安装 ${title}`)
+              }
+            />
             {usingSystem && <StatusPill ok label="System PATH" />}
             {usingManaged && <StatusPill ok label="Meuxe fallback" />}
             {usingNpx && <StatusPill ok label="via npx" />}
@@ -98,7 +113,10 @@ export function AgentSetupPanel({
 
           {friendly && !agent.ready && (
             <p className="text-sm text-slate-500 leading-snug">
-              Install the CLI globally now, or tap Finish and Meuxe will run the same global npm install for you.
+              {tr(
+                'Install the CLI globally now, or tap Finish and Meuxe will run the same global npm install for you.',
+                '你可以现在全局安装 CLI，也可以点击“完成”，由 Reins 自动执行相同的 npm 全局安装。',
+              )}
             </p>
           )}
 
@@ -109,7 +127,7 @@ export function AgentSetupPanel({
                 onClick={() => window.open("https://nodejs.org/en/download", "_blank")}
                 className="rounded-xl border border-amber-200 bg-white px-3.5 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-50"
               >
-                Install Node.js
+                {tr('Install Node.js', '安装 Node.js')}
               </button>
             )}
             {status.prerequisites.node_available && !agent.ready && (
@@ -119,11 +137,15 @@ export function AgentSetupPanel({
                 disabled={installing}
                 className="rounded-xl bg-violet-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
               >
-                {installing ? "Installing…" : "Install globally (npm)"}
+                {installing
+                  ? tr('Installing…', '正在安装...')
+                  : tr('Install globally (npm)', '全局安装（npm）')}
               </button>
             )}
             {status.prerequisites.node_available && agent.ready && usingSystem && (
-              <span className="text-xs font-semibold text-emerald-700">Using your global install</span>
+              <span className="text-xs font-semibold text-emerald-700">
+                {tr('Using your global install', '正在使用全局安装')}
+              </span>
             )}
             {status.prerequisites.node_available && agent.ready && !usingSystem && (
               <button
@@ -132,7 +154,9 @@ export function AgentSetupPanel({
                 disabled={installing}
                 className="rounded-xl border border-violet-200 bg-white px-3.5 py-2 text-sm font-semibold text-violet-800 hover:bg-violet-50 disabled:opacity-50"
               >
-                {installing ? "Installing…" : "Install globally (npm)"}
+                {installing
+                  ? tr('Installing…', '正在安装...')
+                  : tr('Install globally (npm)', '全局安装（npm）')}
               </button>
             )}
           </div>

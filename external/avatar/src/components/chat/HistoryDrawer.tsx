@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useLanguage } from "../../i18n/LanguageContext";
 
 export function HistoryDrawer({
   open,
@@ -11,12 +12,13 @@ export function HistoryDrawer({
   title: string;
   children: ReactNode;
 }) {
+  const { tr } = useLanguage();
   return (
     <>
       {open && (
         <button
           type="button"
-          aria-label="Close history"
+          aria-label={tr('Close history', '关闭聊天记录')}
           className="fixed inset-0 z-40 bg-slate-900/20 backdrop-blur-[2px]"
           onClick={onClose}
         />
@@ -31,6 +33,7 @@ export function HistoryDrawer({
           <button
             type="button"
             onClick={onClose}
+            aria-label={tr('Close', '关闭')}
             className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
           >
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

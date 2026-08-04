@@ -1,4 +1,5 @@
 import type { Character } from "../types";
+import { useLanguage } from "../i18n/LanguageContext";
 
 interface Props {
   characters: Character[];
@@ -20,6 +21,7 @@ export function CharacterSelect({
   onToggle,
   menuOnly = false,
 }: Props) {
+  const { tr } = useLanguage();
   const panel = open && (
     <>
       <div className="fixed inset-0 z-40" onClick={onToggle} />
@@ -29,8 +31,12 @@ export function CharacterSelect({
         }`}
       >
         <div className="border-b border-slate-100 px-5 py-4">
-          <h3 className="text-[15px] font-bold tracking-tight text-slate-900">Characters</h3>
-          <p className="mt-1 text-xs text-slate-500">Switch companion</p>
+          <h3 className="text-[15px] font-bold tracking-tight text-slate-900">
+            {tr('Characters', '伙伴角色')}
+          </h3>
+          <p className="mt-1 text-xs text-slate-500">
+            {tr('Switch companion', '切换伙伴')}
+          </p>
         </div>
         <div className="max-h-72 overflow-y-auto p-3 scrollbar-thin">
           {characters.map((char) => (
@@ -56,7 +62,9 @@ export function CharacterSelect({
                 </div>
                 <div>
                   <div className="text-[14px] font-semibold">{char.name}</div>
-                  <div className="mt-0.5 text-xs text-slate-400">{char.live2d_model || "default"}</div>
+                  <div className="mt-0.5 text-xs text-slate-400">
+                    {char.live2d_model || tr('default', '默认')}
+                  </div>
                 </div>
               </div>
             </button>
@@ -72,7 +80,9 @@ export function CharacterSelect({
               +
             </div>
             <div>
-              <div className="text-[14px] font-semibold">Add character</div>
+              <div className="text-[14px] font-semibold">
+                {tr('Add character', '添加伙伴')}
+              </div>
             </div>
           </button>
         </div>
@@ -95,7 +105,7 @@ export function CharacterSelect({
         <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
         </svg>
-        Characters
+        {tr('Characters', '伙伴角色')}
         <svg
           className={`ml-0.5 h-3.5 w-3.5 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
           fill="none"

@@ -5,6 +5,7 @@ import {
   getSupportedExpressions,
   saveExpressions,
 } from "../api/tauri";
+import { useLanguage } from "../i18n/LanguageContext";
 
 interface Props {
   modelId: string;
@@ -34,6 +35,7 @@ export const ModelSettings = memo(function ModelSettings({
   onSaved,
   onClose,
 }: Props) {
+  const { tr } = useLanguage();
   const [globalExpressions, setGlobalExpressions] = useState<string[]>([]);
   const [modelExpressions, setModelExpressions] = useState<string[]>([]);
   const [mapping, setMapping] = useState<Record<string, string>>({});
@@ -95,8 +97,8 @@ export const ModelSettings = memo(function ModelSettings({
     <div className="flex-1 flex flex-col bg-transparent relative h-full">
       {/* Header */}
       <div className="px-6 py-5 border-b border-slate-100 bg-white z-10">
-        <h2 className="text-[16px] font-bold text-slate-800 tracking-tight">Expression Mapping</h2>
-        <p className="text-xs text-slate-400 mt-1 font-medium">Model: <span className="text-blue-500">{modelId || "none"}</span></p>
+        <h2 className="text-[16px] font-bold text-slate-800 tracking-tight">{tr("Expression Mapping", "表情映射")}</h2>
+        <p className="text-xs text-slate-400 mt-1 font-medium">{tr("Model", "模型")}: <span className="text-blue-500">{modelId || tr("none", "无")}</span></p>
       </div>
 
       {/* Content */}
@@ -104,7 +106,7 @@ export const ModelSettings = memo(function ModelSettings({
         {/* Model expressions preview */}
         <div>
           <div className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase mb-3">
-            Model Expressions ({modelExpressions.length})
+            {tr("Model Expressions", "模型表情")} ({modelExpressions.length})
           </div>
           <div className="flex flex-wrap gap-2">
             {modelExpressions.map((expr) => (
@@ -121,12 +123,12 @@ export const ModelSettings = memo(function ModelSettings({
               </button>
             ))}
             {modelExpressions.length === 0 && (
-              <span className="text-xs text-slate-500 italic bg-slate-50 px-3 py-1.5 rounded-full">No expressions found</span>
+              <span className="text-xs text-slate-500 italic bg-slate-50 px-3 py-1.5 rounded-full">{tr("No expressions found", "未找到表情")}</span>
             )}
           </div>
           <p className="text-[11px] text-slate-400 mt-3 italic flex items-center gap-1">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            Click a badge above to preview it on the model
+            {tr("Click a badge above to preview it on the model", "点击上方标签可在模型上预览表情")}
           </p>
         </div>
 
@@ -136,7 +138,7 @@ export const ModelSettings = memo(function ModelSettings({
         {/* Mapping table */}
         <div>
           <div className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase mb-3">
-            Global to Model Mapping
+            {tr("Global to Model Mapping", "全局表情到模型表情的映射")}
           </div>
           <div className="space-y-2">
             {globalExpressions.map((globalName) => (
@@ -156,7 +158,7 @@ export const ModelSettings = memo(function ModelSettings({
                   onChange={(e) => handleMappingChange(globalName, e.target.value)}
                   className="flex-1 bg-white text-slate-700 text-[13px] rounded-xl px-3 py-2 border border-slate-200 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 cursor-pointer shadow-sm shadow-slate-200/20"
                 >
-                  <option value="">-- select --</option>
+                  <option value="">-- {tr("select", "选择")} --</option>
                   {modelExpressions.map((expr) => (
                     <option key={expr} value={expr}>
                       {expr}
@@ -172,7 +174,7 @@ export const ModelSettings = memo(function ModelSettings({
                         ? "bg-blue-100 text-blue-600"
                         : "bg-white text-slate-400 border border-slate-200 hover:text-blue-500 hover:bg-slate-50"
                     }`}
-                    title="Preview this expression"
+                    title={tr("Preview this expression", "预览此表情")}
                   >
                     {"\u25B6"}
                   </button>
@@ -189,14 +191,14 @@ export const ModelSettings = memo(function ModelSettings({
           onClick={onClose}
           className="px-6 py-3 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 text-slate-600 rounded-2xl text-[14px] font-semibold shadow-sm transition-all"
         >
-          Cancel
+          {tr("Cancel", "取消")}
         </button>
         <button
           onClick={handleSave}
           disabled={saving}
           className="flex-1 bg-blue-500 hover:bg-blue-600 disabled:bg-slate-300 text-white shadow-md shadow-blue-500/20 rounded-2xl px-5 py-3 text-[14px] font-semibold transition-all hover:-translate-y-0.5 active:translate-y-0"
         >
-          {saving ? "Saving..." : "Save Mapping"}
+          {saving ? tr("Saving...", "正在保存...") : tr("Save Mapping", "保存映射")}
         </button>
       </div>
     </div>

@@ -26,6 +26,7 @@ import {
   resolveAssetUrl,
 } from "./api/tauri";
 import type { Character, ModelInfo } from "./types";
+import { useLanguage } from "./i18n/LanguageContext";
 
 const Live2DCanvas = lazy(() =>
   import("./components/Live2DCanvas").then((m) => ({ default: m.Live2DCanvas }))
@@ -36,6 +37,7 @@ const VRMCanvas = lazy(() =>
 
 
 function App() {
+  const { tr } = useLanguage();
   const { isMiniMode, miniCharacterId, toggleMini } = useWindow();
 
   // Refs for global shortcut callbacks (so they always see latest state)
@@ -489,7 +491,7 @@ function App() {
     <Suspense
       fallback={
         <div className="w-full h-full flex items-center justify-center text-slate-400 font-medium">
-          Loading model...
+          {tr('Loading model...', '正在加载模型...')}
         </div>
       }
     >
@@ -507,9 +509,9 @@ function App() {
         />
       )}
     </Suspense>
-  ), [modelType, selectedCharId, canvasProps, selectedModel?.animations, modelMapping]);
+  ), [modelType, selectedCharId, canvasProps, selectedModel?.animations, modelMapping, tr]);
 
-  const charName = selectedChar?.name || "Companion";
+  const charName = selectedChar?.name || tr('Companion', '伙伴');
 
   const spokenCaption = useMemo(() => {
     if (speaking && speakingSentence?.trim()) {
@@ -548,7 +550,9 @@ function App() {
             <span className="w-3 h-3 rounded-full bg-blue-400 animate-bounce [animation-delay:-0.15s]" />
             <span className="w-3 h-3 rounded-full bg-blue-400 animate-bounce" />
           </div>
-          <div className="text-slate-400 font-semibold text-sm tracking-wide uppercase">Loading</div>
+          <div className="text-slate-400 font-semibold text-sm tracking-wide uppercase">
+            {tr('Loading', '正在加载')}
+          </div>
         </div>
       </div>
     );
@@ -588,13 +592,16 @@ function App() {
           ) : !expressionsConfigured ? (
             <div className="flex h-full flex-col items-center justify-center p-8 text-center">
               <p className="mb-6 max-w-sm text-sm text-slate-500 leading-relaxed">
-                Map avatar expressions in Settings before you chat.
+                {tr(
+                  'Map avatar expressions in Settings before you chat.',
+                  '聊天前，请先在设置中配置虚拟形象表情。',
+                )}
               </p>
               <button
                 onClick={() => setSettingsOpen(true)}
                 className="rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
               >
-                Open Settings
+                {tr('Open Settings', '打开设置')}
               </button>
             </div>
           ) : (
@@ -650,7 +657,7 @@ function App() {
                     spokenCaption
                       ? null
                       : isStreaming || (speechSessionActive && !speaking)
-                        ? "Thinking…"
+                        ? tr('Thinking…', '思考中...')
                         : null
                   }
                 />
@@ -663,7 +670,7 @@ function App() {
           <HistoryDrawer
             open={historyOpen}
             onClose={() => setHistoryOpen(false)}
-            title={`Chat with ${charName}`}
+            title={tr(`Chat with ${charName}`, `与 ${charName} 聊天`)}
           >
             <ChatPanel
               hideInput

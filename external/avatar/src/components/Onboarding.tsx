@@ -26,6 +26,7 @@ import { CompanionAvatarPreview } from './onboarding/CompanionAvatarPreview';
 import { ModelPicker } from './onboarding/ModelPicker';
 import { OnboardingShell } from './onboarding/OnboardingShell';
 import { MeuxeMark } from './ui/MeuxeMark';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface Voice {
   id: string;
@@ -66,6 +67,7 @@ const headingClass =
 const descriptionClass = 'text-slate-500 text-sm mb-5 leading-relaxed';
 
 export function Onboarding({ onComplete }: { onComplete: () => void }) {
+  const { tr } = useLanguage();
   const [step, setStep] = useState(0);
   const [voices, setVoices] = useState<Voice[]>([]);
   const [models, setModels] = useState<Model[]>([]);
@@ -344,13 +346,13 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
         <div className='text-center py-8 animate-in fade-in zoom-in-95 duration-500'>
           <MeuxeMark className='h-16 w-16 mx-auto mb-5' />
           <h2 className='text-2xl font-bold text-slate-900 mb-2'>
-            You&apos;re all set
+            {tr("You're all set", '设置完成')}
           </h2>
           <p className='text-slate-500 text-[15px] max-w-sm mx-auto'>
             <span className='font-semibold text-indigo-600'>
               {form.companion.name}
             </span>{' '}
-            is waiting on your desktop.
+            {tr('is waiting on your desktop.', '已经在桌面上等你了。')}
           </p>
         </div>
       </OnboardingShell>
@@ -361,20 +363,32 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
     <OnboardingShell step={step} preview={preview}>
       {step === 0 && (
         <div className='animate-in fade-in duration-500'>
-          <h2 className={headingClass}>A companion for Reins Agent</h2>
+          <h2 className={headingClass}>
+            {tr('A companion for Reins Agent', '为 Reins Agent 创建伙伴')}
+          </h2>
           <p className={descriptionClass}>
-            Talk to someone who remembers you. They live on your computer—not in
-            a generic chat app.
+            {tr(
+              'Talk to someone who remembers you. They live on your computer—not in a generic chat app.',
+              '与你熟悉并记得你的伙伴交流。它生活在你的电脑里，而不是普通聊天应用中。',
+            )}
           </p>
           <div className='grid gap-3 sm:grid-cols-3'>
             {[
               {
                 emoji: '💬',
-                title: 'Real conversations',
-                sub: 'They grow with you',
+                title: tr('Real conversations', '真实对话'),
+                sub: tr('They grow with you', '与你一同成长'),
               },
-              { emoji: '🎭', title: 'Face & voice', sub: 'See them react' },
-              { emoji: '🔒', title: 'Your device', sub: 'Memories stay local' },
+              {
+                emoji: '🎭',
+                title: tr('Face & voice', '形象与声音'),
+                sub: tr('See them react', '看到它的回应'),
+              },
+              {
+                emoji: '🔒',
+                title: tr('Your device', '你的设备'),
+                sub: tr('Memories stay local', '记忆保留在本地'),
+              },
             ].map((f) => (
               <div
                 key={f.title}
@@ -395,27 +409,32 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
 
       {step === 1 && (
         <div className='animate-in fade-in duration-500'>
-          <h2 className={headingClass}>First, your name</h2>
+          <h2 className={headingClass}>{tr('First, your name', '首先，请告诉我你的名字')}</h2>
           <p className={descriptionClass}>
-            So they know who they&apos;re talking to. Only saved on this device.
+            {tr(
+              "So they know who they're talking to. Only saved on this device.",
+              '让伙伴知道正在与谁交谈。信息只会保存在本设备上。',
+            )}
           </p>
-          <label className={labelClass}>Name</label>
+          <label className={labelClass}>{tr('Name', '名字')}</label>
           <input
             type='text'
             value={form.user.name}
             onChange={(e) => updateForm('user', 'name', e.target.value)}
-            placeholder='e.g. Alex'
+            placeholder={tr('e.g. Alex', '例如：小林')}
             className={inputClass}
             autoFocus
           />
           <label className={labelClass}>
-            Anything they should know{' '}
-            <span className='font-normal text-slate-400'>(optional)</span>
+            {tr('Anything they should know', '希望伙伴了解的事情')}{' '}
+            <span className='font-normal text-slate-400'>
+              {tr('(optional)', '（可选）')}
+            </span>
           </label>
           <textarea
             value={form.user.about}
             onChange={(e) => updateForm('user', 'about', e.target.value)}
-            placeholder='A line or two about you…'
+            placeholder={tr('A line or two about you…', '用一两句话介绍自己...')}
             rows={2}
             className={`${inputClass} resize-none rounded-2xl mb-0`}
           />
@@ -424,21 +443,21 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
 
       {step === 2 && (
         <div className='animate-in fade-in duration-500'>
-          <h2 className={headingClass}>Meet them</h2>
+          <h2 className={headingClass}>{tr('Meet them', '认识你的伙伴')}</h2>
           <p className={descriptionClass}>
-            Name, look, and personality—in one place.
+            {tr('Name, look, and personality—in one place.', '在这里设置名字、外观和性格。')}
           </p>
 
-          <label className={labelClass}>Their name</label>
+          <label className={labelClass}>{tr('Their name', '伙伴的名字')}</label>
           <input
             type='text'
             value={form.companion.name}
             onChange={(e) => updateForm('companion', 'name', e.target.value)}
-            placeholder='Who are you creating?'
+            placeholder={tr('Who are you creating?', '想为伙伴取什么名字？')}
             className={inputClass}
           />
 
-          <label className={labelClass}>Personality</label>
+          <label className={labelClass}>{tr('Personality', '性格')}</label>
           <div className='grid grid-cols-2 gap-2.5 mb-5'>
             {COMPANION_VIBE_PACKS.map((pack) => {
               const selected = form.companion.vibe === pack.id;
@@ -458,12 +477,32 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                     <div
                       className={`text-sm font-semibold ${selected ? 'text-indigo-900' : 'text-slate-800'}`}
                     >
-                      {pack.title}
+                      {tr(
+                        pack.title,
+                        {
+                          Wise: '温暖而睿智',
+                          Cheerful: '开朗又积极',
+                          Tsundere: '嘴硬心软',
+                          Chill: '轻松随和',
+                          Sassy: '机智大胆',
+                          Mysterious: '安静深邃',
+                        }[pack.id] || pack.title,
+                      )}
                     </div>
                     <div
                       className={`text-xs ${selected ? 'text-indigo-600/85' : 'text-slate-400'}`}
                     >
-                      {pack.subtitle}
+                      {tr(
+                        pack.subtitle,
+                        {
+                          Wise: '冷静、关怀、可靠',
+                          Cheerful: '鼓励、活泼',
+                          Tsundere: '先犀利，后温柔',
+                          Chill: '放松、踏实',
+                          Sassy: '俏皮、反应敏捷',
+                          Mysterious: '亲密、含蓄',
+                        }[pack.id] || pack.subtitle,
+                      )}
                     </div>
                   </div>
                 </button>
@@ -471,7 +510,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
             })}
           </div>
 
-          <label className={labelClass}>Look</label>
+          <label className={labelClass}>{tr('Look', '外观')}</label>
           <ModelPicker
             models={models}
             selectedId={form.companion.model_id}
@@ -482,8 +521,10 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
 
       {step === 3 && (
         <div className='animate-in fade-in duration-500'>
-          <h2 className={headingClass}>How they sound</h2>
-          <p className={descriptionClass}>Pick a voice and tap listen.</p>
+          <h2 className={headingClass}>{tr('How they sound', '选择伙伴的声音')}</h2>
+          <p className={descriptionClass}>
+            {tr('Pick a voice and tap listen.', '选择声音并点击试听。')}
+          </p>
 
           <div className='grid gap-2.5 mb-5 sm:grid-cols-3'>
             {Object.entries(ttsPresets).map(([id, preset]) => {
@@ -502,12 +543,28 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                   <div
                     className={`text-sm font-semibold ${selected ? 'text-indigo-900' : 'text-slate-800'}`}
                   >
-                    {preset.name}
+                    {tr(
+                      preset.name,
+                      {
+                        system: '系统中文',
+                        tiktok: 'Reins 语音',
+                        elevenlabs: 'ElevenLabs',
+                        openai_tts: 'OpenAI 语音',
+                      }[id] || preset.name,
+                    )}
                   </div>
                   <div
                     className={`text-xs mt-0.5 ${selected ? 'text-indigo-600/80' : 'text-slate-400'}`}
                   >
-                    {ttsPresets[id]?.hint}
+                    {tr(
+                      ttsPresets[id]?.hint || '',
+                      {
+                        system: '使用本设备普通话声音，无需密钥',
+                        tiktok: 'Reins 内置，无需密钥',
+                        elevenlabs: '录音室级声音，需要 API 密钥',
+                        openai_tts: 'OpenAI 语音，需要 API 密钥',
+                      }[id] || ttsPresets[id]?.hint || '',
+                    )}
                   </div>
                 </button>
               );
@@ -516,18 +573,18 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
 
           {ttsPresets[form.tts.provider]?.needs_key && (
             <>
-              <label className={labelClass}>API key</label>
+              <label className={labelClass}>{tr('API key', 'API 密钥')}</label>
               <input
                 type='password'
                 value={form.tts.api_key}
                 onChange={(e) => updateForm('tts', 'api_key', e.target.value)}
-                placeholder='Paste key from your provider'
+                placeholder={tr('Paste key from your provider', '粘贴服务提供方的密钥')}
                 className={inputClass}
               />
             </>
           )}
 
-          <label className={labelClass}>Voice</label>
+          <label className={labelClass}>{tr('Voice', '声音')}</label>
           <div className='flex flex-col gap-2 sm:flex-row sm:items-start'>
             <div className='relative flex-1'>
               <select
@@ -548,7 +605,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
               disabled={previewing}
               className='shrink-0 rounded-2xl border border-slate-200 bg-white px-5 py-3.5 text-sm font-semibold text-indigo-600 shadow-sm hover:bg-slate-50 disabled:opacity-50'
             >
-              {previewing ? 'Loading…' : 'Listen'}
+              {previewing ? tr('Loading…', '正在加载...') : tr('Listen', '试听')}
             </button>
           </div>
           {previewError && (
@@ -559,10 +616,12 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
 
       {step === 4 && (
         <div className='animate-in fade-in duration-500'>
-          <h2 className={headingClass}>Who answers for them?</h2>
+          <h2 className={headingClass}>{tr('Who answers for them?', '由谁驱动对话？')}</h2>
           <p className={descriptionClass}>
-            Reins is the face and memory. Choose the assistant on your computer
-            that powers chat.
+            {tr(
+              'Reins is the face and memory. Choose the assistant on your computer that powers chat.',
+              'Reins 提供形象与记忆。选择电脑上用于驱动聊天的智能体。',
+            )}
           </p>
 
           <div className='grid grid-cols-1 gap-3 mb-4'>
@@ -583,7 +642,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
 
           {form.agent.preset === 'custom' && (
             <>
-              <label className={labelClass}>Program to run</label>
+              <label className={labelClass}>{tr('Program to run', '运行程序')}</label>
               <input
                 type='text'
                 value={form.agent.program}
@@ -596,7 +655,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                 placeholder='Path or command'
                 className={inputClass}
               />
-              <label className={labelClass}>Extra options (optional)</label>
+              <label className={labelClass}>{tr('Extra options (optional)', '其他选项（可选）')}</label>
               <input
                 type='text'
                 value={form.agent.args}
@@ -639,7 +698,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
               : 'hover:bg-slate-50'
           }`}
         >
-          Back
+          {tr('Back', '返回')}
         </button>
         {step < 4 ? (
           <button
@@ -648,7 +707,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
             disabled={!canProceed()}
             className='flex-1 rounded-2xl bg-indigo-600 py-3.5 text-[15px] font-semibold text-white shadow-md shadow-indigo-600/25 hover:bg-indigo-700 disabled:opacity-40'
           >
-            Continue
+            {tr('Continue', '继续')}
           </button>
         ) : (
           <button
@@ -657,7 +716,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
             disabled={!canProceed() || submitting}
             className='flex-1 rounded-2xl bg-indigo-600 py-3.5 text-[15px] font-semibold text-white shadow-md shadow-indigo-600/25 hover:bg-indigo-700 disabled:opacity-40'
           >
-            {submitting ? 'Creating…' : 'Finish'}
+            {submitting ? tr('Creating…', '正在创建...') : tr('Finish', '完成')}
           </button>
         )}
       </div>

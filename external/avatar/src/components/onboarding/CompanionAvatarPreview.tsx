@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { resolveAssetUrl } from "../../api/tauri";
 import { BG_PRESETS } from "../../constants/bgPresets";
+import { useLanguage } from "../../i18n/LanguageContext";
 
 const Live2DCanvas = lazy(() =>
   import("../Live2DCanvas").then((m) => ({ default: m.Live2DCanvas })),
@@ -23,6 +24,7 @@ export function CompanionAvatarPreview({
   companionName?: string;
   vibeLabel?: string;
 }) {
+  const { tr } = useLanguage();
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,14 +62,16 @@ export function CompanionAvatarPreview({
       {!model && (
         <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-2 px-6 text-center text-white/60">
           <span className="text-4xl">🎭</span>
-          <p className="text-sm">Your companion will appear here</p>
+          <p className="text-sm">
+            {tr('Your companion will appear here', '你的伙伴会显示在这里')}
+          </p>
         </div>
       )}
       {model && (
         <Suspense
           fallback={
             <div className="flex h-full min-h-[220px] items-center justify-center text-sm text-white/50">
-              Loading avatar…
+              {tr('Loading avatar…', '正在加载虚拟形象...')}
             </div>
           }
         >

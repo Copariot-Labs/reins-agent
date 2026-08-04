@@ -1,4 +1,5 @@
 import type { ToolCallStatus } from "./ToolCallBubble";
+import { useLanguage } from "../i18n/LanguageContext";
 
 const TOOL_LABELS: Record<string, string> = {
   read_file: "Reading",
@@ -14,6 +15,22 @@ const TOOL_LABELS: Record<string, string> = {
   organize_desktop: "Organizing",
   clipboard_read: "Clipboard",
   clipboard_write: "Clipboard",
+};
+
+const TOOL_LABELS_ZH: Record<string, string> = {
+  read_file: "正在读取",
+  write_file: "正在写入",
+  list_directory: "正在列出",
+  summarize_file: "正在总结",
+  find_files: "正在搜索",
+  move_file: "正在移动",
+  delete_file: "正在删除",
+  run_command: "正在运行",
+  open_application: "正在打开",
+  open_url: "正在打开",
+  organize_desktop: "正在整理",
+  clipboard_read: "剪贴板",
+  clipboard_write: "剪贴板",
 };
 
 function resolveToolLabel(toolName: string): string {
@@ -36,12 +53,15 @@ interface Props {
 }
 
 export function MiniToolPills({ toolCalls, pendingConfirmation }: Props) {
+  const { language, tr } = useLanguage();
   if (toolCalls.length === 0) return null;
 
   return (
     <div className="absolute bottom-14 left-2 right-2 z-15 flex flex-wrap gap-1 pointer-events-none">
       {toolCalls.map((tc) => {
-        const label = resolveToolLabel(tc.toolName);
+        const label = language === "zh-CN"
+          ? TOOL_LABELS_ZH[tc.toolName] ?? resolveToolLabel(tc.toolName)
+          : resolveToolLabel(tc.toolName);
         const dotClass = STATUS_DOTS[tc.status] || "bg-slate-400";
         const isConfirm = tc.status === "awaiting_confirmation";
 
@@ -69,7 +89,7 @@ export function MiniToolPills({ toolCalls, pendingConfirmation }: Props) {
       {pendingConfirmation && (
         <div className="w-full mt-1 text-center">
           <span className="inline-block rounded-full bg-amber-500/80 text-white text-[10px] font-semibold px-3 py-1 backdrop-blur-xl shadow-sm animate-pulse">
-            Say "yes" to allow or "no" to deny
+            {tr('Say "yes" to allow or "no" to deny', '说“是”允许，或说“否”拒绝')}
           </span>
         </div>
       )}

@@ -22,6 +22,7 @@ import { AgentSetupPanel } from './agents/AgentSetupPanel';
 import { MeuxeMark } from './ui/MeuxeMark';
 import { AvatarViewportSettings } from './settings/AvatarViewportSettings';
 import type { AcpAgentPresetId } from '../lib/agentPresets';
+import { useLanguage } from '../i18n/LanguageContext';
 interface Voice {
   id: string;
   name: string;
@@ -148,8 +149,10 @@ const FrameIcon = () => (
     />
   </svg>
 );
+type MenuItemId = 'profile' | 'privacy' | 'memory' | 'avatar' | 'expressions';
+
 const MENU_ITEMS: {
-  id: SettingsPage & string;
+  id: MenuItemId;
   label: string;
   description: string;
   icon: () => JSX.Element;
@@ -198,6 +201,7 @@ function LocalFirstNotice({
 }: {
   variant?: 'blue' | 'emerald' | 'amber';
 }) {
+  const { tr } = useLanguage();
   const colors = {
     blue: 'border-blue-100 bg-blue-50 text-blue-800',
     emerald: 'border-emerald-100 bg-emerald-50 text-emerald-800',
@@ -207,8 +211,10 @@ function LocalFirstNotice({
     <div
       className={`mb-5 rounded-2xl border px-4 py-3 text-sm leading-snug ${colors[variant]}`}
     >
-      Memory and chat stay on this device. Voice and your CLI agent only use the
-      network when you configure them.
+      {tr(
+        'Memory and chat stay on this device. Voice and your CLI agent only use the network when you configure them.',
+        '记忆和聊天记录保留在本设备上。仅当你配置语音或 CLI 智能体时才会使用网络。',
+      )}
     </div>
   );
 }
@@ -271,6 +277,7 @@ export function Settings({
   onAvatarZoomChange?: (zoom: number) => void;
   onAvatarBackgroundChange?: (bg: string) => void;
 }) {
+  const { language, setLanguage, tr } = useLanguage();
   const [page, setPage] = useState<SettingsPage>(null);
   const [config, setConfig] = useState<any>(null);
   const [voices, setVoices] = useState<Voice[]>([]);
@@ -401,7 +408,11 @@ export function Settings({
   };
 
   if (!config)
-    return <div className='p-8 text-slate-400'>Loading settings...</div>;
+    return (
+      <div className='p-8 text-slate-400'>
+        {tr('Loading settings...', '正在加载设置...')}
+      </div>
+    );
 
   // ========== SUB-PAGE HEADER ==========
   const SubHeader = ({ title }: { title: string }) => (
@@ -435,10 +446,13 @@ export function Settings({
             <MeuxeMark className='h-11 w-11 shrink-0' />
             <div>
               <h2 className='text-xl font-bold text-slate-800 tracking-tight'>
-                Settings
+                {tr('Settings', '设置')}
               </h2>
               <p className='text-sm text-slate-400'>
-                Local companion · optional cloud voice & agents
+                {tr(
+                  'Local companion · optional cloud voice & agents',
+                  '本地伙伴 · 可选云端语音与智能体',
+                )}
               </p>
             </div>
           </div>
@@ -458,6 +472,47 @@ export function Settings({
           </button>
         </div>
 
+        <div className='mb-5 flex items-center justify-between gap-4 border-y border-slate-100 py-4'>
+          <div>
+            <div className='text-sm font-semibold text-slate-700'>
+              {tr('Interface language', '界面语言')}
+            </div>
+            <div className='mt-0.5 text-xs text-slate-400'>
+              {tr('Applied across the avatar app', '应用于整个虚拟伙伴界面')}
+            </div>
+          </div>
+          <div
+            className='flex shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-1'
+            role='group'
+            aria-label={tr('Interface language', '界面语言')}
+          >
+            <button
+              type='button'
+              aria-pressed={language === 'zh-CN'}
+              onClick={() => setLanguage('zh-CN')}
+              className={`min-w-16 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                language === 'zh-CN'
+                  ? 'bg-white text-blue-700 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              中文
+            </button>
+            <button
+              type='button'
+              aria-pressed={language === 'en'}
+              onClick={() => setLanguage('en')}
+              className={`min-w-16 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                language === 'en'
+                  ? 'bg-white text-blue-700 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              English
+            </button>
+          </div>
+        </div>
+
         <div className='mb-5 grid grid-cols-2 gap-3'>
           <button
             type='button'
@@ -471,7 +526,7 @@ export function Settings({
               />
               <div className='min-w-0 flex-1'>
                 <div className='text-[10px] font-semibold uppercase tracking-wide text-slate-400'>
-                  Agent
+                  {tr('Agent', '智能体')}
                 </div>
                 <div className='text-sm font-bold text-slate-800 truncate group-hover:text-blue-600'>
                   {ACP_AGENT_PRESETS[
@@ -505,12 +560,22 @@ export function Settings({
               </div>
               <div className='min-w-0 flex-1'>
                 <div className='text-[10px] font-semibold uppercase tracking-wide text-slate-400'>
-                  Voice
+                  {tr('Voice', '语音')}
                 </div>
                 <div className='text-sm font-bold text-slate-800 truncate group-hover:text-blue-600'>
-                  {TTS_PRESETS_UI[config.tts?.provider]?.name ||
-                    config.tts?.provider ||
-                    '—'}
+                  {tr(
+                    TTS_PRESETS_UI[config.tts?.provider]?.name ||
+                      config.tts?.provider ||
+                      '—',
+                    {
+                      system: '系统中文',
+                      tiktok: 'Reins 语音',
+                      elevenlabs: 'ElevenLabs',
+                      openai_tts: 'OpenAI 语音',
+                    }[config.tts?.provider as string] ||
+                      config.tts?.provider ||
+                      '—',
+                  )}
                 </div>
               </div>
               <svg
@@ -542,10 +607,28 @@ export function Settings({
               </div>
               <div className='flex-1 min-w-0'>
                 <div className='text-[15px] font-semibold text-slate-700 group-hover:text-blue-600 transition-colors'>
-                  {item.label}
+                  {tr(
+                    item.label,
+                    {
+                      profile: '个人资料',
+                      privacy: '隐私',
+                      memory: '记忆',
+                      avatar: '屏幕形象',
+                      expressions: '表情',
+                    }[item.id] || item.label,
+                  )}
                 </div>
                 <div className='text-sm text-slate-400 mt-1'>
-                  {item.description}
+                  {tr(
+                    item.description,
+                    {
+                      profile: '姓名与个人介绍',
+                      privacy: '了解哪些内容保留在设备上',
+                      memory: '管理伙伴记住的内容',
+                      avatar: '缩放与背景',
+                      expressions: '设置虚拟形象的情绪',
+                    }[item.id] || item.description,
+                  )}
                 </div>
               </div>
               <svg
@@ -572,56 +655,69 @@ export function Settings({
   if (page === 'profile') {
     return (
       <div className='flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent'>
-        <SubHeader title='Your Profile' />
+        <SubHeader title={tr('Your Profile', '个人资料')} />
 
-        <label className={labelClass}>Your Name</label>
+        <label className={labelClass}>{tr('Your Name', '你的名字')}</label>
         <input
           type='text'
           value={userName}
           onChange={(e) => setUserName(e.target.value)}
-          placeholder='What should your companion call you?'
+          placeholder={tr(
+            'What should your companion call you?',
+            '希望伙伴如何称呼你？',
+          )}
           className={inputClass}
         />
 
-        <label className={labelClass}>About Yourself</label>
+        <label className={labelClass}>{tr('About Yourself', '关于你')}</label>
         <textarea
           value={userAbout}
           onChange={(e) => setUserAbout(e.target.value)}
-          placeholder='Tell your companion about yourself -- interests, what you do, what you enjoy...'
+          placeholder={tr(
+            'Tell your companion about yourself -- interests, what you do, what you enjoy...',
+            '告诉伙伴你的兴趣、工作和喜欢的事情...',
+          )}
           rows={5}
           className={`${inputClass} resize-none mb-8 rounded-3xl`}
         />
 
         <button onClick={handleSave} disabled={saving} className={buttonClass}>
-          {saving ? 'Saving...' : saved ? 'Saved!' : 'Save Profile'}
+          {saving
+            ? tr('Saving...', '正在保存...')
+            : saved
+              ? tr('Saved!', '已保存！')
+              : tr('Save Profile', '保存资料')}
         </button>
 
         {/* Keyboard Shortcuts */}
         <div className='mt-10'>
           <h3 className='text-sm font-bold text-slate-700 uppercase tracking-wider mb-4 pl-1'>
-            Keyboard Shortcuts
+            {tr('Keyboard Shortcuts', '键盘快捷键')}
           </h3>
           <div className='rounded-2xl border border-slate-100 bg-white overflow-hidden'>
             {[
               {
                 keys: isMac ? 'Cmd + Shift + E' : 'Ctrl + Shift + E',
-                action: 'Toggle mini mode',
-                context: 'Global — works from any app',
+                action: tr('Toggle mini mode', '切换迷你模式'),
+                context: tr(
+                  'Global — works from any app',
+                  '全局 — 可在任何应用中使用',
+                ),
               },
               {
                 keys: isMac ? 'Cmd + Shift + Space' : 'Ctrl + Shift + Space',
-                action: 'Open text input',
-                context: 'Global — mini mode',
+                action: tr('Open text input', '打开文字输入'),
+                context: tr('Global — mini mode', '全局 — 迷你模式'),
               },
               {
                 keys: isMac ? 'Cmd + Shift + M' : 'Ctrl + Shift + M',
-                action: 'Toggle microphone',
-                context: 'Global — mini mode',
+                action: tr('Toggle microphone', '切换麦克风'),
+                context: tr('Global — mini mode', '全局 — 迷你模式'),
               },
               {
                 keys: 'Escape',
-                action: 'Close text input',
-                context: 'Mini mode',
+                action: tr('Close text input', '关闭文字输入'),
+                context: tr('Mini mode', '迷你模式'),
               },
             ].map((shortcut, i) => (
               <div
@@ -663,10 +759,12 @@ export function Settings({
     const presetId = (agentPreset as AcpAgentPresetId) || 'reins';
     return (
       <div className='flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent'>
-        <SubHeader title='CLI Agent' />
+        <SubHeader title={tr('CLI Agent', 'CLI 智能体')} />
         <p className='text-slate-500 text-sm mb-6 leading-relaxed max-w-xl'>
-          Chat runs through Reins Agent. Reins Agent Companion provides the
-          character, voice, memory, and avatar interface.
+          {tr(
+            'Chat runs through Reins Agent. Reins Agent Companion provides the character, voice, memory, and avatar interface.',
+            '聊天由 Reins Agent 驱动。Reins Agent Companion 提供角色、语音、记忆和虚拟形象界面。',
+          )}
         </p>
 
         <div className='grid grid-cols-1 gap-3 mb-5'>
@@ -682,7 +780,7 @@ export function Settings({
 
         {agentPreset === 'custom' && (
           <>
-            <label className={labelClass}>Command</label>
+            <label className={labelClass}>{tr('Command', '命令')}</label>
             <input
               type='text'
               value={agentProgram}
@@ -690,7 +788,9 @@ export function Settings({
               placeholder='e.g. python my_agent.py'
               className={inputClass}
             />
-            <label className={labelClass}>Arguments (optional)</label>
+            <label className={labelClass}>
+              {tr('Arguments (optional)', '参数（可选）')}
+            </label>
             <input
               type='text'
               value={agentArgs}
@@ -708,7 +808,11 @@ export function Settings({
         )}
 
         <button onClick={handleSave} disabled={saving} className={buttonClass}>
-          {saving ? 'Saving...' : saved ? 'Saved!' : 'Save agent'}
+          {saving
+            ? tr('Saving...', '正在保存...')
+            : saved
+              ? tr('Saved!', '已保存！')
+              : tr('Save agent', '保存智能体')}
         </button>
       </div>
     );
@@ -718,14 +822,14 @@ export function Settings({
   if (page === 'tts') {
     return (
       <div className='flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent'>
-        <SubHeader title='Voice & TTS' />
+        <SubHeader title={tr('Voice & TTS', '语音与 TTS')} />
         <LocalFirstNotice
           variant={
             SETTINGS_TTS_PRESETS[ttsProvider]?.needs_key ? 'blue' : 'emerald'
           }
         />
 
-        <label className={labelClass}>Provider</label>
+        <label className={labelClass}>{tr('Provider', '服务提供方')}</label>
         <div className='flex flex-wrap gap-2 mb-6'>
           {Object.entries(SETTINGS_TTS_PRESETS).map(([id, preset]) => (
             <button
@@ -740,10 +844,17 @@ export function Settings({
               }`}
             >
               <span className='flex items-center gap-1.5'>
-                {preset.name}
+                {tr(
+                  preset.name,
+                  {
+                    system: '系统中文',
+                    tiktok: 'Reins 语音',
+                    elevenlabs: 'ElevenLabs',
+                  }[id] || preset.name,
+                )}
                 {!preset.needs_key && (
                   <span className='text-[10px] text-emerald-600 font-bold'>
-                    No key
+                    {tr('No key', '无需密钥')}
                   </span>
                 )}
                 {configuredTts[id]?.configured && ttsProvider !== id && (
@@ -769,12 +880,15 @@ export function Settings({
         <div className='animate-in fade-in slide-in-from-bottom-2 duration-300'>
           {SETTINGS_TTS_PRESETS[ttsProvider]?.needs_key && (
             <>
-              <label className={labelClass}>API Key</label>
+              <label className={labelClass}>{tr('API Key', 'API 密钥')}</label>
               <input
                 type='password'
                 value={ttsApiKey}
                 onChange={(e) => setTtsApiKey(e.target.value)}
-                placeholder='Paste your API key (blank to keep current)'
+                placeholder={tr(
+                  'Paste your API key (blank to keep current)',
+                  '粘贴 API 密钥（留空则保留当前密钥）',
+                )}
                 className={inputClass}
               />
             </>
@@ -782,12 +896,18 @@ export function Settings({
           {!SETTINGS_TTS_PRESETS[ttsProvider]?.needs_key && (
             <div className='mb-5 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700'>
               {ttsProvider === 'system'
-                ? 'System Chinese uses Mandarin voices installed on this device.'
-                : 'Reins TTS is built in — no API key required.'}
+                ? tr(
+                    'System Chinese uses Mandarin voices installed on this device.',
+                    '系统中文语音使用本设备已安装的普通话声音。',
+                  )
+                : tr(
+                    'Reins TTS is built in — no API key required.',
+                    'Reins TTS 已内置，无需 API 密钥。',
+                  )}
             </div>
           )}
 
-          <label className={labelClass}>Voice</label>
+          <label className={labelClass}>{tr('Voice', '声音')}</label>
           <div className='relative mb-8'>
             <select
               value={ttsVoice}
@@ -822,12 +942,12 @@ export function Settings({
                 className='flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-blue-600 transition-colors hover:bg-slate-50 disabled:opacity-50'
               >
                 <SpeakerIcon />
-                {voicePreviewing ? 'Playing Mandarin…' : 'Preview Chinese voice'}
+                {voicePreviewing
+                  ? tr('Playing Mandarin…', '正在播放普通话...')
+                  : tr('Preview Chinese voice', '试听中文声音')}
               </button>
               {voicePreviewError && (
-                <p className='mt-2 text-xs text-red-600'>
-                  {voicePreviewError}
-                </p>
+                <p className='mt-2 text-xs text-red-600'>{voicePreviewError}</p>
               )}
             </div>
           )}
@@ -837,7 +957,11 @@ export function Settings({
             disabled={saving}
             className={buttonClass}
           >
-            {saving ? 'Saving...' : saved ? 'Saved!' : 'Save Configuration'}
+            {saving
+              ? tr('Saving...', '正在保存...')
+              : saved
+                ? tr('Saved!', '已保存！')
+                : tr('Save Configuration', '保存配置')}
           </button>
         </div>
       </div>
@@ -888,41 +1012,47 @@ export function Settings({
 
     return (
       <div className='flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent'>
-        <SubHeader title='Local-First Privacy' />
+        <SubHeader title={tr('Local-First Privacy', '本地优先隐私')} />
         <div className='space-y-4'>
           <PrivacyCard
-            title='Stays on your device'
+            title={tr('Stays on your device', '保留在本设备上')}
             items={[
-              'Memories and chat history',
-              'Character personality',
-              'Your profile',
+              tr('Memories and chat history', '记忆与聊天记录'),
+              tr('Character personality', '伙伴性格'),
+              tr('Your profile', '个人资料'),
             ]}
             tone='emerald'
           />
           <PrivacyCard
-            title='Uses the network when you choose'
+            title={tr(
+              'Uses the network when you choose',
+              '仅在你选择时使用网络',
+            )}
             items={[
-              'Speaking (voice provider)',
-              'Your chat assistant',
-              'Anything that assistant does online',
+              tr('Speaking (voice provider)', '语音服务'),
+              tr('Your chat assistant', '聊天智能体'),
+              tr('Anything that assistant does online', '智能体执行的联网操作'),
             ]}
             tone='blue'
           />
           <PrivacyCard
-            title='Keys & exports'
+            title={tr('Keys & exports', '密钥与导出')}
             items={[
-              'API keys stay in local config',
-              'Exports are files you control',
+              tr('API keys stay in local config', 'API 密钥保存在本地配置中'),
+              tr('Exports are files you control', '导出文件由你自行管理'),
             ]}
             tone='amber'
           />
 
           <section className='rounded-[1.75rem] border border-violet-200 bg-violet-50 px-5 py-5 text-violet-900'>
-            <h3 className='text-lg font-bold'>Run onboarding again</h3>
+            <h3 className='text-lg font-bold'>
+              {tr('Run onboarding again', '重新运行初始设置')}
+            </h3>
             <p className='mt-2 text-sm leading-relaxed text-violet-800/90'>
-              Reopen the first-run setup to change your companion, voice, or CLI
-              agent. Your chat history, memories, and API keys stay on this
-              device.
+              {tr(
+                'Reopen the first-run setup to change your companion, voice, or CLI agent. Your chat history, memories, and API keys stay on this device.',
+                '重新打开初始设置以更改伙伴、语音或 CLI 智能体。聊天记录、记忆和 API 密钥仍会保留在本设备上。',
+              )}
             </p>
             {onboardingResetError && (
               <p className='mt-3 rounded-2xl border border-violet-300 bg-white/70 px-4 py-3 text-sm font-medium text-violet-900'>
@@ -936,17 +1066,20 @@ export function Settings({
               className='mt-4 rounded-2xl bg-violet-600 px-5 py-3 text-sm font-semibold text-white shadow-sm shadow-violet-600/20 transition-all hover:bg-violet-700 disabled:opacity-50'
             >
               {resettingOnboarding
-                ? 'Opening onboarding…'
-                : 'Run onboarding again'}
+                ? tr('Opening onboarding…', '正在打开初始设置...')
+                : tr('Run onboarding again', '重新运行初始设置')}
             </button>
           </section>
 
           <section className='rounded-[1.75rem] border border-red-200 bg-red-50 px-5 py-5 text-red-800'>
-            <h3 className='text-lg font-bold'>Reset everything</h3>
+            <h3 className='text-lg font-bold'>
+              {tr('Reset everything', '重置全部内容')}
+            </h3>
             <p className='mt-2 text-sm leading-relaxed text-red-700/90'>
-              Deletes your profile, companions, chat history, saved memories,
-              API keys, and settings, then returns you to onboarding. Imported
-              Live2D and VRM models stay on disk.
+              {tr(
+                'Deletes your profile, companions, chat history, saved memories, API keys, and settings, then returns you to onboarding. Imported Live2D and VRM models stay on disk.',
+                '删除个人资料、伙伴、聊天记录、已保存记忆、API 密钥和设置，然后返回初始设置。已导入的 Live2D 与 VRM 模型会继续保留在磁盘上。',
+              )}
             </p>
             {resetError && (
               <p className='mt-3 rounded-2xl border border-red-300 bg-white/70 px-4 py-3 text-sm font-medium text-red-700'>
@@ -961,10 +1094,10 @@ export function Settings({
                 className='rounded-2xl bg-red-600 px-5 py-3 text-sm font-semibold text-white shadow-sm shadow-red-600/20 transition-all hover:bg-red-700 disabled:opacity-50'
               >
                 {resetting
-                  ? 'Resetting...'
+                  ? tr('Resetting...', '正在重置...')
                   : confirmReset
-                    ? 'Yes, reset everything'
-                    : 'Reset and start over'}
+                    ? tr('Yes, reset everything', '确认重置全部内容')
+                    : tr('Reset and start over', '重置并重新开始')}
               </button>
               {confirmReset && !resetting && (
                 <button
@@ -975,7 +1108,7 @@ export function Settings({
                   }}
                   className='rounded-2xl border border-red-200 bg-white px-5 py-3 text-sm font-semibold text-red-700 transition-all hover:bg-red-100/50'
                 >
-                  Cancel
+                  {tr('Cancel', '取消')}
                 </button>
               )}
             </div>
@@ -990,7 +1123,7 @@ export function Settings({
     return (
       <div className='flex-1 overflow-y-auto'>
         <div className='p-6 pb-0'>
-          <SubHeader title='Expression Mapping' />
+          <SubHeader title={tr('Expression Mapping', '表情映射')} />
         </div>
         {modelId ? (
           <ModelSettings
@@ -1012,7 +1145,7 @@ export function Settings({
     return (
       <div className='flex-1 overflow-y-auto'>
         <div className='p-6 pb-0'>
-          <SubHeader title='Memory' />
+          <SubHeader title={tr('Memory', '记忆')} />
         </div>
         <MemoryStatePanel
           characterId={characterId}
@@ -1026,7 +1159,7 @@ export function Settings({
   if (page === 'avatar') {
     return (
       <div className='flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent'>
-        <SubHeader title='Avatar on screen' />
+        <SubHeader title={tr('Avatar on screen', '屏幕形象')} />
         {avatarZoom != null &&
         avatarBackground &&
         onAvatarZoomChange &&

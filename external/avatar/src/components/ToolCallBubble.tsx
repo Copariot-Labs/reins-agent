@@ -1,5 +1,6 @@
 import { useState, memo } from "react";
 import type { ToolCallStatus } from "../types";
+import { useLanguage } from "../i18n/LanguageContext";
 
 interface ConfirmRequest {
   requestId: string;
@@ -23,6 +24,23 @@ const TOOL_META: Record<string, { icon: string; label: string; color: string }> 
   edit_file:       { icon: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z", label: "Edit File", color: "amber" },
   system_info:     { icon: "M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z", label: "System Info", color: "cyan" },
   web_search:      { icon: "M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9", label: "Web Search", color: "teal" },
+};
+
+const TOOL_LABELS_ZH: Record<string, string> = {
+  read_file: "读取文件",
+  write_file: "写入文件",
+  list_directory: "列出目录",
+  summarize_file: "总结文件",
+  find_files: "查找文件",
+  move_file: "移动文件",
+  delete_file: "删除文件",
+  run_command: "运行命令",
+  open_application: "打开应用",
+  open_url: "打开链接",
+  organize_desktop: "整理桌面",
+  edit_file: "编辑文件",
+  system_info: "系统信息",
+  web_search: "网页搜索",
 };
 
 const COLOR_CLASSES: Record<string, { bg: string; text: string }> = {
@@ -106,10 +124,24 @@ export const ToolCallBubble = memo(function ToolCallBubble({
   call: ToolCallStatus;
   onConfirm?: (requestId: string, approved: boolean) => void;
 }) {
+  const { tr } = useLanguage();
   const [expanded, setExpanded] = useState(false);
   const meta = resolveToolMeta(call.toolName);
+  const localizedMeta = {
+    ...meta,
+    label: tr(meta.label, TOOL_LABELS_ZH[call.toolName] ?? meta.label),
+  };
   const palette = meta.palette ?? COLOR_CLASSES[meta.color] ?? COLOR_CLASSES.slate;
   const statusCfg = STATUS_CONFIG[call.status];
+  const localizedStatusCfg = {
+    ...statusCfg,
+    badgeText: tr(statusCfg.badgeText, {
+      running: "运行中",
+      completed: "已完成",
+      failed: "失败",
+      awaiting_confirmation: "需要批准",
+    }[call.status]),
+  };
   const argsPreview = formatArgs(call.arguments);
   const hasResult = call.result && call.result.length > 0;
 
@@ -130,7 +162,7 @@ export const ToolCallBubble = memo(function ToolCallBubble({
             )}
           </div>
 
-          <ToolCallLabel meta={meta} statusCfg={statusCfg} argsPreview={argsPreview} />
+          <ToolCallLabel meta={localizedMeta} statusCfg={localizedStatusCfg} argsPreview={argsPreview} />
 
           {hasResult && (
             <svg
@@ -146,7 +178,7 @@ export const ToolCallBubble = memo(function ToolCallBubble({
           <div className="px-3.5 pb-3 border-t border-slate-200/40">
             <pre className="text-[11px] text-slate-600 whitespace-pre-wrap mt-2 max-h-48 overflow-y-auto font-mono leading-relaxed scrollbar-thin scrollbar-thumb-slate-200">
               {call.result!.length > 2000
-                ? call.result!.slice(0, 2000) + "\n\n... (truncated)"
+                ? call.result!.slice(0, 2000) + tr("\n\n... (truncated)", "\n\n...（内容已截断）")
                 : call.result}
             </pre>
           </div>
@@ -158,13 +190,13 @@ export const ToolCallBubble = memo(function ToolCallBubble({
               onClick={() => onConfirm(call.requestId, true)}
               className="flex-1 py-2 text-[12px] font-semibold bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors shadow-sm"
             >
-              Allow
+              {tr("Allow", "允许")}
             </button>
             <button
               onClick={() => onConfirm(call.requestId, false)}
               className="flex-1 py-2 text-[12px] font-semibold bg-white text-slate-600 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors"
             >
-              Deny
+              {tr("Deny", "拒绝")}
             </button>
           </div>
         )}

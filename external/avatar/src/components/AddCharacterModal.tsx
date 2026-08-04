@@ -12,6 +12,7 @@ import { DEFAULT_TTS_VOICE } from "../lib/ttsPresets";
 import type { ModelInfo } from "../types";
 import { CompanionAvatarPreview } from "./onboarding/CompanionAvatarPreview";
 import { ModelPicker } from "./onboarding/ModelPicker";
+import { useLanguage } from "../i18n/LanguageContext";
 
 const inputClass =
   "w-full px-5 py-3.5 rounded-2xl bg-slate-50 hover:bg-slate-100/50 text-slate-700 text-[15px] outline-none transition-all placeholder-slate-400 border border-slate-100 focus:bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-300";
@@ -35,6 +36,7 @@ export function AddCharacterModal({
   onClose: () => void;
   onCreated: (characterId: string) => void;
 }) {
+  const { tr } = useLanguage();
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [userName, setUserName] = useState("");
   const [userAbout, setUserAbout] = useState("");
@@ -116,6 +118,28 @@ export function AddCharacterModal({
   }, [selectedModel]);
 
   const selectedVibePack = COMPANION_VIBE_PACKS.find((pack) => pack.id === vibe);
+  const vibeTitle = (pack: (typeof COMPANION_VIBE_PACKS)[number]) => tr(
+    pack.title,
+    {
+      Wise: "温暖而睿智",
+      Cheerful: "开朗又积极",
+      Tsundere: "嘴硬心软",
+      Chill: "轻松随和",
+      Sassy: "机智大胆",
+      Mysterious: "安静深邃",
+    }[pack.id] ?? pack.title,
+  );
+  const vibeSubtitle = (pack: (typeof COMPANION_VIBE_PACKS)[number]) => tr(
+    pack.subtitle,
+    {
+      Wise: "冷静、关怀、可靠",
+      Cheerful: "鼓励、活泼",
+      Tsundere: "先犀利，后温柔",
+      Chill: "放松、踏实",
+      Sassy: "俏皮、反应敏捷",
+      Mysterious: "亲密、含蓄",
+    }[pack.id] ?? pack.subtitle,
+  );
 
   const selectVibePack = (packId: string) => {
     const pack = COMPANION_VIBE_PACKS.find((p) => p.id === packId);
@@ -140,13 +164,22 @@ export function AddCharacterModal({
       setModels(refreshed);
       if (imported.id) {
         setModelId(imported.id);
-        setImportMessage(`Imported model "${imported.id}" and selected it.`);
+        setImportMessage(
+          tr(
+            `Imported model "${imported.id}" and selected it.`,
+            `已导入并选择模型“${imported.id}”。`,
+          ),
+        );
       } else {
-        setImportMessage("Model imported successfully.");
+        setImportMessage(tr('Model imported successfully.', '模型导入成功。'));
       }
     } catch (err) {
       console.error("Failed to import model:", err);
-      setError(typeof err === "string" ? err : "Could not import the selected model.");
+      setError(
+        typeof err === "string"
+          ? err
+          : tr('Could not import the selected model.', '无法导入所选模型。'),
+      );
     } finally {
       setImporting(null);
     }
@@ -166,7 +199,7 @@ export function AddCharacterModal({
 
   const handleCreate = async () => {
     if (!name.trim() || !personality.trim()) {
-      setError("Name and personality draft are required.");
+      setError(tr('Name and personality draft are required.', '必须填写名字和性格设定。'));
       return;
     }
 
@@ -189,7 +222,7 @@ export function AddCharacterModal({
       onCreated(characterId);
     } catch (err) {
       console.error("Failed to create character:", err);
-      setError("Could not create the character. Please try again.");
+      setError(tr('Could not create the character. Please try again.', '无法创建伙伴，请重试。'));
     } finally {
       setSaving(false);
     }
@@ -203,8 +236,15 @@ export function AddCharacterModal({
       <div className="relative z-[101] flex w-full max-w-5xl max-h-[92vh] flex-col overflow-hidden rounded-[2rem] border border-white/70 bg-white/95 shadow-[0_20px_80px_rgba(15,23,42,0.18)] ring-1 ring-slate-100/80">
         <div className="flex items-center justify-between border-b border-slate-100 bg-white px-6 py-5 shrink-0">
           <div>
-            <h2 className="text-xl font-bold tracking-tight text-slate-800">Add Character</h2>
-            <p className="mt-1 text-sm text-slate-500">Name them, pick a look, tune personality—uses your current voice settings.</p>
+            <h2 className="text-xl font-bold tracking-tight text-slate-800">
+              {tr('Add Character', '添加伙伴')}
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {tr(
+                'Name them, pick a look, tune personality—uses your current voice settings.',
+                '设置名字、外观与性格，并使用当前语音设置。',
+              )}
+            </p>
           </div>
           <button
             type="button"
@@ -223,30 +263,32 @@ export function AddCharacterModal({
               <CompanionAvatarPreview
                 model={previewModel}
                 companionName={name}
-                vibeLabel={selectedVibePack?.title}
+                vibeLabel={selectedVibePack ? vibeTitle(selectedVibePack) : undefined}
               />
             </div>
 
             <div className="space-y-6 min-w-0">
               <div>
-                <label className={labelClass}>Companion name</label>
+                <label className={labelClass}>{tr('Companion name', '伙伴名字')}</label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="What should they be called?"
+                  placeholder={tr('What should they be called?', '想如何称呼它？')}
                   className={inputClass}
                 />
               </div>
 
               <div>
-                <label className={labelClass}>Look</label>
-                <p className="mb-3 text-xs text-slate-500">Live2D or 3D VRM—preview updates as you choose.</p>
+                <label className={labelClass}>{tr('Look', '外观')}</label>
+                <p className="mb-3 text-xs text-slate-500">
+                  {tr('Live2D or 3D VRM—preview updates as you choose.', '选择 Live2D 或 3D VRM，预览会立即更新。')}
+                </p>
                 {models.length > 0 ? (
                   <ModelPicker models={models} selectedId={modelId} onSelect={setModelId} />
                 ) : (
                   <div className="rounded-2xl border border-slate-100 bg-slate-50 px-5 py-4 text-sm text-slate-600">
-                    No models detected yet. Import one below.
+                    {tr('No models detected yet. Import one below.', '尚未检测到模型，请在下方导入。')}
                   </div>
                 )}
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -256,7 +298,9 @@ export function AddCharacterModal({
                     disabled={importing !== null}
                     className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-[13px] font-semibold text-slate-600 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
                   >
-                    {importing === "live2d" ? "Importing…" : "Import Live2D"}
+                    {importing === "live2d"
+                      ? tr('Importing…', '正在导入...')
+                      : tr('Import Live2D', '导入 Live2D')}
                   </button>
                   <button
                     type="button"
@@ -264,7 +308,9 @@ export function AddCharacterModal({
                     disabled={importing !== null}
                     className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-[13px] font-semibold text-slate-600 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
                   >
-                    {importing === "vrm" ? "Importing…" : "Import VRM"}
+                    {importing === "vrm"
+                      ? tr('Importing…', '正在导入...')
+                      : tr('Import VRM', '导入 VRM')}
                   </button>
                 </div>
                 {importMessage ? (
@@ -275,7 +321,7 @@ export function AddCharacterModal({
               </div>
 
               <div>
-                <label className={labelClass}>Personality</label>
+                <label className={labelClass}>{tr('Personality', '性格')}</label>
                 <div className="grid grid-cols-2 gap-2.5">
                   {COMPANION_VIBE_PACKS.map((pack) => {
                     const selected = vibe === pack.id;
@@ -293,10 +339,10 @@ export function AddCharacterModal({
                         <span className="text-xl">{pack.emoji}</span>
                         <div className="min-w-0">
                           <div className={`text-sm font-semibold ${selected ? "text-blue-900" : "text-slate-800"}`}>
-                            {pack.title}
+                            {vibeTitle(pack)}
                           </div>
                           <div className={`text-xs ${selected ? "text-blue-600/85" : "text-slate-400"}`}>
-                            {pack.subtitle}
+                            {vibeSubtitle(pack)}
                           </div>
                         </div>
                       </button>
@@ -311,15 +357,19 @@ export function AddCharacterModal({
                   onClick={() => setAdvancedOpen((v) => !v)}
                   className="flex w-full items-center justify-between px-5 py-4 text-left"
                 >
-                  <span className="text-sm font-semibold text-slate-700">Advanced personality</span>
-                  <span className="text-xs text-slate-400">{advancedOpen ? "Hide" : "Show"}</span>
+                  <span className="text-sm font-semibold text-slate-700">
+                    {tr('Advanced personality', '高级性格设置')}
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    {advancedOpen ? tr('Hide', '收起') : tr('Show', '展开')}
+                  </span>
                 </button>
                 {advancedOpen ? (
                   <div className="space-y-4 border-t border-slate-200/80 px-5 pb-5 pt-4">
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div>
                         <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Relationship
+                          {tr('Relationship', '相处方式')}
                         </label>
                         <select
                           value={relationshipStyle}
@@ -328,14 +378,23 @@ export function AddCharacterModal({
                         >
                           {RELATIONSHIP_OPTIONS.map((opt) => (
                             <option key={opt} value={opt}>
-                              {opt}
+                              {tr(
+                                opt,
+                                {
+                                  Gentle: '温柔',
+                                  Teasing: '爱开玩笑',
+                                  Protective: '守护型',
+                                  Devoted: '专注陪伴',
+                                  Chaotic: '自由跳脱',
+                                }[opt] || opt,
+                              )}
                             </option>
                           ))}
                         </select>
                       </div>
                       <div>
                         <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Speech style
+                          {tr('Speech style', '说话风格')}
                         </label>
                         <select
                           value={speechStyle}
@@ -344,7 +403,16 @@ export function AddCharacterModal({
                         >
                           {SPEECH_OPTIONS.map((opt) => (
                             <option key={opt} value={opt}>
-                              {opt}
+                              {tr(
+                                opt,
+                                {
+                                  Poetic: '诗意',
+                                  Playful: '活泼',
+                                  Calm: '沉稳',
+                                  Sharp: '犀利',
+                                  Intimate: '亲密',
+                                }[opt] || opt,
+                              )}
                             </option>
                           ))}
                         </select>
@@ -352,7 +420,7 @@ export function AddCharacterModal({
                     </div>
                     <div>
                       <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Personality draft
+                        {tr('Personality draft', '性格设定草稿')}
                       </label>
                       <textarea
                         value={personality}
@@ -371,7 +439,7 @@ export function AddCharacterModal({
                         }}
                         className="mt-3 rounded-full border border-slate-200 bg-white px-4 py-2 text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-600 shadow-sm transition-all hover:-translate-y-0.5"
                       >
-                        Regenerate from presets
+                        {tr('Regenerate from presets', '根据预设重新生成')}
                       </button>
                     </div>
                   </div>
@@ -391,7 +459,7 @@ export function AddCharacterModal({
             onClick={resetAndClose}
             className="rounded-2xl border border-slate-200 bg-white px-6 py-3 text-[14px] font-semibold text-slate-600 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50"
           >
-            Cancel
+            {tr('Cancel', '取消')}
           </button>
           <button
             type="button"
@@ -399,7 +467,9 @@ export function AddCharacterModal({
             disabled={saving || !name.trim() || !personality.trim()}
             className="rounded-2xl bg-blue-600 px-6 py-3 text-[14px] font-semibold text-white shadow-sm transition-all hover:bg-blue-700 disabled:opacity-50"
           >
-            {saving ? "Creating…" : "Create character"}
+            {saving
+              ? tr('Creating…', '正在创建...')
+              : tr('Create character', '创建伙伴')}
           </button>
         </div>
       </div>

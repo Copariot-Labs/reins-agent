@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback, memo } from "react";
 import type { RefObject } from "react";
 import { MicButton } from "../MicButton";
+import { useLanguage } from "../../i18n/LanguageContext";
 
 type Props = {
   isProcessing: boolean;
@@ -25,6 +26,7 @@ export const FloatingChatInput = memo(function FloatingChatInput({
   caption,
   captionSpeaker,
 }: Props) {
+  const { tr } = useLanguage();
   const [input, setInput] = useState("");
   const typingTimeoutRef = useRef<number | null>(null);
 
@@ -79,7 +81,7 @@ export const FloatingChatInput = memo(function FloatingChatInput({
           type="text"
           value={input}
           onChange={handleInputChange}
-          placeholder="Type a message..."
+          placeholder={tr('Type a message...', '输入消息...')}
           disabled={isProcessing}
           className="companion-chat-input min-w-0 flex-1 bg-transparent px-2 py-2.5 text-[15px] text-slate-800 outline-none ring-0 placeholder:text-slate-400 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 disabled:opacity-50"
         />
@@ -87,7 +89,7 @@ export const FloatingChatInput = memo(function FloatingChatInput({
           type="submit"
           disabled={isProcessing || !input.trim()}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white transition-all hover:bg-blue-700 disabled:opacity-30"
-          title="Send"
+          title={tr('Send', '发送')}
         >
           {isProcessing ? (
             <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />

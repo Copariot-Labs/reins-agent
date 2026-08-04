@@ -5,6 +5,8 @@ export interface PreviewModel {
   animations?: { name: string; path: string }[];
 }
 
+import { useLanguage } from '../../i18n/LanguageContext';
+
 export function ModelPicker({
   models,
   selectedId,
@@ -14,6 +16,7 @@ export function ModelPicker({
   selectedId: string;
   onSelect: (id: string) => void;
 }) {
+  const { tr } = useLanguage();
   const labelFor = (model: PreviewModel) => {
     if (model.id === "haru") return "Haru";
     if (model.id === "utsuwa") return "Utsuwa";
@@ -24,7 +27,10 @@ export function ModelPicker({
   if (models.length === 0) {
     return (
       <p className="text-sm text-slate-500">
-        Using the default avatar. You can add more looks later in Settings.
+        {tr(
+          'Using the default avatar. You can add more looks later in Settings.',
+          '当前使用默认虚拟形象。之后可以在设置中添加更多外观。',
+        )}
       </p>
     );
   }

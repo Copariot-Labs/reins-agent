@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, memo } from "react";
 import { useLive2D } from "../hooks/useLive2D";
 import type { ModelMapping } from "../types";
 import { LoadingOverlay } from "./LoadingOverlay";
+import { useLanguage } from "../i18n/LanguageContext";
 
 interface Props {
   modelPath: string | null;
@@ -31,6 +32,7 @@ export const Live2DCanvas = memo(function Live2DCanvas({
   framing,
   getAudioLevels,
 }: Props) {
+  const { tr } = useLanguage();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { loadModel, setExpression, startLipSync, stopLipSync, setViewport, setTypingReaction } =
     useLive2D(canvasRef);
@@ -83,21 +85,27 @@ export const Live2DCanvas = memo(function Live2DCanvas({
     >
       <LoadingOverlay
         visible={modelLoading}
-        message="Loading model..."
-        subMessage="Please wait"
+        message={tr('Loading model...', '正在加载模型...')}
+        subMessage={tr('Please wait', '请稍候')}
         variant="model"
       />
       {!modelPath && !showMiniUi && (
         <div className="text-slate-500 text-center px-6">
-          <p className="text-lg font-medium">No Live2D model loaded</p>
+          <p className="text-lg font-medium">
+            {tr('No Live2D model loaded', '尚未加载 Live2D 模型')}
+          </p>
           <p className="text-sm mt-2 text-slate-400">
-            Add a model to <code className="text-slate-600">models/live2d/</code> and select a character
+            {tr('Add a model to', '请将模型添加到')}{' '}
+            <code className="text-slate-600">models/live2d/</code>{' '}
+            {tr('and select a character', '并选择伙伴角色')}
           </p>
         </div>
       )}
       {!modelPath && showMiniUi && (
         <div className="text-amber-200/50 text-center">
-          <p className="text-lg">No Live2D model loaded</p>
+          <p className="text-lg">
+            {tr('No Live2D model loaded', '尚未加载 Live2D 模型')}
+          </p>
         </div>
       )}
       <canvas

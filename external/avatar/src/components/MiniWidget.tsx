@@ -4,6 +4,7 @@ import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { useWindow } from "../hooks/useWindow";
 import { MicButton } from "./MicButton";
 import type { ToolCallStatus } from "./ToolCallBubble";
+import { useLanguage } from "../i18n/LanguageContext";
 
 interface MiniWidgetProps {
   avatarComponent: ReactNode;
@@ -43,6 +44,7 @@ export function MiniWidget({
   pendingConfirmation,
   openComposerTrigger = 0,
 }: MiniWidgetProps) {
+  const { tr } = useLanguage();
   const { expand } = useWindow();
   const pointerStateRef = useRef<{ x: number; y: number; dragged: boolean; active: boolean }>({
     x: 0, y: 0, dragged: false, active: false,
@@ -176,7 +178,13 @@ export function MiniWidget({
               : showThinkingStatus ? "bg-blue-400 animate-pulse"
               : "bg-blue-400 animate-ping"
           }`} />
-          <span>{listening ? "Listening" : showThinkingStatus ? "Thinking" : "Speaking"}</span>
+          <span>
+            {listening
+              ? tr('Listening', '聆听中')
+              : showThinkingStatus
+                ? tr('Thinking', '思考中')
+                : tr('Speaking', '说话中')}
+          </span>
         </div>
       )}
 
@@ -202,7 +210,10 @@ export function MiniWidget({
             <div className="flex items-center gap-2 mb-2">
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
               <span className="text-[11px] font-semibold text-amber-800">
-                Allow {pendingTool.toolName.replace(/_/g, " ")}?
+                {tr(
+                  `Allow ${pendingTool.toolName.replace(/_/g, ' ')}?`,
+                  `允许执行 ${pendingTool.toolName.replace(/_/g, ' ')}？`,
+                )}
               </span>
             </div>
             <div className="flex gap-2">
@@ -210,13 +221,13 @@ export function MiniWidget({
                 onClick={() => onToolConfirm(pendingTool.requestId, true)}
                 className="flex-1 py-1.5 text-[11px] font-semibold bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors shadow-sm"
               >
-                Allow
+                {tr('Allow', '允许')}
               </button>
               <button
                 onClick={() => onToolConfirm(pendingTool.requestId, false)}
                 className="flex-1 py-1.5 text-[11px] font-semibold bg-white text-slate-600 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors"
               >
-                Deny
+                {tr('Deny', '拒绝')}
               </button>
             </div>
           </div>
@@ -242,7 +253,7 @@ export function MiniWidget({
             type="button"
             onClick={cycleWindowSize}
             className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-            title="Window size"
+            title={tr('Window size', '窗口大小')}
           >
             {MINI_WINDOW_PRESETS[sizePresetIndex].label}
           </button>
@@ -250,7 +261,7 @@ export function MiniWidget({
             type="button"
             onClick={handleExpand}
             className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-            title="Open full app"
+            title={tr('Open full app', '打开完整应用')}
           >
             <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3H5a2 2 0 00-2 2v3m16 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M5 16v3a2 2 0 002 2h3" />
@@ -273,7 +284,7 @@ export function MiniWidget({
               setInputFocused(true);
             }}
             onBlur={() => setInputFocused(false)}
-            placeholder="Type a message..."
+            placeholder={tr('Type a message...', '输入消息...')}
             className="companion-chat-input min-w-0 flex-1 bg-transparent px-2 py-2.5 text-[15px] text-slate-800 outline-none ring-0 placeholder:text-slate-400 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 disabled:opacity-50"
             disabled={isStreaming}
           />
@@ -281,7 +292,7 @@ export function MiniWidget({
             type="submit"
             disabled={!input.trim() || isStreaming}
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white transition-colors hover:bg-blue-700 disabled:opacity-30"
-            title="Send"
+            title={tr('Send', '发送')}
           >
             {isStreaming ? (
               <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />

@@ -1,3 +1,5 @@
+import { useLanguage } from "../i18n/LanguageContext";
+
 interface Props {
   listening: boolean;
   onToggle: () => void;
@@ -5,6 +7,7 @@ interface Props {
 }
 
 export function MicButton({ listening, onToggle, variant = "default" }: Props) {
+  const { tr } = useLanguage();
   const stage = variant === "stage";
   return (
     <button
@@ -21,7 +24,11 @@ export function MicButton({ listening, onToggle, variant = "default" }: Props) {
             ? "text-slate-400 hover:bg-slate-100 hover:text-blue-600"
             : "text-slate-400 hover:text-blue-500 hover:bg-blue-50 hover:scale-110 active:scale-95"
       }`}
-      title={listening ? "Stop listening" : "Start voice input"}
+      title={
+        listening
+          ? tr('Stop listening', '停止聆听')
+          : tr('Start voice input', '开始语音输入')
+      }
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"

@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
-
-const STEP_LABELS = ['Start', 'You', 'Companion', 'Voice', 'Connect'];
+import { useLanguage } from '../../i18n/LanguageContext';
 
 export function OnboardingShell({
   step,
@@ -11,6 +10,14 @@ export function OnboardingShell({
   preview?: ReactNode;
   children: ReactNode;
 }) {
+  const { tr } = useLanguage();
+  const stepLabels = [
+    tr('Start', '开始'),
+    tr('You', '你'),
+    tr('Companion', '伙伴'),
+    tr('Voice', '语音'),
+    tr('Connect', '连接'),
+  ];
   const showPreview = preview && step >= 2 && step <= 3;
 
   return (
@@ -24,14 +31,14 @@ export function OnboardingShell({
         <div className='mb-6 flex items-center gap-2.5'>
           {/* <MeuxeMark className='h-9 w-9' /> */}
           <span className='text-sm font-bold tracking-tight text-slate-800'>
-            Reins Avatar setup
+            {tr('Reins Avatar setup', 'Reins 虚拟伙伴设置')}
           </span>
         </div>
 
         {step < 5 && (
           <div className='mb-6 w-full max-w-4xl'>
             <div className='flex items-center justify-center gap-1 sm:gap-2'>
-              {STEP_LABELS.map((label, i) => (
+              {stepLabels.map((label, i) => (
                 <div key={label} className='flex items-center gap-1 sm:gap-2'>
                   <div className='flex flex-col items-center gap-1'>
                     <div
@@ -57,7 +64,7 @@ export function OnboardingShell({
                       {label}
                     </span>
                   </div>
-                  {i < STEP_LABELS.length - 1 && (
+                  {i < stepLabels.length - 1 && (
                     <div
                       className={`mb-4 h-0.5 w-5 sm:mb-5 sm:w-8 rounded-full ${i < step ? 'bg-indigo-300' : 'bg-slate-200'}`}
                     />

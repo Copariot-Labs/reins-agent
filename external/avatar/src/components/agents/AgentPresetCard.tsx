@@ -1,5 +1,6 @@
 import { ACP_AGENT_PRESETS, type AcpAgentPresetId } from "../../lib/agentPresets";
 import { AgentPresetIcon } from "./AgentPresetIcon";
+import { useLanguage } from "../../i18n/LanguageContext";
 
 export function AgentPresetCard({
   id,
@@ -12,6 +13,7 @@ export function AgentPresetCard({
   onSelect: () => void;
   compact?: boolean;
 }) {
+  const { tr } = useLanguage();
   const preset = ACP_AGENT_PRESETS[id];
   return (
     <button
@@ -31,7 +33,16 @@ export function AgentPresetCard({
         <div
           className={`mt-0.5 text-xs leading-snug ${selected ? "text-violet-700/85" : "text-slate-500"}`}
         >
-          {preset.tagline}
+          {tr(
+            preset.tagline,
+            {
+              reins: '内置 Reins 连接',
+              opencode: '开源 CLI 智能体',
+              claude: 'Anthropic 编程智能体',
+              codex: 'OpenAI 编程智能体',
+              custom: '自定义 ACP 程序',
+            }[id],
+          )}
         </div>
       </div>
       {selected && (

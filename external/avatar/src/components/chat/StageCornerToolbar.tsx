@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useLanguage } from "../../i18n/LanguageContext";
 
 function CornerButton({
   title,
@@ -48,11 +49,12 @@ export function StageCornerToolbar({
   framing: "full" | "half";
   onFramingChange: (framing: "full" | "half") => void;
 }) {
+  const { tr } = useLanguage();
   return (
     <>
       <div className="pointer-events-none absolute left-4 top-4 z-30 flex flex-col gap-2 sm:left-5 sm:top-5">
         <div className="pointer-events-auto flex flex-col gap-2">
-          <CornerButton title="Chat history" onClick={onHistoryToggle} active={historyOpen}>
+          <CornerButton title={tr('Chat history', '聊天记录')} onClick={onHistoryToggle} active={historyOpen}>
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
               <path
                 strokeLinecap="round"
@@ -61,12 +63,12 @@ export function StageCornerToolbar({
               />
             </svg>
           </CornerButton>
-          <CornerButton title="Mini mode" onClick={onMini}>
+          <CornerButton title={tr('Mini mode', '迷你模式')} onClick={onMini}>
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V6a2 2 0 012-2h2M4 16v2a2 2 0 002 2h2m8-16h2a2 2 0 012 2v2m-4 12h2a2 2 0 002-2v-2M9 9h6v6H9z" />
             </svg>
           </CornerButton>
-          <CornerButton title="Characters" onClick={onCharacters} active={charSelectOpen}>
+          <CornerButton title={tr('Characters', '伙伴角色')} onClick={onCharacters} active={charSelectOpen}>
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
@@ -75,7 +77,7 @@ export function StageCornerToolbar({
       </div>
       <div className="pointer-events-none absolute right-4 top-4 z-30 flex flex-col gap-2 sm:right-5 sm:top-5">
         <div className="pointer-events-auto flex flex-col gap-2">
-          <CornerButton title="Settings" onClick={onSettings} active={settingsOpen}>
+          <CornerButton title={tr('Settings', '设置')} onClick={onSettings} active={settingsOpen}>
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
               <path
                 strokeLinecap="round"
@@ -87,11 +89,15 @@ export function StageCornerToolbar({
           </CornerButton>
           <button
             type="button"
-            title={framing === "full" ? "Switch to half body" : "Switch to full body"}
+            title={
+              framing === "full"
+                ? tr('Switch to half body', '切换到半身视图')
+                : tr('Switch to full body', '切换到全身视图')
+            }
             onClick={() => onFramingChange(framing === "full" ? "half" : "full")}
             className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200/80 bg-white/75 text-[10px] font-bold tracking-wide text-slate-600 shadow-sm backdrop-blur-md transition-all hover:bg-white hover:text-slate-900"
           >
-            {framing === "full" ? "HALF" : "FULL"}
+            {framing === "full" ? tr('HALF', '半身') : tr('FULL', '全身')}
           </button>
         </div>
       </div>
