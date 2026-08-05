@@ -217,6 +217,84 @@ Uninstall services and launchers while preserving application code and data:
 deploy/linux/uninstall.sh
 ```
 
+## Windows Desktop Deployment
+
+Prerequisites:
+
+- Windows 10/11 with PowerShell 5.1 or newer.
+- Git, Python 3.11+, `uv`, Node.js 23+, and npm available in `PATH`.
+- Run every command as the target desktop user, not as Administrator.
+
+Clone and prepare the configuration:
+
+```powershell
+git clone https://github.com/Copariot-Labs/reins-agent.git
+cd reins-agent
+git submodule update --init --recursive
+
+New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\reins"
+notepad "$env:LOCALAPPDATA\reins\.env"
+```
+
+Add the required model/provider and WeCom values to the UTF-8 `.env` file, then
+install:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\deploy\windows\install.ps1
+```
+
+The installer is idempotent. After future code changes, update the same checkout
+and rerun it; there is no need to uninstall first:
+
+```powershell
+git pull
+git submodule update --init --recursive
+.\deploy\windows\install.ps1
+```
+
+Useful options:
+
+```powershell
+.\deploy\windows\install.ps1 -SkipBuild
+.\deploy\windows\install.ps1 -SkipWeCom
+.\deploy\windows\install.ps1 -NoDesktop
+.\deploy\windows\install.ps1 -ReinsHome "D:\ReinsData"
+.\deploy\windows\install.ps1 -Workspace "$env:USERPROFILE\Documents\Reins"
+```
+
+Use `-SkipBuild` only when the Windows `.venv` and `web\dist` already match the
+current code. Custom data and workspace paths are remembered under
+`%LOCALAPPDATA%\reins-deploy`. Activating `.venv` in a terminal for CLI work is
+safe and does not affect the already installed tasks:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+reins model
+reins --help
+```
+
+Check or restart the installed application:
+
+```powershell
+Get-ScheduledTask -TaskName "Reins Web UI"
+Start-ScheduledTask -TaskName "Reins Web UI"
+Invoke-WebRequest http://127.0.0.1:8648/health -UseBasicParsing
+reins wecom ticket-api service status
+```
+
+Logs are in `%LOCALAPPDATA%\reins\logs` by default. Uninstall startup tasks and
+shortcuts while preserving the repository and all Reins data:
+
+```powershell
+.\deploy\windows\uninstall.ps1
+```
+
+Configure an accessible Git/npm/Python package mirror before
+running the installer when the default registries are slow or blocked. Runtime
+traffic remains local except for the model provider, ticket API, and WeCom
+endpoints configured in `.env`.
+
 ## Finance CLI
 
 ```bash
