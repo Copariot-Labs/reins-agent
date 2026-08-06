@@ -92,9 +92,18 @@ function Wait-ForWeb {
 
     for ($attempt = 0; $attempt -lt $Attempts; $attempt++) {
         try {
-            $response = Invoke-WebRequest -UseBasicParsing -Uri "$WebUrl/health" -TimeoutSec 2
-            if ($response.StatusCode -eq 200) {
-                return $true
+            $request = [Net.HttpWebRequest]::Create("$WebUrl/health")
+            $request.Proxy = $null
+            $request.Timeout = 10000
+            $request.ReadWriteTimeout = 10000
+            $response = $request.GetResponse()
+            try {
+                if ([int]$response.StatusCode -eq 200) {
+                    return $true
+                }
+            }
+            finally {
+                $response.Close()
             }
         }
         catch {
@@ -135,6 +144,7 @@ function New-WebRuntimeScript {
         "`$env:WORKSPACE_BASE = $(ConvertTo-PowerShellLiteral $WorkspacePath)",
         "`$env:PYTHONIOENCODING = 'utf-8'",
         "`$env:PYTHONUTF8 = '1'",
+        "`$env:HERMES_WEB_UI_DISABLE_UPDATE_CHECK = 'true'",
         "`$env:PATH = $(ConvertTo-PowerShellLiteral ((Split-Path -Parent $PythonPath) + ';' + (Split-Path -Parent $NodePath) + ';')) + `$env:PATH",
         "`$logDirectory = $(ConvertTo-PowerShellLiteral (Join-Path $DataHome 'logs'))",
         "New-Item -ItemType Directory -Force -Path `$logDirectory | Out-Null",
@@ -164,10 +174,18 @@ function New-OpenScript {
         "    }",
         "    for (`$attempt = 0; `$attempt -lt 120; `$attempt++) {",
         "        try {",
-        "            `$response = Invoke-WebRequest -UseBasicParsing -Uri `"`$webUrl/health`" -TimeoutSec 2",
-        "            if (`$response.StatusCode -eq 200) {",
-        "                Start-Process `$webUrl",
-        "                exit 0",
+        "            `$request = [Net.HttpWebRequest]::Create(`"`$webUrl/health`")",
+        "            `$request.Proxy = `$null",
+        "            `$request.Timeout = 10000",
+        "            `$request.ReadWriteTimeout = 10000",
+        "            `$response = `$request.GetResponse()",
+        "            try {",
+        "                if ([int]`$response.StatusCode -eq 200) {",
+        "                    Start-Process `$webUrl",
+        "                    exit 0",
+        "                }",
+        "            } finally {",
+        "                `$response.Close()",
         "            }",
         "        } catch {}",
         "        Start-Sleep -Milliseconds 500",
@@ -379,7 +397,9 @@ Start-ScheduledTask -TaskName $WebTaskName
 if (-not (Wait-ForWeb)) {
     $task = Get-ScheduledTask -TaskName $WebTaskName -ErrorAction SilentlyContinue
     $taskState = if ($null -eq $task) { "missing" } else { [string]$task.State }
-    throw "Reins Web UI did not become healthy. Task state: $taskState. Check $ReinsHome\logs\web-runtime.error.log"
+    $taskInfo = Get-ScheduledTaskInfo -TaskName $WebTaskName -ErrorAction SilentlyContinue
+    $lastResult = if ($null -eq $taskInfo) { "unknown" } else { [string]$taskInfo.LastTaskResult }
+    throw "Reins Web UI did not become healthy. Task state: $taskState; last result: $lastResult. Check $ReinsHome\logs\web-runtime.log and $ReinsHome\logs\web-runtime.error.log"
 }
 
 if (-not $SkipWeCom) {
