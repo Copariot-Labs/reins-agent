@@ -331,6 +331,7 @@ def _schtasks(arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         check=False,
         text=True,
+        encoding="oem" if os.name == "nt" else None,
         errors="replace",
         startupinfo=startupinfo,
         creationflags=creationflags,
@@ -349,6 +350,7 @@ def _powershell(arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         check=False,
         text=True,
+        encoding="oem" if os.name == "nt" else None,
         errors="replace",
         startupinfo=startupinfo,
         creationflags=creationflags,
@@ -407,10 +409,9 @@ def _windows_task_state() -> tuple[int | None, str]:
     return None, "could not determine Windows scheduled task state"
 
 
-def _windows_task_action(script_path: Path) -> str:
+def _windows_task_arguments(script_path: Path) -> str:
     return subprocess.list2cmdline(
         [
-            "powershell.exe",
             "-NoLogo",
             "-NoProfile",
             "-NonInteractive",
@@ -424,8 +425,18 @@ def _windows_task_action(script_path: Path) -> str:
     )
 
 
-def _configure_windows_task() -> subprocess.CompletedProcess[str]:
+def _register_windows_task(script_path: Path) -> subprocess.CompletedProcess[str]:
+    action_arguments = _windows_task_arguments(script_path)
     command = (
+        "$user = [Security.Principal.WindowsIdentity]::GetCurrent().Name; "
+        "$powershell = Join-Path $env:SystemRoot "
+        "'System32\\WindowsPowerShell\\v1.0\\powershell.exe'; "
+        "$action = New-ScheduledTaskAction "
+        "-Execute $powershell "
+        f"-Argument {_powershell_quote(action_arguments)}; "
+        "$trigger = New-ScheduledTaskTrigger -AtLogOn -User $user; "
+        "$principal = New-ScheduledTaskPrincipal "
+        "-UserId $user -LogonType Interactive -RunLevel Limited; "
         "$settings = New-ScheduledTaskSettingsSet "
         "-ExecutionTimeLimit ([TimeSpan]::Zero) "
         "-RestartCount 999 "
@@ -434,8 +445,11 @@ def _configure_windows_task() -> subprocess.CompletedProcess[str]:
         "-StartWhenAvailable "
         "-AllowStartIfOnBatteries "
         "-DontStopIfGoingOnBatteries; "
-        f"Set-ScheduledTask -TaskName {_powershell_quote(WINDOWS_TASK_NAME)} "
-        "-Settings $settings | Out-Null"
+        f"Register-ScheduledTask -TaskName {_powershell_quote(WINDOWS_TASK_NAME)} "
+        "-Action $action -Trigger $trigger -Principal $principal "
+        "-Settings $settings -Description 'Reins WeCom ticket poller' "
+        "-Force | Out-Null; "
+        f"Start-ScheduledTask -TaskName {_powershell_quote(WINDOWS_TASK_NAME)}"
     )
     return _powershell(
         [
@@ -462,47 +476,22 @@ def _windows_service_details() -> dict[str, Any]:
 
 def _install_windows_service(*, interval: float) -> dict[str, Any]:
     script_path = write_windows_task_script(interval=interval)
-    created = _schtasks(
-        [
-            "/Create",
-            "/TN",
-            WINDOWS_TASK_NAME,
-            "/SC",
-            "ONLOGON",
-            "/RL",
-            "LIMITED",
-            "/IT",
-            "/TR",
-            _windows_task_action(script_path),
-            "/F",
-        ]
-    )
-    if created.returncode != 0:
+    registered = _register_windows_task(script_path)
+    if registered.returncode != 0:
         return {
             "ok": False,
             "installed": _windows_task_exists(),
             "running": False,
             **_windows_service_details(),
-            "error": _command_error(created, "schtasks.exe"),
+            "error": _command_error(registered, "powershell.exe"),
         }
 
-    configured = _configure_windows_task()
-    if configured.returncode != 0:
-        return {
-            "ok": False,
-            "installed": True,
-            "running": False,
-            **_windows_service_details(),
-            "error": _command_error(configured, "powershell.exe"),
-        }
-
-    started = _schtasks(["/Run", "/TN", WINDOWS_TASK_NAME])
     return {
-        "ok": started.returncode == 0,
+        "ok": True,
         "installed": True,
-        "running": started.returncode == 0,
+        "running": True,
         **_windows_service_details(),
-        "error": "" if started.returncode == 0 else _command_error(started, "schtasks.exe"),
+        "error": "",
     }
 
 

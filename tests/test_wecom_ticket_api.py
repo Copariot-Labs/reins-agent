@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
+from reins.features.wecom import ticket_service
 from reins.features.wecom.cli import _load_wecom_env, main as wecom_main
 from reins.features.wecom.ticket_api import (
     TicketAPIConfig,
@@ -458,38 +459,41 @@ class WeComTicketAPITests(unittest.TestCase):
         self.assertNotIn("REINS_WECOM_NOTIFY_GROUP_WEBHOOK", script)
 
     def test_windows_service_installs_and_starts_scheduled_task(self):
-        created = CompletedProcess(["schtasks.exe"], returncode=0, stdout="SUCCESS", stderr="")
-        configured = CompletedProcess(["powershell.exe"], returncode=0, stdout="", stderr="")
-        started = CompletedProcess(["schtasks.exe"], returncode=0, stdout="SUCCESS", stderr="")
+        registered = CompletedProcess(["powershell.exe"], returncode=0, stdout="", stderr="")
 
         with tempfile.TemporaryDirectory() as directory:
             with patch.dict(os.environ, {"REINS_HOME": directory}, clear=True):
                 with patch("reins.features.wecom.ticket_service.sys.platform", "win32"):
                     with patch(
-                        "reins.features.wecom.ticket_service._schtasks",
-                        side_effect=[created, started],
-                    ) as schtasks:
-                        with patch(
-                            "reins.features.wecom.ticket_service._powershell",
-                            return_value=configured,
-                        ) as powershell:
-                            result = install_service(interval=12)
+                        "reins.features.wecom.ticket_service._register_windows_task",
+                        return_value=registered,
+                    ) as register:
+                        result = install_service(interval=12)
 
         self.assertTrue(result["ok"])
         self.assertTrue(result["installed"])
         self.assertTrue(result["running"])
-        create_args = schtasks.call_args_list[0].args[0]
-        self.assertEqual(create_args[:4], ["/Create", "/TN", WINDOWS_TASK_NAME, "/SC"])
-        self.assertIn("ONLOGON", create_args)
-        self.assertIn("powershell.exe", create_args[create_args.index("/TR") + 1])
-        settings_command = powershell.call_args.args[0][-1]
-        self.assertIn("ExecutionTimeLimit", settings_command)
-        self.assertIn("RestartCount 999", settings_command)
-        self.assertIn("MultipleInstances IgnoreNew", settings_command)
-        self.assertEqual(
-            schtasks.call_args_list[1].args[0],
-            ["/Run", "/TN", WINDOWS_TASK_NAME],
-        )
+        register.assert_called_once()
+        self.assertEqual(register.call_args.args[0].name, "ticket-poller.ps1")
+
+    def test_windows_task_registration_is_limited_to_current_user(self):
+        script_path = Path("C:/Users/Tester/AppData/Local/reins/wecom/ticket-poller.ps1")
+        registered = CompletedProcess(["powershell.exe"], returncode=0, stdout="", stderr="")
+
+        with patch(
+            "reins.features.wecom.ticket_service._powershell",
+            return_value=registered,
+        ) as powershell:
+            result = ticket_service._register_windows_task(script_path)
+
+        self.assertEqual(result.returncode, 0)
+        command = powershell.call_args.args[0][-1]
+        self.assertIn("WindowsIdentity]::GetCurrent().Name", command)
+        self.assertIn("New-ScheduledTaskTrigger -AtLogOn -User $user", command)
+        self.assertIn("-LogonType Interactive -RunLevel Limited", command)
+        self.assertIn("Register-ScheduledTask", command)
+        self.assertIn("Start-ScheduledTask", command)
+        self.assertNotIn("/IT", command)
 
     def test_windows_service_status_uses_language_independent_state_code(self):
         with tempfile.TemporaryDirectory() as directory:
