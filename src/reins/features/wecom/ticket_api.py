@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 
 from reins.api.home import get_reins_home
 from reins.features.wecom.notifier import notification_doctor
+from reins.features.wecom.routing import routing_doctor
 from reins.features.wecom.work_order import create_work_order
 
 
@@ -421,9 +422,22 @@ def _ticket_summary(ticket: dict[str, Any], result: dict[str, Any]) -> dict[str,
         "duplicate": bool(result.get("duplicate")),
         "category": _string(metadata.get("category")),
         "assigned_role": _string(metadata.get("assigned_role")),
+        "assigned_roles": (
+            metadata.get("assigned_roles")
+            if isinstance(metadata.get("assigned_roles"), list)
+            else []
+        ),
         "assignment_reason": _string(metadata.get("assignment_reason")),
+        "routing_source": _string(metadata.get("routing_source")),
+        "routing_confidence": metadata.get("routing_confidence"),
+        "routing_error": _string(metadata.get("routing_error")),
         "notification_channel": _string(notification.get("channel")),
         "notification_recipient_env": _string(notification.get("recipient_env")),
+        "notification_recipient_envs": (
+            notification.get("recipient_envs")
+            if isinstance(notification.get("recipient_envs"), list)
+            else []
+        ),
         "notification_recipient_count": len(
             notification.get("recipients")
             if isinstance(notification.get("recipients"), list)
@@ -531,8 +545,9 @@ def ticket_api_doctor(config: TicketAPIConfig) -> dict[str, Any]:
     except TicketAPIError as exc:
         cursor = {}
         cursor_error = str(exc)
+    routing = routing_doctor()
     return {
-        "ok": not validation_error and bool(config.token),
+        "ok": not validation_error and bool(config.token) and bool(routing.get("mode_valid")),
         "api_url": config.url,
         "api_token_configured": bool(config.token),
         "statuses": list(config.statuses),
@@ -543,5 +558,6 @@ def ticket_api_doctor(config: TicketAPIConfig) -> dict[str, Any]:
         "cursor": cursor,
         "validation_error": validation_error,
         "cursor_error": cursor_error,
+        "routing": routing,
         "notification": notification_doctor(),
     }

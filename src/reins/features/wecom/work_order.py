@@ -7,6 +7,7 @@ from typing import Any
 from datetime import datetime, timezone
 
 from reins.features.wecom.notifier import notify_staff
+from reins.features.wecom.routing import resolve_hybrid_routing
 from reins.features.wecom.store import (
     add_record,
     export_records_xlsx_safely,
@@ -437,6 +438,25 @@ def _role_from_category(category: str) -> tuple[str, str, str]:
     return category, "human_review", "provided_category:unmapped"
 
 
+def _matching_role_candidates(metadata: dict[str, Any]) -> list[str]:
+    candidates: list[str] = []
+    provided_role = _canonical_role(_string(metadata.get("assigned_role")))
+    if provided_role and provided_role != "human_review":
+        candidates.append(provided_role)
+
+    category = _string(metadata.get("category"))
+    if category:
+        _mapped_category, mapped_role, _mapped_reason = _role_from_category(category)
+        if mapped_role and mapped_role != "human_review" and mapped_role not in candidates:
+            candidates.append(mapped_role)
+
+    text = _analysis_text(metadata)
+    for role, _category, keywords in ROLE_RULES:
+        if role not in candidates and any(keyword in text for keyword in keywords):
+            candidates.append(role)
+    return candidates
+
+
 def _infer_category_and_role(metadata: dict[str, Any]) -> tuple[str, str, str]:
     provided_role = _canonical_role(_string(metadata.get("assigned_role")))
     if provided_role:
@@ -455,9 +475,9 @@ def _infer_category_and_role(metadata: dict[str, Any]) -> tuple[str, str, str]:
             return mapped_category, mapped_role, mapped_reason
 
     text = _analysis_text(metadata)
-    for role, category, keywords in ROLE_RULES:
+    for role, rule_category, keywords in ROLE_RULES:
         if any(keyword in text for keyword in keywords):
-            return category, role, f"keyword:{role}"
+            return rule_category, role, f"keyword:{role}"
 
     if category:
         return _role_from_category(category)
@@ -489,6 +509,7 @@ def _infer_priority(metadata: dict[str, Any]) -> tuple[str, str]:
 def analyze_work_order(metadata: dict[str, Any]) -> dict[str, Any]:
     category, role, role_reason = _infer_category_and_role(metadata)
     priority, priority_reason = _infer_priority(metadata)
+    candidate_roles = _matching_role_candidates(metadata)
 
     validation_errors: list[str] = []
     if not _string(metadata.get("external_id")):
@@ -511,17 +532,74 @@ def analyze_work_order(metadata: dict[str, Any]) -> dict[str, Any]:
         "assigned_role_label": ROLE_LABELS.get(role, role),
         "assignment_reason": role_reason,
         "priority_reason": priority_reason,
+        "candidate_roles": candidate_roles,
         "validation_errors": validation_errors,
         "recommended_status": status,
     }
 
 
-def _apply_analysis(metadata: dict[str, Any]) -> dict[str, Any]:
+def _persisted_routing(existing_metadata: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(existing_metadata, dict) or not _string(existing_metadata.get("routing_source")):
+        return None
+    assigned_role = _canonical_role(_string(existing_metadata.get("assigned_role")))
+    if not assigned_role:
+        return None
+    return {
+        key: value
+        for key, value in existing_metadata.items()
+        if key.startswith("routing_")
+        or key in {"assigned_role", "assigned_roles", "supporting_roles"}
+    }
+
+
+def _apply_analysis(
+    metadata: dict[str, Any],
+    *,
+    existing_metadata: dict[str, Any] | None = None,
+    force_reroute: bool = False,
+) -> dict[str, Any]:
     canonical_role = _canonical_role(_string(metadata.get("assigned_role")))
     if canonical_role:
         metadata["assigned_role"] = canonical_role
 
     analysis = analyze_work_order(metadata)
+    routing = None if force_reroute else _persisted_routing(existing_metadata)
+    if routing is None:
+        routing = resolve_hybrid_routing(
+            metadata,
+            analysis,
+            candidate_roles=analysis.get("candidate_roles") or [],
+        )
+
+    final_role = _canonical_role(_string(routing.get("assigned_role"))) or "human_review"
+    assigned_roles = [
+        role
+        for role in (
+            _canonical_role(_string(value))
+            for value in routing.get("assigned_roles") or [final_role]
+        )
+        if role
+    ]
+    if final_role not in assigned_roles:
+        assigned_roles.insert(0, final_role)
+    supporting_roles = [role for role in assigned_roles if role != final_role]
+
+    analysis["assigned_role"] = final_role
+    analysis["assigned_role_label"] = ROLE_LABELS.get(final_role, final_role)
+    analysis["assigned_roles"] = assigned_roles
+    analysis["supporting_roles"] = supporting_roles
+    routing_source = _string(routing.get("routing_source"))
+    if routing_source not in {"", "rules", "provided"}:
+        analysis["assignment_reason"] = f"{routing_source}:{final_role}"
+    validation_errors = [
+        error
+        for error in analysis.get("validation_errors") or []
+        if error != "uncertain_assignment"
+    ]
+    if final_role == "human_review" and "uncertain_assignment" not in validation_errors:
+        validation_errors.append("uncertain_assignment")
+    analysis["validation_errors"] = validation_errors
+    analysis["recommended_status"] = "waiting_human_review" if validation_errors else "new"
 
     current_category = _string(metadata.get("category"))
     if analysis.get("category") and (not current_category or _is_generic_category(current_category)):
@@ -536,13 +614,20 @@ def _apply_analysis(metadata: dict[str, Any]) -> dict[str, Any]:
             metadata.setdefault("original_priority", current_priority)
         metadata["priority"] = analyzed_priority
 
-    if analysis.get("assigned_role") and not _string(metadata.get("assigned_role")):
-        metadata["assigned_role"] = analysis["assigned_role"]
+    metadata["assigned_role"] = final_role
+    metadata["assigned_roles"] = assigned_roles
+    metadata["supporting_roles"] = supporting_roles
 
     metadata["assigned_role_label"] = analysis["assigned_role_label"]
+    metadata["assigned_role_labels"] = "、".join(
+        ROLE_LABELS.get(role, role) for role in assigned_roles
+    )
     metadata["assignment_reason"] = analysis["assignment_reason"]
     metadata["priority_reason"] = analysis["priority_reason"]
     metadata["validation_errors"] = analysis["validation_errors"]
+    for key, value in routing.items():
+        if key.startswith("routing_"):
+            metadata[key] = value
     metadata["analyzed_at"] = datetime.now(timezone.utc).isoformat()
     return analysis
 
@@ -583,6 +668,7 @@ def _apply_notification_result(record: dict[str, Any], notification: dict[str, A
     metadata["notification_status"] = notification.get("status", "")
     metadata["notification_target"] = notification.get("target_env", "")
     metadata["notification_recipient_env"] = notification.get("recipient_env", "")
+    metadata["notification_recipient_envs"] = notification.get("recipient_envs", [])
     metadata["notification_channel"] = notification.get("channel", "")
     metadata["notification_recipients"] = notification.get("recipients", [])
     metadata["notification_message_id"] = notification.get("message_id", "")
@@ -611,7 +697,17 @@ def create_work_order(payload: dict[str, Any]) -> dict[str, Any]:
     external_id = _string(metadata.get("external_id"))
     if external_id:
         metadata.setdefault("ticket_id", external_id)
-    analysis = _apply_analysis(metadata)
+    existing = _existing_ticket(metadata)
+    existing_metadata = (
+        existing.get("metadata")
+        if existing and isinstance(existing.get("metadata"), dict)
+        else None
+    )
+    analysis = _apply_analysis(
+        metadata,
+        existing_metadata=existing_metadata,
+        force_reroute=_bool(payload.get("force_reroute") or payload.get("forceReroute")),
+    )
     message = _message_from_metadata(
         metadata,
         fallback=_string(payload.get("message") or payload.get("content") or payload.get("description")),
@@ -639,7 +735,6 @@ def create_work_order(payload: dict[str, Any]) -> dict[str, Any]:
 
     duplicate = False
     exact_duplicate = False
-    existing = _existing_ticket(metadata)
     if existing:
         duplicate = True
         exact_duplicate = _string(existing.get("message")) == message
@@ -687,8 +782,10 @@ def create_work_order(payload: dict[str, Any]) -> dict[str, Any]:
                 "status": "skipped_duplicate",
                 "channel": previous_metadata.get("notification_channel", ""),
                 "assigned_role": metadata.get("assigned_role", ""),
+                "assigned_roles": metadata.get("assigned_roles", []),
                 "target_env": previous_metadata.get("notification_target", ""),
                 "recipient_env": previous_metadata.get("notification_recipient_env", ""),
+                "recipient_envs": previous_metadata.get("notification_recipient_envs", []),
                 "recipients": previous_metadata.get("notification_recipients", []),
                 "content": "",
                 "error": "",

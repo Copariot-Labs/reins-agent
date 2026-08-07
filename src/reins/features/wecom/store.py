@@ -175,6 +175,7 @@ def _staff_work_order_values(record: dict[str, Any]) -> list[object]:
         "priority": _label(metadata.get("priority"), PRIORITY_LABELS),
         "category": _clean(metadata.get("category")),
         "assigned_role": _first_non_empty(
+            metadata.get("assigned_role_labels"),
             metadata.get("assigned_role_label"),
             metadata.get("assigned_role"),
         ),
@@ -694,6 +695,7 @@ def records_report(kind: str | None = None) -> dict[str, Any]:
 
 def doctor() -> dict[str, Any]:
     from reins.features.wecom.notifier import notification_doctor
+    from reins.features.wecom.routing import routing_doctor
 
     migrate()
     records_path, export_error = export_records_xlsx_safely()
@@ -715,5 +717,6 @@ def doctor() -> dict[str, Any]:
         "records_xlsx_columns": [header for _key, header, _width in STAFF_WORK_ORDER_COLUMNS],
         "record_count": record_count,
         "reply_count": reply_count,
+        "routing": routing_doctor(),
         "notifications": notification_doctor(),
     }

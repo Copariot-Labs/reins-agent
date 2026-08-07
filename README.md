@@ -433,6 +433,11 @@ REINS_WECOM_NOTIFY_USERS_HUMAN_REVIEW=user_admin
 REINS_WECOM_NOTIFY_USERS_DEFAULT=user_admin
 REINS_WECOM_REPLY_BOT_NAME=社区美女
 
+# Hybrid routing: rules for known categories, Hermes for ambiguous tickets.
+REINS_WECOM_ROUTING_MODE=hybrid
+REINS_WECOM_ROUTING_CONFIDENCE=0.85
+REINS_WECOM_ROUTING_TIMEOUT=15
+
 REINS_TICKET_API_URL=https://example.com/internal/tickets
 REINS_TICKET_API_TOKEN=replace-me
 REINS_TICKET_API_STATUSES=pending_dispatch,dispatched,reopened,notification_failed

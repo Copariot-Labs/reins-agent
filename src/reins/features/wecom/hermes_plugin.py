@@ -24,13 +24,21 @@ def _work_order_result(result: dict[str, Any]) -> dict[str, Any]:
         "category": metadata.get("category", ""),
         "priority": metadata.get("priority", ""),
         "assigned_role": metadata.get("assigned_role", ""),
+        "assigned_roles": metadata.get("assigned_roles", []),
         "assigned_role_label": metadata.get("assigned_role_label", ""),
+        "routing": {
+            "source": metadata.get("routing_source", ""),
+            "confidence": metadata.get("routing_confidence"),
+            "reason": metadata.get("routing_reason", ""),
+            "error": metadata.get("routing_error", ""),
+        },
         "notification": {
             "ok": bool(notification.get("ok")),
             "status": notification.get("status", ""),
             "channel": notification.get("channel", ""),
             "target_env": notification.get("target_env", ""),
             "recipient_env": notification.get("recipient_env", ""),
+            "recipient_envs": notification.get("recipient_envs", []),
             "recipients": notification.get("recipients", []),
             "error": notification.get("error", ""),
         },
@@ -89,8 +97,9 @@ def preprocess_inbound_work_order(
     return {
         "context": (
             "REINS_WECOM_PREPROCESSED_WORK_ORDER\n"
-            "The current structured WeCom ticket was already processed deterministically before "
-            "this model call. Do not call wecom_ingest_group_ticket and do not infer a different "
+            "The current structured WeCom ticket was already processed by the "
+            "Reins routing policy before this conversational model call. Do not "
+            "call wecom_ingest_group_ticket and do not infer a different "
             "result from conversation history. Reply with one concise receipt based only on this "
             "JSON. Claim that staff were notified only when notification.status is sent.\n"
             f"{_json_result(summary)}"
@@ -102,7 +111,7 @@ def register_ingest_group_ticket(ctx) -> None:
     schema = {
         "name": "wecom_ingest_group_ticket",
         "description": (
-            "Parse one complete WeCom group work-order message, classify the responsible role, "
+            "Parse one complete WeCom group work-order message, route it to validated responsible roles, "
             "save or update its Excel record, and mention the responsible staff in the shared WeCom group."
         ),
         "parameters": {

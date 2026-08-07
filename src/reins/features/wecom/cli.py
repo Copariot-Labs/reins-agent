@@ -126,6 +126,11 @@ def build_parser() -> argparse.ArgumentParser:
     work_order_add_parser.add_argument("--platform", default="wecom", help="Source platform label.")
     work_order_add_parser.add_argument("--notify", action="store_true", help="Notify the responsible WeCom target after recording.")
     work_order_add_parser.add_argument("--force-notify", action="store_true", help="Notify again even when this is an exact duplicate ticket.")
+    work_order_add_parser.add_argument(
+        "--force-reroute",
+        action="store_true",
+        help="Recompute a persisted routing decision, including the Hermes fallback when needed.",
+    )
     work_order_add_parser.add_argument("--dry-run", action="store_true", help="Build the notification without sending it.")
     work_order_add_parser.add_argument("--json", dest="json_output", action="store_true", help="Print JSON.")
 
@@ -310,6 +315,7 @@ def _work_order_payload(args: argparse.Namespace) -> dict[str, Any]:
         "platform",
         "notify",
         "force_notify",
+        "force_reroute",
         "dry_run",
     ]:
         value = getattr(args, key, "")

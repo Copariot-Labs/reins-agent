@@ -18,6 +18,15 @@ ROLE_USER_ENV = {
     "human_review": "REINS_WECOM_NOTIFY_USERS_HUMAN_REVIEW",
 }
 
+ROLE_LABELS = {
+    "property": "物业",
+    "cleaning": "保洁",
+    "police": "公安局/民警",
+    "hospital": "医院/社区卫生",
+    "community": "社区工作人员",
+    "human_review": "人工审核",
+}
+
 # Preferred production mode: one shared WeCom group bot webhook.
 # The role-specific UserID variables below are reused as real group mentions.
 WECOM_GROUP_WEBHOOK_ENV = "REINS_WECOM_NOTIFY_GROUP_WEBHOOK"
@@ -58,6 +67,42 @@ def users_for_role(role: str) -> tuple[list[str], str]:
         return default_users, default_env
 
     return [], env_name or default_env
+
+
+def _roles_from_metadata(metadata: dict[str, Any]) -> list[str]:
+    raw_roles = metadata.get("assigned_roles")
+    if isinstance(raw_roles, str):
+        values = re.split(r"[|,;，；\s]+", raw_roles)
+    elif isinstance(raw_roles, (list, tuple, set)):
+        values = list(raw_roles)
+    else:
+        values = []
+
+    primary_role = _string(metadata.get("assigned_role")) or "human_review"
+    roles: list[str] = []
+    for value in [primary_role, *values]:
+        role = _string(value).lower()
+        if role in ROLE_USER_ENV and role not in roles:
+            roles.append(role)
+    return roles or ["human_review"]
+
+
+def users_for_roles(roles: list[str]) -> tuple[list[str], list[str], list[str]]:
+    users: list[str] = []
+    recipient_envs: list[str] = []
+    missing_envs: list[str] = []
+    for role in roles:
+        role_users, env_name = users_for_role(role)
+        if env_name and env_name not in recipient_envs:
+            recipient_envs.append(env_name)
+        if not role_users:
+            if env_name and env_name not in missing_envs:
+                missing_envs.append(env_name)
+            continue
+        for user_id in role_users:
+            if user_id not in users:
+                users.append(user_id)
+    return users, recipient_envs, missing_envs
 
 
 def _split_user_ids(value: Any) -> list[str]:
@@ -130,9 +175,10 @@ def _fit_notification_content(header: str, details: str, footer: str) -> str:
 
 def build_staff_notification(record: dict[str, Any]) -> str:
     metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+    assigned_roles = _roles_from_metadata(metadata)
     role_label = _bounded_field(
-        metadata.get("assigned_role_label") or metadata.get("assigned_role") or "相关人员",
-        96,
+        "、".join(ROLE_LABELS.get(role, role) for role in assigned_roles) or "相关人员",
+        192,
     )
     ticket_id = _bounded_field(
         metadata.get("external_id") or metadata.get("ticket_id") or record.get("id"),
@@ -289,9 +335,11 @@ def notify_staff(record: dict[str, Any], *, dry_run: bool = False) -> dict[str, 
     missing, preventing accidental delivery to the wrong destination.
     """
     metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
-    role = _string(metadata.get("assigned_role")) or "human_review"
+    roles = _roles_from_metadata(metadata)
+    role = roles[0]
     content = build_staff_notification(record)
-    user_ids, user_env_name = users_for_role(role)
+    user_ids, user_env_names, missing_env_names = users_for_roles(roles)
+    user_env_name = user_env_names[0] if user_env_names else "REINS_WECOM_NOTIFY_USERS_DEFAULT"
     group_webhook = os.environ.get(WECOM_GROUP_WEBHOOK_ENV, "").strip()
     channel = "group_webhook_mention"
 
@@ -301,8 +349,10 @@ def notify_staff(record: dict[str, Any], *, dry_run: bool = False) -> dict[str, 
             "status": "pending_configuration",
             "channel": channel,
             "assigned_role": role,
+            "assigned_roles": roles,
             "target_env": WECOM_GROUP_WEBHOOK_ENV,
             "recipient_env": user_env_name,
+            "recipient_envs": user_env_names,
             "recipients": user_ids,
             "content": content,
             "error": f"missing {WECOM_GROUP_WEBHOOK_ENV}",
@@ -314,24 +364,28 @@ def notify_staff(record: dict[str, Any], *, dry_run: bool = False) -> dict[str, 
             "status": "pending_configuration",
             "channel": channel,
             "assigned_role": role,
+            "assigned_roles": roles,
             "target_env": WECOM_GROUP_WEBHOOK_ENV,
             "recipient_env": user_env_name,
+            "recipient_envs": user_env_names,
             "recipients": user_ids,
             "content": content,
             "error": f"invalid {WECOM_GROUP_WEBHOOK_ENV}",
         }
 
-    if not user_ids:
+    if missing_env_names:
         return {
             "ok": False,
             "status": "pending_configuration",
             "channel": channel,
             "assigned_role": role,
+            "assigned_roles": roles,
             "target_env": WECOM_GROUP_WEBHOOK_ENV,
             "recipient_env": user_env_name,
-            "recipients": [],
+            "recipient_envs": user_env_names,
+            "recipients": user_ids,
             "content": content,
-            "error": f"missing {user_env_name}",
+            "error": f"missing {', '.join(missing_env_names)}",
         }
 
     if any(user_id.casefold() == "@all" for user_id in user_ids):
@@ -340,8 +394,10 @@ def notify_staff(record: dict[str, Any], *, dry_run: bool = False) -> dict[str, 
             "status": "pending_configuration",
             "channel": channel,
             "assigned_role": role,
+            "assigned_roles": roles,
             "target_env": WECOM_GROUP_WEBHOOK_ENV,
             "recipient_env": user_env_name,
+            "recipient_envs": user_env_names,
             "recipients": user_ids,
             "content": content,
             "error": f"invalid {user_env_name}: @all is not allowed",
@@ -353,8 +409,10 @@ def notify_staff(record: dict[str, Any], *, dry_run: bool = False) -> dict[str, 
             "status": "dry_run",
             "channel": channel,
             "assigned_role": role,
+            "assigned_roles": roles,
             "target_env": WECOM_GROUP_WEBHOOK_ENV,
             "recipient_env": user_env_name,
+            "recipient_envs": user_env_names,
             "recipients": user_ids,
             "content": content,
             "error": "",
@@ -369,8 +427,10 @@ def notify_staff(record: dict[str, Any], *, dry_run: bool = False) -> dict[str, 
         **result,
         "channel": channel,
         "assigned_role": role,
+        "assigned_roles": roles,
         "target_env": WECOM_GROUP_WEBHOOK_ENV,
         "recipient_env": user_env_name,
+        "recipient_envs": user_env_names,
         "recipients": user_ids,
         "content": content,
     }
