@@ -14,6 +14,7 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 $WebTaskName = "Reins Web UI"
+$WeComTaskName = "Reins WeCom Ticket Poller"
 $WebUrl = "http://127.0.0.1:8648"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = [IO.Path]::GetFullPath((Join-Path $ScriptDir "..\.."))
@@ -112,6 +113,45 @@ function Wait-ForWeb {
         Start-Sleep -Milliseconds 500
     }
     return $false
+}
+
+function Stop-TaskForUpdate {
+    param([Parameter(Mandatory = $true)][string]$TaskName)
+
+    $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if ($null -eq $task -or $task.State -ne "Running") {
+        return $false
+    }
+
+    Stop-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+    for ($attempt = 0; $attempt -lt 40; $attempt++) {
+        $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+        if ($null -eq $task -or $task.State -ne "Running") {
+            return $true
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    throw "Scheduled task did not stop before update: $TaskName"
+}
+
+function Stop-ReinsExecutableForUpdate {
+    param([Parameter(Mandatory = $true)][string]$ExecutablePath)
+
+    if (-not (Test-Path $ExecutablePath)) {
+        return
+    }
+    $expectedPath = [IO.Path]::GetFullPath($ExecutablePath)
+    Get-Process -Name "reins" -ErrorAction SilentlyContinue | ForEach-Object {
+        try {
+            if ([IO.Path]::GetFullPath($_.Path) -ieq $expectedPath) {
+                Stop-Process -Id $_.Id -Force -ErrorAction Stop
+            }
+        }
+        catch {
+            # Ignore processes that exit while they are being inspected.
+        }
+    }
+    Start-Sleep -Seconds 1
 }
 
 function New-WebRuntimeScript {
@@ -276,7 +316,7 @@ $ReinsExe = Join-Path $VenvDir "Scripts\reins.exe"
 $WebRoot = Join-Path $ProjectDir "web"
 $WebServer = Join-Path $WebRoot "dist\server\index.js"
 $WebClient = Join-Path $WebRoot "dist\client\index.html"
-$WebIcon = Join-Path $WebRoot "packages\client\public\favicon.ico"
+$WebIcon = Join-Path $WebRoot "dist\client\logo.jpg"
 $RuntimeScript = Join-Path $StateDir "reins-web-runtime.ps1"
 $OpenScript = Join-Path $StateDir "reins-open.ps1"
 $PowerShellExe = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
@@ -307,9 +347,15 @@ if ([int]$NodeMajor -lt 23) {
     throw "Node.js 23 or newer is required; found $(& $NodeExe --version)."
 }
 
+$ExistingWeComWasRunning = $false
 if (-not $SkipBuild) {
     $UvExe = Get-ApplicationPath "uv.exe"
     $NpmExe = Get-ApplicationPath "npm.cmd"
+
+    Write-Step "Stopping running Reins services for update"
+    $null = Stop-TaskForUpdate -TaskName $WebTaskName
+    $ExistingWeComWasRunning = Stop-TaskForUpdate -TaskName $WeComTaskName
+    Stop-ReinsExecutableForUpdate -ExecutablePath $ReinsExe
 
     if (-not (Test-Path (Join-Path $ProjectDir "vendor\hermes-agent\run_agent.py"))) {
         $GitExe = Get-ApplicationPath "git.exe"
@@ -406,6 +452,10 @@ if (-not $SkipWeCom) {
     Write-Step "Installing the WeCom ticket poller task"
     Invoke-NativeCommand $ReinsExe @("wecom", "ticket-api", "service", "install")
     Invoke-NativeCommand $ReinsExe @("wecom", "ticket-api", "service", "status")
+}
+elseif ($ExistingWeComWasRunning) {
+    Write-Step "Restarting the existing WeCom ticket poller task"
+    Start-ScheduledTask -TaskName $WeComTaskName
 }
 
 if (-not $NoDesktop) {
