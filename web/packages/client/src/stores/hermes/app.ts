@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import {
   checkHealth,
+  fetchUpdateStatus,
   fetchAvailableModels,
   addCustomModel as persistCustomModel,
   removeCustomModel as deletePersistedCustomModel,
@@ -32,8 +33,10 @@ export const useAppStore = defineStore('app', () => {
   const serverVersion = ref(WEB_UI_VERSION)
   const latestVersion = ref('')
   const updateAvailable = ref(false)
+  const updateSupported = ref(false)
   const clientOutdated = ref(false)
   const updating = ref(false)
+  const updateError = ref('')
   const modelGroups = ref<AvailableModelGroup[]>([])
   const profileModelGroups = ref<ProfileAvailableModels[]>([])
   const selectedModel = ref('')
@@ -53,15 +56,37 @@ export const useAppStore = defineStore('app', () => {
 
   async function doUpdate(): Promise<boolean> {
     updating.value = true
+    updateError.value = ''
     try {
       const res = await triggerUpdate()
-      if (res.success) {
-        updateAvailable.value = false
-        await checkConnection()
+      if (!res.success) {
+        updateError.value = res.message
+        return false
       }
-      return res.success
+
+      updateAvailable.value = false
+      for (let attempt = 0; attempt < 600; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        try {
+          const status = await fetchUpdateStatus()
+          if (status.status === 'failed') {
+            updateError.value = status.message || 'Reins update failed'
+            return false
+          }
+          if (status.status === 'success') {
+            reloadClient()
+            return true
+          }
+        } catch {
+          // The server is expected to be unavailable while it is rebuilt.
+        }
+      }
+
+      updateError.value = 'Timed out waiting for Reins to restart'
+      return false
     } catch (err) {
-      console.error('Failed to update Hermes Web UI:', err)
+      updateError.value = err instanceof Error ? err.message : String(err)
+      console.error('Failed to update Reins:', err)
       return false
     } finally {
       updating.value = false
@@ -76,6 +101,7 @@ export const useAppStore = defineStore('app', () => {
       clientOutdated.value = !!res.webui_version && res.webui_version !== WEB_UI_VERSION
       if (res.webui_latest) latestVersion.value = res.webui_latest
       updateAvailable.value = !!res.webui_update_available
+      updateSupported.value = !!res.reins_update_supported
       if (res.node_version) nodeVersion.value = res.node_version
     } catch {
       connected.value = false
@@ -332,8 +358,10 @@ export const useAppStore = defineStore('app', () => {
     latestVersion,
     nodeVersion,
     updateAvailable,
+    updateSupported,
     clientOutdated,
     updating,
+    updateError,
     doUpdate,
     reloadClient,
     modelGroups,

@@ -6,6 +6,9 @@ type UpdateControllerMocks = {
   spawn: ReturnType<typeof vi.fn>
   unref: ReturnType<typeof vi.fn>
   existsSync: ReturnType<typeof vi.fn>
+  readFileSync: ReturnType<typeof vi.fn>
+  mkdirSync: ReturnType<typeof vi.fn>
+  writeFileSync: ReturnType<typeof vi.fn>
 }
 
 async function loadUpdateController(overrides: Partial<UpdateControllerMocks> = {}) {
@@ -13,15 +16,18 @@ async function loadUpdateController(overrides: Partial<UpdateControllerMocks> = 
   const unref = overrides.unref ?? vi.fn()
   const spawn = overrides.spawn ?? vi.fn(() => ({ unref, on: vi.fn() }))
   const existsSync = overrides.existsSync ?? vi.fn(() => true)
+  const readFileSync = overrides.readFileSync ?? vi.fn(() => '{}')
+  const mkdirSync = overrides.mkdirSync ?? vi.fn()
+  const writeFileSync = overrides.writeFileSync ?? vi.fn()
 
   vi.resetModules()
   vi.doMock('child_process', () => ({ execFileSync, spawn }))
-  vi.doMock('fs', () => ({ existsSync }))
+  vi.doMock('fs', () => ({ existsSync, readFileSync, mkdirSync, writeFileSync }))
 
   const mod = await import('../../packages/server/src/controllers/update')
   return {
     ...mod,
-    mocks: { execFileSync, spawn, unref, existsSync },
+    mocks: { execFileSync, spawn, unref, existsSync, readFileSync, mkdirSync, writeFileSync },
   }
 }
 
@@ -60,6 +66,10 @@ describe('update controller', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.clearAllMocks()
+    delete process.env.REINS_UPDATE_SERVICE
+    delete process.env.REINS_UPDATE_TASK_NAME
+    delete process.env.REINS_UPDATE_POWERSHELL
+    delete process.env.REINS_HOME
   })
 
   afterEach(() => {
@@ -71,6 +81,57 @@ describe('update controller', () => {
     } else {
       process.env.PORT = originalPort
     }
+    delete process.env.REINS_UPDATE_SERVICE
+    delete process.env.REINS_UPDATE_TASK_NAME
+    delete process.env.REINS_UPDATE_POWERSHELL
+    delete process.env.REINS_HOME
+  })
+
+  it('queues the installed Linux updater instead of running the npm updater', async () => {
+    process.env.REINS_UPDATE_SERVICE = 'reins-update.service'
+    process.env.REINS_HOME = '/home/test/.reins'
+    const { handleUpdate, mocks } = await loadUpdateController({
+      existsSync: vi.fn(() => false),
+    })
+    const ctx = createMockCtx()
+
+    await handleUpdate(ctx)
+
+    expect(mocks.execFileSync).toHaveBeenCalledWith(
+      'systemctl',
+      ['--user', 'start', '--no-block', 'reins-update.service'],
+      expect.objectContaining({ windowsHide: true }),
+    )
+    expect(mocks.writeFileSync).toHaveBeenCalledWith(
+      '/home/test/.reins/logs/update-status.json',
+      expect.stringContaining('"status":"requested"'),
+      'utf-8',
+    )
+    expect(ctx.status).toBe(202)
+    expect(ctx.body).toEqual({ success: true, message: 'Reins update started' })
+  })
+
+  it('queues the installed Windows updater task through PowerShell', async () => {
+    process.env.REINS_UPDATE_TASK_NAME = 'Reins Updater'
+    process.env.REINS_UPDATE_POWERSHELL = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
+    process.env.REINS_HOME = 'C:\\Users\\test\\AppData\\Local\\reins'
+    const { handleUpdate, mocks } = await loadUpdateController({
+      existsSync: vi.fn(() => false),
+    })
+    const ctx = createMockCtx()
+
+    await handleUpdate(ctx)
+
+    expect(mocks.execFileSync).toHaveBeenCalledWith(
+      process.env.REINS_UPDATE_POWERSHELL,
+      expect.arrayContaining([
+        '-NonInteractive',
+        '-Command',
+        "Start-ScheduledTask -TaskName 'Reins Updater'",
+      ]),
+      expect.objectContaining({ windowsHide: true }),
+    )
+    expect(ctx.status).toBe(202)
   })
 
   it('updates and restarts through the running Node executable, not PATH shims', async () => {

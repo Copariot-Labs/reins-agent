@@ -8,6 +8,7 @@ export default defineConfig({
     alias: {
       '@': resolve(__dirname, 'packages/client/src'),
       '/logo.png': resolve(__dirname, 'packages/client/src/assets/logo.png'),
+      '/logo.jpg': resolve(__dirname, 'packages/client/public/logo.jpg'),
     },
   },
   test: {

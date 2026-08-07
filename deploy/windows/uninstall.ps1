@@ -9,6 +9,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $WebTaskName = "Reins Web UI"
 $WeComTaskName = "Reins WeCom Ticket Poller"
+$UpdateTaskName = "Reins Updater"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = [IO.Path]::GetFullPath((Join-Path $ScriptDir "..\.."))
 
@@ -70,6 +71,14 @@ Write-Host "`n==> Removing Reins shortcuts" -ForegroundColor Cyan
     if (Test-Path $_) {
         Remove-Item -Force -Path $_
     }
+}
+
+$updateTask = Get-ScheduledTask -TaskName $UpdateTaskName -ErrorAction SilentlyContinue
+if ($null -ne $updateTask) {
+    if ($updateTask.State -eq "Running") {
+        Stop-ScheduledTask -TaskName $UpdateTaskName -ErrorAction SilentlyContinue
+    }
+    Unregister-ScheduledTask -TaskName $UpdateTaskName -Confirm:$false
 }
 
 if (Test-Path $StateDir) {

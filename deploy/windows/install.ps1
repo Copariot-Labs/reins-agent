@@ -15,6 +15,7 @@ $ProgressPreference = "SilentlyContinue"
 
 $WebTaskName = "Reins Web UI"
 $WeComTaskName = "Reins WeCom Ticket Poller"
+$UpdateTaskName = "Reins Updater"
 $WebUrl = "http://127.0.0.1:8648"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = [IO.Path]::GetFullPath((Join-Path $ScriptDir "..\.."))
@@ -185,6 +186,8 @@ function New-WebRuntimeScript {
         "`$env:PYTHONIOENCODING = 'utf-8'",
         "`$env:PYTHONUTF8 = '1'",
         "`$env:HERMES_WEB_UI_DISABLE_UPDATE_CHECK = 'true'",
+        "`$env:REINS_UPDATE_TASK_NAME = $(ConvertTo-PowerShellLiteral $UpdateTaskName)",
+        "`$env:REINS_UPDATE_POWERSHELL = $(ConvertTo-PowerShellLiteral $PowerShellExe)",
         "`$env:PATH = $(ConvertTo-PowerShellLiteral ((Split-Path -Parent $PythonPath) + ';' + (Split-Path -Parent $NodePath) + ';')) + `$env:PATH",
         "`$logDirectory = $(ConvertTo-PowerShellLiteral (Join-Path $DataHome 'logs'))",
         "New-Item -ItemType Directory -Force -Path `$logDirectory | Out-Null",
@@ -284,6 +287,9 @@ if ([string]::IsNullOrWhiteSpace($localAppData)) {
 $StateDir = Join-Path $localAppData "reins-deploy"
 $ReinsHomeState = Join-Path $StateDir "reins-home"
 $WorkspaceState = Join-Path $StateDir "workspace"
+$ProjectState = Join-Path $StateDir "project-root"
+$InstallWeComState = Join-Path $StateDir "install-wecom"
+$InstallDesktopState = Join-Path $StateDir "install-desktop"
 
 if ([string]::IsNullOrWhiteSpace($ReinsHome)) {
     if (-not [string]::IsNullOrWhiteSpace($env:REINS_HOME)) {
@@ -319,6 +325,8 @@ $WebClient = Join-Path $WebRoot "dist\client\index.html"
 $WebIcon = Join-Path $WebRoot "dist\client\logo.jpg"
 $RuntimeScript = Join-Path $StateDir "reins-web-runtime.ps1"
 $OpenScript = Join-Path $StateDir "reins-open.ps1"
+$UpdateSource = Join-Path $ProjectDir "deploy\windows\update.ps1"
+$UpdateScript = Join-Path $StateDir "reins-update.ps1"
 $PowerShellExe = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
 if (-not (Test-Path $PowerShellExe)) {
     $PowerShellExe = Get-ApplicationPath "powershell.exe"
@@ -329,6 +337,24 @@ Write-Step "Preparing Reins directories"
     ForEach-Object { New-Item -ItemType Directory -Force -Path $_ | Out-Null }
 Write-Utf8File -Path $ReinsHomeState -Content $ReinsHome
 Write-Utf8File -Path $WorkspaceState -Content $Workspace
+Write-Utf8File -Path $ProjectState -Content $ProjectDir
+Write-Utf8File -Path $InstallWeComState -Content $(if ($SkipWeCom) { "0" } else { "1" })
+Write-Utf8File -Path $InstallDesktopState -Content $(if ($NoDesktop) { "0" } else { "1" })
+
+if (-not (Test-Path $UpdateSource)) {
+    throw "Required Windows updater was not found: $UpdateSource"
+}
+Write-Utf8File -Path $UpdateScript -Content ([IO.File]::ReadAllText($UpdateSource)) -WithBom
+
+$UserId = $identity.Name
+$UpdateActionArguments = '-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}"' -f $UpdateScript
+$UpdateAction = New-ScheduledTaskAction -Execute $PowerShellExe -Argument $UpdateActionArguments -WorkingDirectory $ProjectDir
+$UpdatePrincipal = New-ScheduledTaskPrincipal -UserId $UserId -LogonType Interactive -RunLevel Limited
+$UpdateSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+$existingUpdateTask = Get-ScheduledTask -TaskName $UpdateTaskName -ErrorAction SilentlyContinue
+if ($null -eq $existingUpdateTask -or $existingUpdateTask.State -ne "Running") {
+    Register-ScheduledTask -TaskName $UpdateTaskName -Action $UpdateAction -Principal $UpdatePrincipal -Settings $UpdateSettings -Description "Update Reins Agent" -Force | Out-Null
+}
 
 $EnvFile = Join-Path $ReinsHome ".env"
 if (-not (Test-Path $EnvFile)) {
@@ -339,6 +365,7 @@ if (-not (Test-Path $EnvFile)) {
 }
 
 $NodeExe = Get-ApplicationPath "node.exe"
+$null = Get-ApplicationPath "git.exe"
 $NodeMajor = & $NodeExe -p "Number(process.versions.node.split('.')[0])"
 if ($LASTEXITCODE -ne 0 -or -not ($NodeMajor -as [int])) {
     throw "Could not determine the Node.js version."
@@ -358,12 +385,7 @@ if (-not $SkipBuild) {
     Stop-ReinsExecutableForUpdate -ExecutablePath $ReinsExe
 
     if (-not (Test-Path (Join-Path $ProjectDir "vendor\hermes-agent\run_agent.py"))) {
-        $GitExe = Get-ApplicationPath "git.exe"
-        Write-Step "Initializing Git submodules"
-        Invoke-NativeCommand $GitExe @("-C", $ProjectDir, "submodule", "update", "--init", "--recursive")
-    }
-    if (-not (Test-Path (Join-Path $ProjectDir "vendor\hermes-agent\run_agent.py"))) {
-        throw "The Hermes submodule is incomplete: $(Join-Path $ProjectDir 'vendor\hermes-agent')"
+        throw "The vendored Hermes source is incomplete: $(Join-Path $ProjectDir 'vendor\hermes-agent')"
     }
 
     $VenvIsValid = $false
@@ -431,7 +453,6 @@ if ($null -ne $existingTask -and $existingTask.State -eq "Running") {
     Start-Sleep -Seconds 1
 }
 
-$UserId = $identity.Name
 $ActionArguments = '-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}"' -f $RuntimeScript
 $Action = New-ScheduledTaskAction -Execute $PowerShellExe -Argument $ActionArguments -WorkingDirectory $WebRoot
 $Trigger = New-ScheduledTaskTrigger -AtLogOn -User $UserId
@@ -472,4 +493,4 @@ Write-Host "Web UI:       $WebUrl"
 Write-Host "Data:         $ReinsHome"
 Write-Host "Workspace:    $Workspace"
 Write-Host "Web task:     $WebTaskName"
-Write-Host "Update later: git pull, then .\deploy\windows\install.ps1"
+Write-Host "Update:       use the Update Reins button in the Web interface"

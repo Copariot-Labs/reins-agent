@@ -25,6 +25,91 @@ interface PackageInfo {
   repositoryUrl?: string
 }
 
+type ManagedUpdate =
+  | { kind: 'systemd'; name: string }
+  | { kind: 'scheduled-task'; name: string; powershell: string }
+
+type ManagedUpdateStatus = {
+  status: 'idle' | 'requested' | 'running' | 'success' | 'failed'
+  message: string
+  updated_at?: string
+}
+
+function getManagedUpdate(): ManagedUpdate | null {
+  const serviceName = process.env.REINS_UPDATE_SERVICE?.trim()
+  if (serviceName) return { kind: 'systemd', name: serviceName }
+
+  const taskName = process.env.REINS_UPDATE_TASK_NAME?.trim()
+  if (taskName) {
+    return {
+      kind: 'scheduled-task',
+      name: taskName,
+      powershell: process.env.REINS_UPDATE_POWERSHELL?.trim() || 'powershell.exe',
+    }
+  }
+
+  return null
+}
+
+function getManagedUpdateStatusPath(): string | null {
+  const reinsHome = process.env.REINS_HOME?.trim()
+  return reinsHome ? join(reinsHome, 'logs', 'update-status.json') : null
+}
+
+function readManagedUpdateStatus(): ManagedUpdateStatus {
+  const statusPath = getManagedUpdateStatusPath()
+  if (!statusPath || !existsSync(statusPath)) {
+    return { status: 'idle', message: '' }
+  }
+
+  try {
+    const parsed = JSON.parse(readFileSync(statusPath, 'utf-8')) as Partial<ManagedUpdateStatus>
+    const allowed = new Set(['idle', 'requested', 'running', 'success', 'failed'])
+    return {
+      status: allowed.has(String(parsed.status))
+        ? parsed.status as ManagedUpdateStatus['status']
+        : 'idle',
+      message: typeof parsed.message === 'string' ? parsed.message : '',
+      updated_at: typeof parsed.updated_at === 'string' ? parsed.updated_at : undefined,
+    }
+  } catch {
+    return { status: 'idle', message: '' }
+  }
+}
+
+function writeManagedUpdateStatus(status: ManagedUpdateStatus) {
+  const statusPath = getManagedUpdateStatusPath()
+  if (!statusPath) throw new Error('REINS_HOME is not configured for managed updates')
+  mkdirSync(dirname(statusPath), { recursive: true })
+  writeFileSync(statusPath, `${JSON.stringify(status)}\n`, 'utf-8')
+}
+
+function startManagedUpdate(update: ManagedUpdate) {
+  if (update.kind === 'systemd') {
+    execFileSync('systemctl', ['--user', 'start', '--no-block', update.name], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    })
+    return
+  }
+
+  const taskName = update.name.replace(/'/g, "''")
+  execFileSync(update.powershell, [
+    '-NoLogo',
+    '-NoProfile',
+    '-NonInteractive',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-Command',
+    `Start-ScheduledTask -TaskName '${taskName}'`,
+  ], {
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  })
+}
+
 function readPackageInfo(): PackageInfo | null {
   const candidatePaths = [
     // ts-node dev: packages/server/src/controllers -> repo root
@@ -797,6 +882,45 @@ function spawnRestart(port: string) {
 }
 
 export async function handleUpdate(ctx: any) {
+  const managedUpdate = getManagedUpdate()
+  if (managedUpdate) {
+    const current = readManagedUpdateStatus()
+    if (current.status === 'requested' || current.status === 'running') {
+      ctx.status = 409
+      ctx.body = {
+        success: false,
+        message: 'A Reins update is already in progress',
+      }
+      return
+    }
+
+    try {
+      writeManagedUpdateStatus({
+        status: 'requested',
+        message: 'The Reins update has been queued.',
+        updated_at: new Date().toISOString(),
+      })
+      startManagedUpdate(managedUpdate)
+      ctx.status = 202
+      ctx.body = {
+        success: true,
+        message: 'Reins update started',
+      }
+    } catch (err: any) {
+      const message = err.stderr?.toString() || err.message || String(err)
+      try {
+        writeManagedUpdateStatus({
+          status: 'failed',
+          message,
+          updated_at: new Date().toISOString(),
+        })
+      } catch {}
+      ctx.status = 500
+      ctx.body = { success: false, message }
+    }
+    return
+  }
+
   if (updateInProgress) {
     ctx.status = 409
     ctx.body = {
@@ -846,6 +970,13 @@ export async function handleUpdate(ctx: any) {
       success: false,
       message: err.stderr?.toString() || err.message || String(err),
     }
+  }
+}
+
+export async function managedUpdateStatus(ctx: any) {
+  ctx.body = {
+    supported: Boolean(getManagedUpdate()),
+    ...readManagedUpdateStatus(),
   }
 }
 
