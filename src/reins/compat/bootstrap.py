@@ -18,7 +18,7 @@ def add_vendor_to_sys_path() -> None:
     if not vendor_path.exists():
         raise RuntimeError(
             f"Hermes vendor directory not found: {vendor_path}\n"
-            "Run: git submodule update --init --recursive"
+            "The repository checkout is incomplete; clone or update Reins again."
         )
 
     vendor_path_str = str(vendor_path)

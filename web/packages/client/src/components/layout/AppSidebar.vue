@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-// import { useMessage } from "naive-ui";
+import { useMessage } from "naive-ui";
 import { useAppStore } from "@/stores/hermes/app";
 // import ModelSelector from "./ModelSelector.vue";
 import ProfileSelector from "./ProfileSelector.vue";
@@ -15,7 +15,7 @@ import RouteLinkItem from '@/components/common/RouteLinkItem.vue'
 import { isStoredSuperAdmin } from "@/api/client";
 
 const { t } = useI18n();
-// const message = useMessage();
+const message = useMessage();
 const route = useRoute();
 const router = useRouter();
 const appStore = useAppStore();
@@ -51,14 +51,13 @@ function isGroupCollapsed(key: string) {
 }
 
 
-// async function handleUpdate() {
-//   const ok = await appStore.doUpdate();
-//   if (ok) {
-//     message.success(t('sidebar.updateSuccess'), { duration: 5000 });
-//   } else {
-//     message.error(t('sidebar.updateFailed'));
-//   }
-// }
+async function handleUpdate() {
+  message.success(t('sidebar.updateSuccess'), { duration: 5000 });
+  const ok = await appStore.doUpdate();
+  if (!ok) {
+    message.error(appStore.updateError || t('sidebar.updateFailed'), { duration: 8000 });
+  }
+}
 
 // function handleReloadClient() {
 //   appStore.reloadClient();
@@ -299,6 +298,19 @@ function handleLogout() {
     <!-- <ModelSelector /> -->
 
     <div class="sidebar-footer">
+      <button
+        class="nav-item update-item"
+        :disabled="appStore.updating"
+        :title="t('sidebar.updateTip')"
+        @click="handleUpdate"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3v12" />
+          <polyline points="7 10 12 15 17 10" />
+          <path d="M5 21h14" />
+        </svg>
+        <span>{{ appStore.updating ? t('sidebar.updating') : `${t('common.update')} Reins` }}</span>
+      </button>
       <button class="nav-item logout-item" @click="handleLogout">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -544,6 +556,19 @@ function handleLogout() {
   }
 }
 
+.update-item {
+  margin: 0 -12px;
+  padding: 10px 12px;
+  border-radius: 0;
+  font-size: 13px;
+  color: $accent-primary;
+
+  &:disabled {
+    cursor: wait;
+    opacity: 0.7;
+  }
+}
+
 .status-row {
   display: flex;
   align-items: center;
@@ -774,6 +799,7 @@ function handleLogout() {
   }
 
   .sidebar-footer {
+    .update-item,
     .logout-item {
       margin: 0;
       padding: 10px 4px;

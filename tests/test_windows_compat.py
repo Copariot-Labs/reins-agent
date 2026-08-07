@@ -12,6 +12,30 @@ from reins.features.presentation.engines.utils import get_venv_python
 
 
 class WindowsCompatTests(unittest.TestCase):
+    def test_windows_installer_uses_slow_start_safe_health_check(self) -> None:
+        installer = (
+            Path(__file__).resolve().parents[1]
+            / "deploy"
+            / "windows"
+            / "install.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("$request.Proxy = $null", installer)
+        self.assertIn("$request.Timeout = 10000", installer)
+        self.assertIn("Get-ScheduledTaskInfo", installer)
+
+    def test_windows_installer_registers_managed_updater_without_submodules(self) -> None:
+        installer = (
+            Path(__file__).resolve().parents[1]
+            / "deploy"
+            / "windows"
+            / "install.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('$UpdateTaskName = "Reins Updater"', installer)
+        self.assertIn("Register-ScheduledTask -TaskName $UpdateTaskName", installer)
+        self.assertNotIn("git submodule", installer.lower())
+
     def test_configured_paths_expand_environment_variables(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             with patch.dict(os.environ, {"REINS_TEST_HOME": directory, "REINS_HOME": "$REINS_TEST_HOME/data"}):

@@ -71,7 +71,7 @@ def run_web(argv: Sequence[str] | None = None) -> int:
 
     if not hermes_agent_root.exists():
         print(f"Hermes Agent vendor directory not found: {hermes_agent_root}")
-        print("Run: git submodule update --init --recursive")
+        print("The repository checkout is incomplete; clone or update Reins again.")
         return 1
 
     if not (hermes_agent_root / "run_agent.py").exists():

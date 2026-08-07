@@ -28,7 +28,7 @@ Reins Agent is a local-first personal agent product built on top of the upstream
 - `uv`
 - Node.js 23+
 - npm
-- Git submodules initialized
+- Git
 
 ## Setup
 
@@ -37,7 +37,6 @@ macOS/Linux:
 ```bash
 git clone https://github.com/Copariot-Labs/reins-agent.git
 cd reins-agent
-git submodule update --init --recursive
 
 uv venv
 source .venv/bin/activate
@@ -54,7 +53,6 @@ Windows PowerShell:
 ```powershell
 git clone https://github.com/Copariot-Labs/reins-agent.git
 cd reins-agent
-git submodule update --init --recursive
 
 uv venv
 .\.venv\Scripts\Activate.ps1
@@ -179,17 +177,30 @@ Prerequisites:
 - Install Python 3.11+, `uv`, Node.js 23+, npm, `curl`, and `xdg-utils`.
 - Configure `<REINS_HOME>/.env` before installing the WeCom poller.
 
-Install or update:
+Install:
 
 ```bash
 chmod +x deploy/linux/install.sh
 deploy/linux/install.sh
 ```
 
-The installer is idempotent, so rerun it after pulling application updates.
-It binds the production Web UI to `127.0.0.1:8648`, enables user lingering for
-startup at system boot, and uses the Web UI as the gateway lifecycle owner.
-Custom data and workspace paths are remembered under `~/.config/reins/`.
+The installer is idempotent. It binds the production Web UI to
+`127.0.0.1:8648`, enables user lingering for startup at system boot, and uses
+the Web UI as the gateway lifecycle owner. Custom paths and installation
+choices are remembered under `~/.config/reins/`.
+
+After installation, a super administrator can click **Update Reins** in the Web
+UI sidebar. The updater downloads the current Git branch with a fast-forward
+pull, rebuilds the application, restarts the Web UI and WeCom poller, and
+reloads the browser. No terminal is required.
+
+Existing Ubuntu installations created before the update button was added need
+one final manual update to install the updater service:
+
+```bash
+git pull --ff-only
+deploy/linux/install.sh
+```
 
 Useful options:
 
@@ -209,6 +220,8 @@ systemctl --user status reins-web.service
 curl -fsS http://127.0.0.1:8648/health
 reins wecom ticket-api service status
 journalctl --user -u reins-web.service -f
+journalctl --user -u reins-update.service -f
+tail -f ~/.reins/logs/update.log
 ```
 
 Uninstall services and launchers while preserving application code and data:
@@ -216,6 +229,92 @@ Uninstall services and launchers while preserving application code and data:
 ```bash
 deploy/linux/uninstall.sh
 ```
+
+## Windows Desktop Deployment
+
+Prerequisites:
+
+- Windows 10/11 with PowerShell 5.1 or newer.
+- Git, Python 3.11+, `uv`, Node.js 23+, and npm available in `PATH`.
+- Run every command as the target desktop user, not as Administrator.
+
+Clone and prepare the configuration:
+
+```powershell
+git clone https://github.com/Copariot-Labs/reins-agent.git
+cd reins-agent
+
+New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\reins"
+notepad "$env:LOCALAPPDATA\reins\.env"
+```
+
+Add the required model/provider and WeCom values to the UTF-8 `.env` file, then
+install:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\deploy\windows\install.ps1
+```
+
+The installer is idempotent. After installation, a super administrator can
+click **Update Reins** in the Web UI sidebar. The on-demand `Reins Updater`
+Scheduled Task stops the running tasks, performs a fast-forward Git pull,
+rebuilds the application, restarts Reins, and reloads the browser. This avoids
+locking `.venv\Scripts\reins.exe` while Python packages are updated.
+
+Existing Windows installations created before the update button was added need
+one final manual update to register the updater task:
+
+```powershell
+git pull --ff-only
+.\deploy\windows\install.ps1
+```
+
+Useful options:
+
+```powershell
+.\deploy\windows\install.ps1 -SkipBuild
+.\deploy\windows\install.ps1 -SkipWeCom
+.\deploy\windows\install.ps1 -NoDesktop
+.\deploy\windows\install.ps1 -ReinsHome "D:\ReinsData"
+.\deploy\windows\install.ps1 -Workspace "$env:USERPROFILE\Documents\Reins"
+```
+
+Use `-SkipBuild` only when the Windows `.venv` and `web\dist` already match the
+current code. Custom data and workspace paths are remembered under
+`%LOCALAPPDATA%\reins-deploy`. Activating `.venv` in a terminal for CLI work is
+safe and does not affect the already installed tasks:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+reins model
+reins --help
+```
+
+Check or restart the installed application:
+
+```powershell
+Get-ScheduledTask -TaskName "Reins Web UI"
+Get-ScheduledTask -TaskName "Reins Updater"
+Start-ScheduledTask -TaskName "Reins Web UI"
+Invoke-WebRequest http://127.0.0.1:8648/health -UseBasicParsing
+reins wecom ticket-api service status
+```
+
+Logs are in `%LOCALAPPDATA%\reins\logs` by default. Update progress is written
+to `update.log`; a failed update also shows a Windows dialog and restarts the
+previous services when possible. Uninstall startup tasks and shortcuts while
+preserving the repository and all Reins data:
+
+```powershell
+.\deploy\windows\uninstall.ps1
+```
+
+For PCs in China, configure an accessible Git remote plus npm, uv/Python, and
+Node.js mirrors before installation. The one-click updater uses the checkout's
+existing Git remote and the machine's existing package-manager configuration.
+Runtime traffic remains local except for the model provider, ticket API, and
+WeCom endpoints configured in `.env`.
 
 ## Finance CLI
 

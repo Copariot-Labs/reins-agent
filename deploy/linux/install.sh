@@ -10,6 +10,10 @@ TARGET_USER="$(id -un)"
 DEPLOY_STATE_DIR="$HOME/.config/reins"
 REINS_HOME_STATE="$DEPLOY_STATE_DIR/reins-home"
 WORKSPACE_STATE="$DEPLOY_STATE_DIR/workspace"
+PROJECT_STATE="$DEPLOY_STATE_DIR/project-root"
+INSTALL_WECOM_STATE="$DEPLOY_STATE_DIR/install-wecom"
+INSTALL_DESKTOP_STATE="$DEPLOY_STATE_DIR/install-desktop"
+ENABLE_LINGER_STATE="$DEPLOY_STATE_DIR/enable-linger"
 
 BUILD_APP=1
 INSTALL_WECOM=1
@@ -166,6 +170,8 @@ require_command systemctl
 require_command loginctl
 require_command node
 require_command curl
+require_command git
+require_command flock
 if (( INSTALL_DESKTOP )); then
   require_command xdg-open
 fi
@@ -178,6 +184,7 @@ WEB_ROOT="$PROJECT_DIR/web"
 WEB_SERVER="$WEB_ROOT/dist/server/index.js"
 WEB_CLIENT="$WEB_ROOT/dist/client/index.html"
 WEB_ICON="$WEB_ROOT/dist/client/logo.jpg"
+UPDATE_SOURCE="$PROJECT_DIR/deploy/linux/update.sh"
 NODE_BIN="$(command -v node)"
 NODE_BIN="$(readlink -f -- "$NODE_BIN")"
 NODE_MAJOR="$("$NODE_BIN" -p "Number(process.versions.node.split('.')[0])")"
@@ -203,6 +210,25 @@ install -d -m 700 "$HOME/.config/systemd/user"
 install -d -m 700 "$HOME/.local/bin"
 install -d -m 700 "$HOME/.local/share/applications"
 
+write_atomic "$REINS_HOME_STATE" 600 <<EOF
+$REINS_HOME
+EOF
+write_atomic "$WORKSPACE_STATE" 600 <<EOF
+$WORKSPACE_DIR
+EOF
+write_atomic "$PROJECT_STATE" 600 <<EOF
+$PROJECT_DIR
+EOF
+write_atomic "$INSTALL_WECOM_STATE" 600 <<EOF
+$INSTALL_WECOM
+EOF
+write_atomic "$INSTALL_DESKTOP_STATE" 600 <<EOF
+$INSTALL_DESKTOP
+EOF
+write_atomic "$ENABLE_LINGER_STATE" 600 <<EOF
+$ENABLE_LINGER
+EOF
+
 if [[ -f "$REINS_HOME/.env" ]]; then
   chmod 600 "$REINS_HOME/.env"
 elif (( INSTALL_WECOM )); then
@@ -215,14 +241,8 @@ if (( BUILD_APP )); then
   require_command uv
   require_command npm
 
-  if [[ ! -f "$PROJECT_DIR/vendor/hermes-agent/run_agent.py" ]]; then
-    require_command git
-    log "Initializing Git submodules"
-    git -C "$PROJECT_DIR" submodule update --init --recursive
-  fi
-
   [[ -f "$PROJECT_DIR/vendor/hermes-agent/run_agent.py" ]] \
-    || die "Hermes submodule is incomplete: $PROJECT_DIR/vendor/hermes-agent"
+    || die "Vendored Hermes source is incomplete: $PROJECT_DIR/vendor/hermes-agent"
 
   if [[ ! -x "$PYTHON_BIN" ]] || ! "$PYTHON_BIN" -c \
     "import sys; raise SystemExit(0 if sys.platform.startswith('linux') and sys.version_info >= (3, 11) else 1)" \
@@ -286,7 +306,24 @@ fi
 SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 WEB_UNIT="$SYSTEMD_USER_DIR/reins-web.service"
 WEB_RUNTIME="$HOME/.local/bin/reins-web-runtime"
+UPDATE_UNIT="$SYSTEMD_USER_DIR/reins-update.service"
+UPDATE_RUNTIME="$HOME/.local/bin/reins-update"
 RUNTIME_PATH="$PROJECT_DIR/.venv/bin:$(dirname -- "$NODE_BIN"):/usr/local/bin:/usr/bin:/bin"
+
+[[ -f "$UPDATE_SOURCE" ]] || die "Linux updater not found: $UPDATE_SOURCE"
+write_atomic "$UPDATE_RUNTIME" 700 < "$UPDATE_SOURCE"
+
+log "Generating the Reins update service"
+write_atomic "$UPDATE_UNIT" 600 <<EOF
+[Unit]
+Description=Update Reins Agent
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=$(systemd_quote "$UPDATE_RUNTIME")
+TimeoutStartSec=infinity
+EOF
 
 log "Generating the production Web UI runtime"
 write_atomic "$WEB_RUNTIME" 700 <<EOF
@@ -310,6 +347,8 @@ export PATH=$(shell_quote "$RUNTIME_PATH")
 export PYTHONIOENCODING=utf-8
 export PYTHONUTF8=1
 export SHELL=/bin/bash
+export HERMES_WEB_UI_DISABLE_UPDATE_CHECK=true
+export REINS_UPDATE_SERVICE=reins-update.service
 
 cd -- $(shell_quote "$WEB_ROOT")
 exec $(shell_quote "$NODE_BIN") $(shell_quote "$WEB_SERVER")
@@ -343,8 +382,8 @@ fi
 log "Starting the production Web UI"
 systemctl --user daemon-reload
 if command -v systemd-analyze >/dev/null 2>&1; then
-  if ! systemd-analyze --user verify "$WEB_UNIT"; then
-    die "systemd rejected the generated unit: $WEB_UNIT"
+  if ! systemd-analyze --user verify "$WEB_UNIT" "$UPDATE_UNIT"; then
+    die "systemd rejected a generated Reins unit"
   fi
 fi
 systemctl --user enable reins-web.service
@@ -438,18 +477,12 @@ EOF
   fi
 fi
 
-write_atomic "$REINS_HOME_STATE" 600 <<EOF
-$REINS_HOME
-EOF
-write_atomic "$WORKSPACE_STATE" 600 <<EOF
-$WORKSPACE_DIR
-EOF
-
 log "Reins installation completed"
 printf 'Application:    %s\n' "$PROJECT_DIR"
 printf 'Data:           %s\n' "$REINS_HOME"
 printf 'Web interface:  http://127.0.0.1:8648\n'
 printf 'Web service:    systemctl --user status reins-web.service\n'
+printf 'Update service: systemctl --user status reins-update.service\n'
 if (( INSTALL_WECOM )); then
   printf 'WeCom service:  %s wecom ticket-api service status\n' "$REINS_BIN"
 else

@@ -10,6 +10,8 @@ const mockAppStore = vi.hoisted(() => ({
   serverVersion: 'test',
   latestVersion: '',
   updateAvailable: false,
+  updateSupported: false,
+  updateError: '',
   clientOutdated: false,
   updating: false,
   toggleSidebar: vi.fn(),
@@ -27,6 +29,10 @@ vi.mock('@/composables/useSessionSearch', () => ({
 
 vi.mock('@/stores/hermes/app', () => ({
   useAppStore: () => mockAppStore,
+}))
+
+vi.mock('@/api/client', () => ({
+  isStoredSuperAdmin: () => true,
 }))
 
 vi.mock('vue-router', async (importOriginal) => {
@@ -51,8 +57,8 @@ vi.mock('@/composables/useTheme', () => ({
   useTheme: () => ({ isDark: false }),
 }))
 
-vi.mock('/logo.png', () => ({
-  default: 'logo.png',
+vi.mock('/logo.jpg', () => ({
+  default: 'logo.jpg',
 }))
 
 vi.mock('@/components/layout/ProfileSelector.vue', () => ({
@@ -104,10 +110,13 @@ describe('AppSidebar search entry', () => {
     mockAppStore.serverVersion = 'test'
     mockAppStore.latestVersion = ''
     mockAppStore.updateAvailable = false
+    mockAppStore.updateSupported = false
+    mockAppStore.updateError = ''
     mockAppStore.clientOutdated = false
     mockAppStore.updating = false
     mockAppStore.sidebarCollapsed = false
     mockAppStore.reloadClient.mockClear()
+    mockAppStore.doUpdate.mockReset()
   })
 
   it('opens the session search modal from the sidebar button', async () => {
@@ -131,9 +140,9 @@ describe('AppSidebar search entry', () => {
     expect(openSessionSearchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('offers a client reload when the server version differs from the loaded bundle', async () => {
-    mockAppStore.clientOutdated = true
-    mockAppStore.serverVersion = '0.5.17'
+  it('starts a managed Reins update from the sidebar', async () => {
+    mockAppStore.updateSupported = true
+    mockAppStore.doUpdate.mockResolvedValue(true)
     const wrapper = mount(AppSidebar, {
       global: {
         stubs: {
@@ -145,12 +154,12 @@ describe('AppSidebar search entry', () => {
       },
     })
 
-    const reloadButton = wrapper.findAll('button')
-      .find(node => node.text().includes('sidebar.reloadClientVersion'))
-    expect(reloadButton).toBeTruthy()
+    const updateButton = wrapper.findAll('button')
+      .find(node => node.text().includes('common.update Reins'))
+    expect(updateButton).toBeTruthy()
 
-    await reloadButton!.trigger('click')
-    expect(mockAppStore.reloadClient).toHaveBeenCalledTimes(1)
+    await updateButton!.trigger('click')
+    expect(mockAppStore.doUpdate).toHaveBeenCalledTimes(1)
   })
 
   it('uses short group labels and keeps group folding active when collapsed', async () => {
@@ -170,16 +179,14 @@ describe('AppSidebar search entry', () => {
     expect(wrapper.classes()).toContain('collapsed')
     expect(wrapper.findAll('.nav-group-label span').map(node => node.text())).toEqual([
       'sidebar.groupConversationShort',
-      'sidebar.groupAgentShort',
       'sidebar.groupMonitoringShort',
-      'sidebar.groupToolsShort',
       'sidebar.groupSystemShort',
     ])
 
-    const agentGroup = wrapper.findAll('.nav-group')[1]
-    expect(agentGroup.find('.nav-group-items').attributes('style')).toBeUndefined()
+    const monitoringGroup = wrapper.findAll('.nav-group')[1]
+    expect(monitoringGroup.find('.nav-group-items').attributes('style')).toBeUndefined()
 
-    await agentGroup.find('.nav-group-label').trigger('click')
-    expect(agentGroup.find('.nav-group-items').attributes('style')).toContain('display: none')
+    await monitoringGroup.find('.nav-group-label').trigger('click')
+    expect(monitoringGroup.find('.nav-group-items').attributes('style')).toContain('display: none')
   })
 })

@@ -6,7 +6,15 @@ export interface HealthResponse {
   webui_version?: string
   webui_latest?: string
   webui_update_available?: boolean
+  reins_update_supported?: boolean
   node_version?: string
+}
+
+export interface ReinsUpdateStatus {
+  supported: boolean
+  status: 'idle' | 'requested' | 'running' | 'success' | 'failed'
+  message: string
+  updated_at?: string
 }
 
 export interface PreviewTag {
@@ -110,6 +118,10 @@ export async function checkHealth(): Promise<HealthResponse> {
 
 export async function triggerUpdate(): Promise<{ success: boolean; message: string }> {
   return request<{ success: boolean; message: string }>('/api/hermes/update', { method: 'POST' })
+}
+
+export async function fetchUpdateStatus(): Promise<ReinsUpdateStatus> {
+  return request<ReinsUpdateStatus>('/api/hermes/update/status')
 }
 
 export async function fetchPreviewStatus(): Promise<PreviewStatus> {

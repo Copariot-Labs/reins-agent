@@ -104,12 +104,15 @@ rm -f -- "$REINS_HOME/wecom/ticket-poller.sh"
 
 log "Removing the Web UI service"
 if command -v systemctl >/dev/null 2>&1; then
+  systemctl --user stop reins-update.service >/dev/null 2>&1 || true
   systemctl --user disable --now reins-web.service >/dev/null 2>&1 || true
   systemctl --user disable --now reins-gateway.service >/dev/null 2>&1 || true
 fi
 rm -f -- "$SYSTEMD_USER_DIR/reins-web.service"
 rm -f -- "$SYSTEMD_USER_DIR/reins-gateway.service"
+rm -f -- "$SYSTEMD_USER_DIR/reins-update.service"
 rm -f -- "$HOME/.local/bin/reins-web-runtime"
+rm -f -- "$HOME/.local/bin/reins-update"
 
 log "Removing desktop launchers"
 rm -f -- "$HOME/.local/bin/reins-open"
@@ -145,4 +148,7 @@ log "Reins deployment removed"
 printf 'Application code was preserved at: %s\n' "$PROJECT_DIR"
 printf 'User data was preserved at:        %s\n' "$REINS_HOME"
 rm -f -- "$REINS_HOME_STATE" "$DEPLOY_STATE_DIR/workspace"
+rm -f -- "$DEPLOY_STATE_DIR/project-root" "$DEPLOY_STATE_DIR/install-wecom"
+rm -f -- "$DEPLOY_STATE_DIR/install-desktop" "$DEPLOY_STATE_DIR/enable-linger"
+rm -f -- "$DEPLOY_STATE_DIR/update.lock"
 rmdir "$DEPLOY_STATE_DIR" >/dev/null 2>&1 || true

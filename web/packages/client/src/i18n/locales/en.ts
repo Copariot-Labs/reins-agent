@@ -151,12 +151,11 @@ export default {
     disconnected: 'Disconnected',
     collapse: 'Collapse menu',
     expand: 'Expand menu',
-    updateTip: 'Run "Reins-web-ui update" in terminal to update',
+    updateTip: 'Download and install the latest Reins version',
     updateVersion: 'Upgrade to v{version}',
     reloadClientVersion: 'Reload for v{version}',
     updating: 'Updating...',
-    updateSuccess:
-      'Update successful. Please refresh the page shortly. If it does not start after a while, start it manually.',
+    updateSuccess: 'Update started. Reins will restart automatically when it is ready.',
     updateFailed: 'Update failed',
     logout: 'Sign Out',
     nodeVersionWarning:

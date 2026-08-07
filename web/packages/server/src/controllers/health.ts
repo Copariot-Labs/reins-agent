@@ -95,6 +95,9 @@ export async function healthCheck(ctx: any) {
     webui_update_available: isUpdateCheckDisabled()
       ? false
       : Boolean(LOCAL_VERSION && cachedLatestVersion && cachedLatestVersion !== LOCAL_VERSION),
+    reins_update_supported: Boolean(
+      process.env.REINS_UPDATE_SERVICE?.trim() || process.env.REINS_UPDATE_TASK_NAME?.trim(),
+    ),
     node_version: process.versions.node,
   }
 }

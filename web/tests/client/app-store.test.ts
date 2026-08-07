@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 const mockSystemApi = vi.hoisted(() => ({
   checkHealth: vi.fn(),
+  fetchUpdateStatus: vi.fn(),
   fetchAvailableModels: vi.fn(),
   addCustomModel: vi.fn(),
   removeCustomModel: vi.fn(),
@@ -178,6 +179,19 @@ describe('App Store', () => {
     expect(store.updateAvailable).toBe(false)
   })
 
+  it('exposes managed Reins updates reported by the production server', async () => {
+    mockSystemApi.checkHealth.mockResolvedValue({
+      status: 'ok',
+      webui_version: 'test',
+      reins_update_supported: true,
+    })
+    const store = useAppStore()
+
+    await store.checkConnection()
+
+    expect(store.updateSupported).toBe(true)
+  })
+
   it('does not mark the client stale when the served Web UI version matches this bundle', async () => {
     mockSystemApi.checkHealth.mockResolvedValue({
       status: 'ok',
@@ -202,7 +216,7 @@ describe('App Store', () => {
 
     expect(ok).toBe(false)
     expect(store.updating).toBe(false)
-    expect(consoleError).toHaveBeenCalledWith('Failed to update Hermes Web UI:', expect.any(Error))
+    expect(consoleError).toHaveBeenCalledWith('Failed to update Reins:', expect.any(Error))
     consoleError.mockRestore()
   })
 

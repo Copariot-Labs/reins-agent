@@ -1,9 +1,0 @@
-[submodule "vendor/hermes-agent"]
-	path = vendor/hermes-agent
-	url = git@github.com:NousResearch/hermes-agent.git
-[submodule "external/ppt-master"]
-	path = external/ppt-master
-	url = https://github.com/hugohe3/ppt-master.git
-[submodule "external/frontend-slides"]
-	path = external/frontend-slides
-	url = https://github.com/zarazhangrui/frontend-slides.git
