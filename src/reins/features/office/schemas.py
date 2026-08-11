@@ -43,6 +43,18 @@ PRESENTATION_FONT_CHOICES = (
     "Times New Roman",
     "Trebuchet MS",
 )
+WORD_DESIGN_STYLES = {"professional", "formal", "editorial", "modern", "academic", "minimal", "friendly"}
+WORD_TITLE_TREATMENTS = {"plain", "rule", "band", "boxed"}
+WORD_HEADING_TREATMENTS = {"plain", "rule", "accent", "shaded"}
+WORD_PAGE_SIZES = {"a4", "letter"}
+WORD_MARGIN_STYLES = {"compact", "standard", "generous"}
+SPREADSHEET_DESIGN_STYLES = {"professional", "financial", "tracker", "dashboard", "minimal", "colorful"}
+SPREADSHEET_HEADER_STYLES = {"dark", "accent", "light", "outline"}
+SPREADSHEET_ROW_DENSITIES = {"compact", "comfortable", "spacious"}
+SPREADSHEET_TABLE_STYLES = {
+    "medium1", "medium2", "medium3", "medium4",
+    "light1", "light2", "light3", "dark1", "dark2", "none",
+}
 
 _HEX_COLOR = re.compile(r"^[0-9A-F]{6}$")
 _PRESENTATION_FONTS = {font.casefold(): font for font in PRESENTATION_FONT_CHOICES}
@@ -148,6 +160,82 @@ def normalize_presentation_design(value: object = None) -> dict[str, str]:
         font = _PRESENTATION_FONTS.get(str(design.get(key) or "").strip().casefold())
         if font:
             normalized[key] = font
+    return normalized
+
+
+def _normalized_color(value: object) -> str:
+    color = str(value or "").strip().lstrip("#").upper()
+    return color if _HEX_COLOR.fullmatch(color) else ""
+
+
+def _normalized_font(value: object) -> str:
+    return _PRESENTATION_FONTS.get(str(value or "").strip().casefold(), "")
+
+
+def normalize_word_design(value: object = None) -> dict[str, Any]:
+    design = value if isinstance(value, dict) else {}
+    style = str(design.get("style") or "professional").strip().lower()
+    title_treatment = str(design.get("title_treatment") or "rule").strip().lower()
+    heading_treatment = str(design.get("heading_treatment") or "accent").strip().lower()
+    page_size = str(design.get("page_size") or "a4").strip().lower()
+    margins = str(design.get("margins") or "standard").strip().lower()
+    title_alignment = str(design.get("title_alignment") or "left").strip().lower()
+    line_spacing = str(design.get("line_spacing") or "1.15x").strip().lower()
+    try:
+        body_size = min(max(float(design.get("body_size") or 11), 9), 14)
+    except (TypeError, ValueError):
+        body_size = 11
+
+    normalized: dict[str, Any] = {
+        "style": style if style in WORD_DESIGN_STYLES else "professional",
+        "title_treatment": title_treatment if title_treatment in WORD_TITLE_TREATMENTS else "rule",
+        "heading_treatment": heading_treatment if heading_treatment in WORD_HEADING_TREATMENTS else "accent",
+        "page_size": page_size if page_size in WORD_PAGE_SIZES else "a4",
+        "margins": margins if margins in WORD_MARGIN_STYLES else "standard",
+        "title_alignment": title_alignment if title_alignment in {"left", "center", "right"} else "left",
+        "line_spacing": line_spacing if line_spacing in {"1.0x", "1.15x", "1.3x", "1.5x"} else "1.15x",
+        "body_size": body_size,
+        "design_reason": str(design.get("design_reason") or "").strip(),
+    }
+    for key in ("primary", "secondary", "accent", "text", "muted"):
+        color = _normalized_color(design.get(key))
+        if color:
+            normalized[key] = color
+    for key in ("heading_font", "body_font"):
+        font = _normalized_font(design.get(key))
+        if font:
+            normalized[key] = font
+    return normalized
+
+
+def normalize_spreadsheet_design(value: object = None) -> dict[str, Any]:
+    design = value if isinstance(value, dict) else {}
+    style = str(design.get("style") or "professional").strip().lower()
+    header_style = str(design.get("header_style") or "dark").strip().lower()
+    row_density = str(design.get("row_density") or "comfortable").strip().lower()
+    table_style = str(design.get("table_style") or "medium2").strip().lower()
+    try:
+        zoom = min(max(int(design.get("zoom") or 95), 70), 140)
+    except (TypeError, ValueError):
+        zoom = 95
+
+    normalized: dict[str, Any] = {
+        "style": style if style in SPREADSHEET_DESIGN_STYLES else "professional",
+        "header_style": header_style if header_style in SPREADSHEET_HEADER_STYLES else "dark",
+        "row_density": row_density if row_density in SPREADSHEET_ROW_DENSITIES else "comfortable",
+        "table_style": table_style if table_style in SPREADSHEET_TABLE_STYLES else "medium2",
+        "show_title": bool(design.get("show_title", True)),
+        "banded_rows": bool(design.get("banded_rows", True)),
+        "zoom": zoom,
+        "design_reason": str(design.get("design_reason") or "").strip(),
+    }
+    for key in ("primary", "secondary", "accent", "header_text", "body_text", "band_fill"):
+        color = _normalized_color(design.get(key))
+        if color:
+            normalized[key] = color
+    font = _normalized_font(design.get("font"))
+    if font:
+        normalized["font"] = font
     return normalized
 
 

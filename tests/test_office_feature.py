@@ -91,6 +91,25 @@ def test_office_fallback_content_matches_requested_format():
     assert not content["slides"]
 
 
+def test_word_and_excel_prompts_make_reins_the_design_decision_maker():
+    word_prompt = build_office_content_prompt(
+        user_prompt="Create a formal navy annual report",
+        office_format="docx",
+    )
+    excel_prompt = build_office_content_prompt(
+        user_prompt="Create a clean financial budget workbook",
+        office_format="xlsx",
+    )
+
+    assert "Reins is the document designer" in word_prompt
+    assert '"title_treatment": "plain|rule|band|boxed"' in word_prompt
+    assert "If the user explicitly requests a design" in word_prompt
+    assert "Reins is the workbook designer" in excel_prompt
+    assert '"header_style": "dark|accent|light|outline"' in excel_prompt
+    assert '"column_formats"' in excel_prompt
+    assert "If the user specifies colors, style, density" in excel_prompt
+
+
 def test_presentation_prompt_requests_a_designed_narrative():
     options = normalize_presentation_options(
         {
@@ -253,7 +272,46 @@ def test_renderer_changes_slide_geometry_for_split_composition(tmp_path):
     assert "x=15.55cm" in serialized
 
 
-def test_renderer_emits_officecli_xlsx_commands(tmp_path):
+def test_renderer_applies_reins_word_design(tmp_path):
+    client = FakeOfficeCliClient()
+    output = tmp_path / "report.docx"
+
+    render_office_content(
+        office_format="docx",
+        content={
+            "title": "Annual Review",
+            "body": "Executive Summary:\nA concise review of the year.\n\nPriorities:\n- Protect service quality",
+            "design": {
+                "style": "formal",
+                "primary": "172554",
+                "secondary": "E8EEF6",
+                "accent": "B45309",
+                "heading_font": "Georgia",
+                "body_font": "Times New Roman",
+                "title_treatment": "band",
+                "heading_treatment": "shaded",
+                "title_alignment": "left",
+                "page_size": "letter",
+                "margins": "generous",
+                "body_size": 12,
+                "line_spacing": "1.3x",
+            },
+        },
+        output_path=output,
+        client=client,
+    )
+
+    serialized = " ".join(" ".join(command) for command in client.commands)
+    assert "pageWidth=21.59cm" in serialized
+    assert "marginLeft=3cm" in serialized
+    assert "docDefaults.font=Times New Roman" in serialized
+    assert "theme.font.major.latin=Georgia" in serialized
+    assert "shading.fill=172554" in serialized
+    assert "shading.fill=E8EEF6" in serialized
+    assert "lineSpacing=1.3x" in serialized
+
+
+def test_renderer_emits_designed_officecli_xlsx_commands(tmp_path):
     client = FakeOfficeCliClient()
     output = tmp_path / "tracker.xlsx"
 
@@ -261,11 +319,28 @@ def test_renderer_emits_officecli_xlsx_commands(tmp_path):
         office_format="xlsx",
         content={
             "title": "Repair Tracker",
+            "body": "Operational repair status",
+            "design": {
+                "style": "tracker",
+                "primary": "264653",
+                "secondary": "E9F5F2",
+                "accent": "E76F51",
+                "header_style": "accent",
+                "row_density": "spacious",
+                "table_style": "medium3",
+                "show_title": True,
+                "banded_rows": True,
+            },
             "sheets": [
                 {
                     "name": "Repairs",
                     "headers": ["ID", "Status"],
-                    "rows": [[1, "Open"]],
+                    "rows": [[1, "Open"], [2, "Overdue"]],
+                    "column_formats": [{"column": "ID", "format": "integer"}],
+                    "column_widths": [{"column": "Status", "width": 24}],
+                    "conditional_highlights": [
+                        {"column": "Status", "contains": "Overdue", "fill": "FDE8E7"}
+                    ],
                 }
             ],
         },
@@ -277,7 +352,16 @@ def test_renderer_emits_officecli_xlsx_commands(tmp_path):
     assert client.commands[0] == ["create", str(output)]
     assert ["open", str(output)] in client.commands
     assert ["set", str(output), "/Sheet1", "--prop", "name=Repairs"] in client.commands
-    assert ["set", str(output), "/Repairs/A1", "--prop", "value=ID", "--prop", "font.bold=true"] in client.commands
+    serialized = " ".join(" ".join(command) for command in client.commands)
+    assert "merge=A1:B1" in serialized
+    assert "value=ID" in serialized and "/Repairs/A3" in serialized
+    assert "fill=E76F51" in serialized
+    assert "numberformat=#,##0" in serialized
+    assert "width=24" in serialized
+    assert "type=containsText" in serialized
+    assert "ref=B4:B5" in serialized
+    assert "style=medium3" in serialized
+    assert "freeze=A4" in serialized
     assert ["validate", str(output)] in client.commands
 
 

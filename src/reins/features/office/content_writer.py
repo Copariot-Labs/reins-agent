@@ -17,7 +17,9 @@ from reins.features.office.schemas import (
     normalize_office_format,
     normalize_presentation_design,
     normalize_presentation_options,
+    normalize_spreadsheet_design,
     normalize_title,
+    normalize_word_design,
 )
 
 
@@ -126,24 +128,54 @@ def _schema_instruction(
     presentation_options: dict[str, Any] | None = None,
 ) -> str:
     if office_format == "xlsx":
-        return """
+        return f"""
 Return JSON:
-{
+{{
   "title": "short workbook title",
   "office_format": "xlsx",
   "body": "short workbook summary",
   "document_kind": "spreadsheet|ledger|tracker|other",
+  "design": {{
+    "style": "professional|financial|tracker|dashboard|minimal|colorful",
+    "primary": "6-digit HEX without #",
+    "secondary": "6-digit HEX without #",
+    "accent": "6-digit HEX without #",
+    "header_text": "6-digit HEX without #",
+    "body_text": "6-digit HEX without #",
+    "band_fill": "6-digit HEX without #",
+    "font": "workbook-safe font",
+    "header_style": "dark|accent|light|outline",
+    "row_density": "compact|comfortable|spacious",
+    "table_style": "medium1|medium2|medium3|medium4|light1|light2|light3|dark1|dark2|none",
+    "show_title": true,
+    "banded_rows": true,
+    "zoom": 95,
+    "design_reason": "short reason this design fits the workbook"
+  }},
   "sheets": [
-    {
+    {{
       "name": "Sheet name",
+      "subtitle": "optional sheet purpose",
+      "layout": "table|tracker|financial|dashboard|report",
       "headers": ["Column A", "Column B"],
-      "rows": [["value A", "value B"]]
-    }
+      "rows": [["value A", "value B"]],
+      "column_formats": [{{"column": "Amount", "format": "text|integer|decimal|currency|percentage|date"}}],
+      "column_widths": [{{"column": "Description", "width": 28}}],
+      "conditional_highlights": [{{"column": "Status", "contains": "Overdue", "fill": "FDE8E7"}}]
+    }}
   ],
   "slides": [],
   "missing_fields": []
-}
-Use at least one sheet. Rows must be arrays.
+}}
+
+Excel design rules:
+- Reins is the workbook designer. Infer a suitable operational design from the data and intended use.
+- If the user specifies colors, style, density, financial formatting, dashboard styling, or another design direction, follow it exactly when valid.
+- Otherwise choose every design field yourself. Use 6-digit HEX colors without # and choose font from: {", ".join(PRESENTATION_FONT_CHOICES)}.
+- Use at least one sheet. Rows must be arrays and all rows should align with the headers.
+- Select useful number formats and column widths. Use conditional highlights only when they improve scanning or action.
+- Make trackers easy to scan, financial workbooks precise, dashboards visually hierarchical, and data tables restrained.
+- Never invent financial totals or formulas unsupported by the user data.
 """.strip()
 
     if office_format == "pptx":
@@ -226,18 +258,42 @@ Presentation quality rules:
 - Omit unused arrays/objects or return them empty. Content must fit directly into a finished presentation.
 """.strip()
 
-    return """
+    return f"""
 Return JSON:
-{
+{{
   "title": "short document title",
   "office_format": "docx",
   "body": "complete Word document body",
   "document_kind": "report|letter|application|notice|memo|other",
+  "design": {{
+    "style": "professional|formal|editorial|modern|academic|minimal|friendly",
+    "primary": "6-digit HEX without #",
+    "secondary": "6-digit HEX without #",
+    "accent": "6-digit HEX without #",
+    "text": "6-digit HEX without #",
+    "muted": "6-digit HEX without #",
+    "heading_font": "document-safe font",
+    "body_font": "document-safe font",
+    "title_treatment": "plain|rule|band|boxed",
+    "heading_treatment": "plain|rule|accent|shaded",
+    "title_alignment": "left|center|right",
+    "page_size": "a4|letter",
+    "margins": "compact|standard|generous",
+    "body_size": 11,
+    "line_spacing": "1.0x|1.15x|1.3x|1.5x",
+    "design_reason": "short reason this design fits the document"
+  }},
   "sheets": [],
   "slides": [],
   "missing_fields": []
-}
-Body should be final document text. Use plain section headings and simple "- " bullets.
+}}
+
+Word design rules:
+- Reins is the document designer. Infer a suitable visual system from the purpose, tone, audience, and content.
+- If the user explicitly requests a design, font, color, page style, formality, or layout direction, follow that request when valid.
+- Otherwise choose every design field yourself. Use 6-digit HEX colors without # and choose fonts from: {", ".join(PRESENTATION_FONT_CHOICES)}.
+- Reports should feel structured, letters restrained, proposals persuasive, notices highly scannable, and academic documents formal.
+- Body should be final document text. Use plain section headings and simple "- " bullets so the renderer can apply the chosen hierarchy.
 """.strip()
 
 
@@ -274,6 +330,7 @@ Rules:
 - Use professional placeholders only when specific private facts are truly missing.
 - office_format must be exactly "{normalized}".
 - Make the content useful enough to render directly into the requested Office file.
+- Treat any explicit visual or formatting direction from the user as a requirement. When none is given, Reins must choose the design from the document's purpose and content.
 
 {_schema_instruction(normalized, presentation_options)}
 """.strip()
@@ -516,8 +573,13 @@ def normalize_content_payload(
         sheets.append(
             {
                 "name": str(sheet.get("name") or "Sheet1"),
+                "subtitle": str(sheet.get("subtitle") or ""),
+                "layout": str(sheet.get("layout") or "table").strip().lower(),
                 "headers": headers if isinstance(headers, list) else [],
                 "rows": rows if isinstance(rows, list) else [],
+                "column_formats": _list_or_empty(sheet.get("column_formats"))[:50],
+                "column_widths": _list_or_empty(sheet.get("column_widths"))[:50],
+                "conditional_highlights": _list_or_empty(sheet.get("conditional_highlights"))[:25],
             }
         )
 
@@ -553,7 +615,12 @@ def normalize_content_payload(
             }
         )
 
-    design = normalize_presentation_design(raw.get("design"))
+    if normalized == "pptx":
+        design = normalize_presentation_design(raw.get("design"))
+    elif normalized == "xlsx":
+        design = normalize_spreadsheet_design(raw.get("design"))
+    else:
+        design = normalize_word_design(raw.get("design"))
 
     return {
         "title": safe_title,

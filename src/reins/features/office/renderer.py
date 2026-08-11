@@ -10,7 +10,9 @@ from reins.features.office.officecli_client import OfficeCliClient
 from reins.features.office.schemas import (
     normalize_office_format,
     normalize_presentation_design,
+    normalize_spreadsheet_design,
     normalize_title,
+    normalize_word_design,
 )
 
 
@@ -75,68 +77,213 @@ def _office_issue_count(output: str) -> int:
     return int(match.group(1)) if match else 0
 
 
+@dataclass(frozen=True, slots=True)
+class WordTheme:
+    primary: str
+    secondary: str
+    accent: str
+    text: str
+    muted: str
+    heading_font: str
+    body_font: str
+
+
+_WORD_THEMES = {
+    "professional": WordTheme("17324D", "E8EEF3", "2B7A78", "24313D", "66727E", "Aptos Display", "Aptos"),
+    "formal": WordTheme("1F2937", "ECE8E1", "7C2D12", "222222", "6B7280", "Georgia", "Times New Roman"),
+    "editorial": WordTheme("263238", "EEF1F2", "D1495B", "263238", "6A7378", "Georgia", "Aptos"),
+    "modern": WordTheme("14213D", "E7F0F4", "007C91", "1F2937", "667085", "Aptos Display", "Aptos"),
+    "academic": WordTheme("243B53", "E8EDF2", "486581", "202124", "5F6368", "Georgia", "Times New Roman"),
+    "minimal": WordTheme("111827", "F1F3F5", "4B5563", "1F2937", "6B7280", "Arial", "Arial"),
+    "friendly": WordTheme("264653", "E9F5F2", "E76F51", "27333A", "66746F", "Trebuchet MS", "Aptos"),
+}
+
+
+def _word_theme(content: dict[str, Any]) -> tuple[dict[str, Any], WordTheme]:
+    design = normalize_word_design(content.get("design"))
+    base = _WORD_THEMES[design["style"]]
+    return design, WordTheme(
+        primary=design.get("primary", base.primary),
+        secondary=design.get("secondary", base.secondary),
+        accent=design.get("accent", base.accent),
+        text=design.get("text", base.text),
+        muted=design.get("muted", base.muted),
+        heading_font=design.get("heading_font", base.heading_font),
+        body_font=design.get("body_font", base.body_font),
+    )
+
+
 def _render_docx(content: dict[str, Any], path: Path, client: OfficeCliClient) -> None:
     title = normalize_title(content.get("title"), default="Office Document")
-    _run_mutation(client, ["add", path, "/body", "--type", "paragraph", *_prop_args(
-        f"text={title}",
-        "style=Title",
-        "size=22pt",
-        "bold=true",
-        "align=center",
-        "spaceAfter=18pt",
+    design, theme = _word_theme(content)
+    page_width, page_height = ("21.59cm", "27.94cm") if design["page_size"] == "letter" else ("21cm", "29.7cm")
+    margin = {"compact": "1.65cm", "standard": "2.35cm", "generous": "3cm"}[design["margins"]]
+    body_size = f"{design['body_size']:g}pt"
+
+    _run_mutation(client, ["set", path, "/", *_prop_args(
+        f"title={title}",
+        f"pageWidth={page_width}",
+        f"pageHeight={page_height}",
+        "orientation=portrait",
+        f"marginTop={margin}",
+        f"marginBottom={margin}",
+        f"marginLeft={margin}",
+        f"marginRight={margin}",
+        f"docDefaults.font={theme.body_font}",
+        f"docDefaults.font.hAnsi={theme.body_font}",
+        f"docDefaults.fontSize={design['body_size']:g}",
+        f"docDefaults.color={theme.text}",
+        f"docDefaults.spaceAfter=7pt",
+        f"docDefaults.lineSpacing={design['line_spacing']}",
+        f"theme.color.dk2={theme.primary}",
+        f"theme.color.lt2={theme.secondary}",
+        f"theme.color.accent1={theme.accent}",
+        f"theme.font.major.latin={theme.heading_font}",
+        f"theme.font.minor.latin={theme.body_font}",
     )])
+
+    title_props = [
+        f"text={title}", "style=Title", f"font={theme.heading_font}", "size=24pt",
+        "bold=true", f"align={design['title_alignment']}", "spaceAfter=18pt", "keepNext=true",
+    ]
+    if design["title_treatment"] == "band":
+        title_props.extend([f"shading.fill={theme.primary}", "color=FFFFFF", "spaceBefore=10pt"])
+    elif design["title_treatment"] == "boxed":
+        title_props.extend([f"border=single;12;{theme.accent}", f"color={theme.primary}"])
+    elif design["title_treatment"] == "rule":
+        title_props.extend([f"border.bottom=single;16;{theme.accent}", f"color={theme.primary}"])
+    else:
+        title_props.append(f"color={theme.primary}")
+    _run_mutation(client, ["add", path, "/body", "--type", "paragraph", *_prop_args(*title_props)])
 
     lines = _body_lines(content.get("body"))
     previous_blank = False
-
     for raw_line in lines:
         line = _text(raw_line)
         if not line:
             previous_blank = True
             continue
-
         if line.lower() == title.lower():
             continue
 
         bullet = re.match(r"^[-*]\s+(.+)$", line)
         numbered = re.match(r"^\d+[.)]\s+(.+)$", line)
-        heading = (
-            line.endswith(":")
-            and len(line) <= 80
-            and not bullet
-            and not numbered
-        )
-
-        props = [f"text={line}"]
+        heading = line.endswith(":") and len(line) <= 80 and not bullet and not numbered
+        props = [f"text={line}", f"font={theme.body_font}", f"color={theme.text}"]
         if bullet:
-            props = [f"text={bullet.group(1).strip()}", "listStyle=bullet"]
+            props = [
+                f"text={bullet.group(1).strip()}", "listStyle=bullet", f"font={theme.body_font}",
+                f"size={body_size}", f"color={theme.text}", "spaceAfter=4pt",
+            ]
         elif numbered:
-            props = [f"text={numbered.group(1).strip()}", "listStyle=ordered"]
+            props = [
+                f"text={numbered.group(1).strip()}", "listStyle=ordered", f"font={theme.body_font}",
+                f"size={body_size}", f"color={theme.text}", "spaceAfter=4pt",
+            ]
         elif heading or (previous_blank and len(line) <= 70):
-            props.extend(["style=Heading1", "size=15pt", "bold=true", "spaceBefore=10pt"])
+            props = [
+                f"text={line.rstrip(':')}", "style=Heading1", f"font={theme.heading_font}",
+                "size=16pt", "bold=true", f"color={theme.primary}", "spaceBefore=14pt",
+                "spaceAfter=7pt", "keepNext=true",
+            ]
+            if design["heading_treatment"] == "rule":
+                props.append(f"border.bottom=single;8;{theme.accent}")
+            elif design["heading_treatment"] == "accent":
+                props.append(f"border.left=single;18;{theme.accent}")
+            elif design["heading_treatment"] == "shaded":
+                props.append(f"shading.fill={theme.secondary}")
         else:
-            props.extend(["size=11pt", "spaceAfter=6pt", "lineSpacing=1.15x"])
+            props.extend([f"size={body_size}", "spaceAfter=7pt", f"lineSpacing={design['line_spacing']}"])
 
         _run_mutation(client, ["add", path, "/body", "--type", "paragraph", *_prop_args(*props)])
         previous_blank = False
 
 
+@dataclass(frozen=True, slots=True)
+class SpreadsheetTheme:
+    primary: str
+    secondary: str
+    accent: str
+    header_text: str
+    body_text: str
+    band_fill: str
+    font: str
+
+
+_SPREADSHEET_THEMES = {
+    "professional": SpreadsheetTheme("1F4E79", "D9EAF4", "2E75B6", "FFFFFF", "24313D", "F3F7FA", "Aptos"),
+    "financial": SpreadsheetTheme("1B4332", "D8F3DC", "B7791F", "FFFFFF", "1F2937", "F0F7F2", "Aptos"),
+    "tracker": SpreadsheetTheme("264653", "E9F5F2", "E76F51", "FFFFFF", "27333A", "F3FAF8", "Aptos"),
+    "dashboard": SpreadsheetTheme("14213D", "E5ECF2", "007C91", "FFFFFF", "1F2937", "F2F6F8", "Aptos"),
+    "minimal": SpreadsheetTheme("374151", "E5E7EB", "6B7280", "FFFFFF", "1F2937", "F9FAFB", "Arial"),
+    "colorful": SpreadsheetTheme("3D405B", "F4F1DE", "E07A5F", "FFFFFF", "2D3142", "F7F5EA", "Trebuchet MS"),
+}
+
+
+def _spreadsheet_theme(content: dict[str, Any]) -> tuple[dict[str, Any], SpreadsheetTheme]:
+    design = normalize_spreadsheet_design(content.get("design"))
+    base = _SPREADSHEET_THEMES[design["style"]]
+    return design, SpreadsheetTheme(
+        primary=design.get("primary", base.primary),
+        secondary=design.get("secondary", base.secondary),
+        accent=design.get("accent", base.accent),
+        header_text=design.get("header_text", base.header_text),
+        body_text=design.get("body_text", base.body_text),
+        band_fill=design.get("band_fill", base.band_fill),
+        font=design.get("font", base.font),
+    )
+
+
+def _excel_number_format(value: object) -> str:
+    formats = {
+        "integer": "#,##0",
+        "decimal": "#,##0.00",
+        "currency": "$#,##0.00",
+        "percentage": "0.0%",
+        "date": "yyyy-mm-dd",
+        "text": "@",
+    }
+    return formats.get(str(value or "").strip().lower(), "")
+
+
+def _excel_column_map(items: object, headers: list[Any], value_key: str) -> dict[int, Any]:
+    by_name = {str(header).strip().casefold(): index for index, header in enumerate(headers, start=1)}
+    result: dict[int, Any] = {}
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict):
+            continue
+        column = item.get("column")
+        if isinstance(column, int) and 1 <= column <= len(headers):
+            index = column
+        else:
+            index = by_name.get(str(column or "").strip().casefold(), 0)
+        if index:
+            result[index] = item.get(value_key)
+    return result
+
+
+def _safe_excel_table_name(value: object, index: int) -> str:
+    name = re.sub(r"[^A-Za-z0-9_]", "", _text(value))
+    if not name or name[0].isdigit():
+        name = f"ReinsTable{index}"
+    return f"{name[:180]}{index}"
+
+
 def _render_xlsx(content: dict[str, Any], path: Path, client: OfficeCliClient) -> None:
     sheets = content.get("sheets")
     if not isinstance(sheets, list) or not sheets:
-        sheets = [
-            {
-                "name": "Summary",
-                "headers": ["Title", "Details"],
-                "rows": [[normalize_title(content.get("title")), content.get("body") or ""]],
-            }
-        ]
+        sheets = [{
+            "name": "Summary", "subtitle": content.get("body") or "",
+            "headers": ["Title", "Details"],
+            "rows": [[normalize_title(content.get("title")), content.get("body") or ""]],
+        }]
+    design, theme = _spreadsheet_theme(content)
+    workbook_title = normalize_title(content.get("title"), default="Office Workbook")
+    body_height = {"compact": 18, "comfortable": 22, "spacious": 27}[design["row_density"]]
 
     for sheet_index, raw_sheet in enumerate(sheets, start=1):
         sheet = raw_sheet if isinstance(raw_sheet, dict) else {}
         sheet_name = _safe_sheet_name(sheet.get("name"), f"Sheet{sheet_index}")
-        source_name = "Sheet1" if sheet_index == 1 else sheet_name
-
         if sheet_index == 1:
             if sheet_name != "Sheet1":
                 _run_mutation(client, ["set", path, "/Sheet1", *_prop_args(f"name={sheet_name}")])
@@ -147,27 +294,125 @@ def _render_xlsx(content: dict[str, Any], path: Path, client: OfficeCliClient) -
         rows = sheet.get("rows") or []
         headers = headers if isinstance(headers, list) else []
         rows = rows if isinstance(rows, list) else []
+        if not headers:
+            headers = ["Item", "Details"]
+        last_column = _column_name(max(1, len(headers)))
+        show_title = design["show_title"]
+        header_row = 3 if show_title else 1
+        first_data_row = header_row + 1
+        last_data_row = header_row + len(rows)
+
+        if show_title:
+            title = workbook_title if len(sheets) == 1 else f"{workbook_title} - {sheet_name}"
+            _run_mutation(client, ["set", path, f"/{sheet_name}/A1", *_prop_args(
+                f"value={title}", f"merge=A1:{last_column}1", f"fill={theme.primary}",
+                f"font.name={theme.font}", "font.size=16", "font.bold=true",
+                f"font.color={theme.header_text}", "alignment.horizontal=left", "alignment.vertical=center",
+            )])
+            _run_mutation(client, ["set", path, f"/{sheet_name}/row[1]", *_prop_args("height=32")])
+            subtitle = _text(sheet.get("subtitle") or content.get("body"))
+            if subtitle:
+                _run_mutation(client, ["set", path, f"/{sheet_name}/A2", *_prop_args(
+                    f"value={_short(subtitle, 180)}", f"merge=A2:{last_column}2", f"fill={theme.secondary}",
+                    f"font.name={theme.font}", "font.size=10", f"font.color={theme.body_text}",
+                    "alignment.vertical=center", "alignment.wrapText=true",
+                )])
+            _run_mutation(client, ["set", path, f"/{sheet_name}/row[2]", *_prop_args("height=24")])
+
+        if design["header_style"] == "accent":
+            header_fill, header_text = theme.accent, "FFFFFF"
+        elif design["header_style"] == "light":
+            header_fill, header_text = theme.secondary, theme.primary
+        elif design["header_style"] == "outline":
+            header_fill, header_text = "FFFFFF", theme.primary
+        else:
+            header_fill, header_text = theme.primary, theme.header_text
 
         for column_index, header in enumerate(headers, start=1):
-            cell = f"/{sheet_name}/{_column_name(column_index)}1"
-            _run_mutation(
-                client,
-                ["set", path, cell, *_prop_args(f"value={_text(header)}", "font.bold=true")],
-            )
+            cell = f"/{sheet_name}/{_column_name(column_index)}{header_row}"
+            props = [
+                f"value={_text(header)}", "font.bold=true", f"font.name={theme.font}", "font.size=11",
+                f"fill={header_fill}", f"font.color={header_text}", "alignment.horizontal=left",
+                "alignment.vertical=center", "alignment.wrapText=true",
+            ]
+            if design["header_style"] == "outline":
+                props.extend(["border.bottom=medium", f"border.color={theme.accent}"])
+            _run_mutation(client, ["set", path, cell, *_prop_args(*props)])
+        _run_mutation(client, ["set", path, f"/{sheet_name}/row[{header_row}]", *_prop_args("height=26")])
 
-        for row_index, row in enumerate(rows, start=2):
+        format_map = _excel_column_map(sheet.get("column_formats"), headers, "format")
+        width_map = _excel_column_map(sheet.get("column_widths"), headers, "width")
+        normalized_rows: list[list[Any]] = []
+        for row in rows:
             if isinstance(row, dict):
-                values = [row.get(header, "") for header in headers]
+                normalized_rows.append([row.get(header, "") for header in headers])
             elif isinstance(row, (list, tuple)):
-                values = list(row)
+                normalized_rows.append(list(row))
             else:
-                values = [row]
+                normalized_rows.append([row])
 
-            for column_index, value in enumerate(values, start=1):
-                cell = f"/{sheet_name}/{_column_name(column_index)}{row_index}"
-                _run_mutation(client, ["set", path, cell, *_prop_args(f"value={_text(value)}")])
+        for offset, values in enumerate(normalized_rows):
+            row_index = first_data_row + offset
+            banded = design["banded_rows"] and offset % 2 == 1
+            for column_index in range(1, len(headers) + 1):
+                value = values[column_index - 1] if column_index <= len(values) else ""
+                props = [
+                    f"value={_text(value)}", f"font.name={theme.font}", f"font.color={theme.body_text}",
+                    "alignment.vertical=center", "alignment.wrapText=true",
+                ]
+                if banded:
+                    props.append(f"fill={theme.band_fill}")
+                number_format = _excel_number_format(format_map.get(column_index))
+                if number_format:
+                    props.append(f"numberformat={number_format}")
+                    if number_format != "@":
+                        props.append("alignment.horizontal=right")
+                _run_mutation(client, ["set", path, f"/{sheet_name}/{_column_name(column_index)}{row_index}", *_prop_args(*props)])
+            _run_mutation(client, ["set", path, f"/{sheet_name}/row[{row_index}]", *_prop_args(f"height={body_height}")])
 
-        _run_mutation(client, ["set", path, f"/{sheet_name}", *_prop_args("freeze=A2")])
+        for column_index, header in enumerate(headers, start=1):
+            requested_width = width_map.get(column_index)
+            try:
+                width = min(max(float(requested_width), 7), 55) if requested_width is not None else 0
+            except (TypeError, ValueError):
+                width = 0
+            if not width:
+                sample = [_text(header), *[_text(row[column_index - 1]) for row in normalized_rows[:40] if column_index <= len(row)]]
+                width = min(max(max((len(value) for value in sample), default=10) + 2, 10), 34)
+            props = [f"width={width:g}"]
+            number_format = _excel_number_format(format_map.get(column_index))
+            if number_format:
+                props.append(f"numberformat={number_format}")
+            _run_mutation(client, ["set", path, f"/{sheet_name}/col[{column_index}]", *_prop_args(*props)])
+
+        if normalized_rows:
+            table_ref = f"A{header_row}:{last_column}{last_data_row}"
+            _run_mutation(client, ["add", path, f"/{sheet_name}", "--type", "table", *_prop_args(
+                f"name={_safe_excel_table_name(sheet_name, sheet_index)}", f"ref={table_ref}",
+                f"style={design['table_style']}", "headerRow=true",
+                f"showRowStripes={str(design['banded_rows']).lower()}",
+            )])
+
+        header_lookup = {str(header).strip().casefold(): index for index, header in enumerate(headers, start=1)}
+        if normalized_rows:
+            for rule in sheet.get("conditional_highlights") if isinstance(sheet.get("conditional_highlights"), list) else []:
+                if not isinstance(rule, dict):
+                    continue
+                column_index = header_lookup.get(str(rule.get("column") or "").strip().casefold())
+                needle = _text(rule.get("contains"))
+                fill = str(rule.get("fill") or "").strip().lstrip("#").upper()
+                if not column_index or not needle or not re.fullmatch(r"[0-9A-F]{6}", fill):
+                    continue
+                column = _column_name(column_index)
+                _run_mutation(client, ["add", path, f"/{sheet_name}", "--type", "conditionalformatting", *_prop_args(
+                    "type=containsText", f"ref={column}{first_data_row}:{column}{last_data_row}",
+                    f"text={needle}", f"fill={fill}",
+                )])
+
+        _run_mutation(client, ["set", path, f"/{sheet_name}", *_prop_args(
+            f"freeze=A{first_data_row}", f"tabColor={theme.accent}", f"zoom={design['zoom']}",
+            f"printTitleRows={header_row}:{header_row}",
+        )])
 
 
 @dataclass(frozen=True, slots=True)
