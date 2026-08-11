@@ -71,6 +71,11 @@ const router = createRouter({
       component: () => import('@/views/hermes/FinanceView.vue'),
     },
     {
+      path: '/reins/office',
+      name: 'hermes.office',
+      component: () => import('@/views/reins/OfficeView.vue'),
+    },
+    {
       path: '/reins/work-orders',
       name: 'hermes.workOrders',
       component: () => import('@/views/hermes/WorkOrdersView.vue'),

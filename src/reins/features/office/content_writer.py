@@ -1,0 +1,668 @@
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from reins.compat.bootstrap import get_project_root
+from reins.features.office.schemas import (
+    PRESENTATION_COMPOSITIONS,
+    PRESENTATION_FONT_CHOICES,
+    normalize_office_format,
+    normalize_presentation_design,
+    normalize_presentation_options,
+    normalize_title,
+)
+
+
+class OfficeContentError(RuntimeError):
+    pass
+
+
+def _strip_json_fence(value: str) -> str:
+    text = str(value or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?", "", text).strip()
+        text = re.sub(r"```$", "", text).strip()
+    return text
+
+
+def _extract_json_objects(text: str) -> list[str]:
+    cleaned = _strip_json_fence(text)
+    objects: list[str] = []
+    in_string = False
+    escaped = False
+    depth = 0
+    start: int | None = None
+
+    for index, char in enumerate(cleaned):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if char == "{":
+            if depth == 0:
+                start = index
+            depth += 1
+            continue
+        if char == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start is not None:
+                    objects.append(cleaned[start : index + 1])
+                    start = None
+
+    return objects
+
+
+def _parse_json_from_text(text: str) -> dict[str, Any]:
+    cleaned = _strip_json_fence(text)
+    try:
+        value = json.loads(cleaned)
+        if isinstance(value, dict):
+            return value
+    except Exception:
+        pass
+
+    candidates = _extract_json_objects(cleaned)
+    if not candidates:
+        raise OfficeContentError("Reins did not return a JSON object.")
+
+    for candidate in reversed(candidates):
+        try:
+            value = json.loads(candidate)
+        except Exception:
+            continue
+        if isinstance(value, dict):
+            return value
+
+    raise OfficeContentError("Reins returned JSON that could not be parsed.")
+
+
+@dataclass(frozen=True, slots=True)
+class ReinsInvocation:
+    command: list[str]
+    cwd: Path | None = None
+    python_path: Path | None = None
+
+
+def _resolve_reins_invocation() -> ReinsInvocation | None:
+    for key in ("REINS_BIN", "HERMES_BIN"):
+        value = os.environ.get(key, "").strip()
+        if value:
+            return ReinsInvocation(command=[value])
+
+    found = shutil.which("reins")
+    if found:
+        return ReinsInvocation(command=[found])
+
+    project_root = get_project_root()
+    local_python = Path(sys.executable)
+    if local_python.exists():
+        return ReinsInvocation(
+            command=[str(local_python), "-m", "reins.main"],
+            cwd=project_root,
+            python_path=project_root / "src",
+        )
+
+    return None
+
+
+def _schema_instruction(
+    office_format: str,
+    presentation_options: dict[str, Any] | None = None,
+) -> str:
+    if office_format == "xlsx":
+        return """
+Return JSON:
+{
+  "title": "short workbook title",
+  "office_format": "xlsx",
+  "body": "short workbook summary",
+  "document_kind": "spreadsheet|ledger|tracker|other",
+  "sheets": [
+    {
+      "name": "Sheet name",
+      "headers": ["Column A", "Column B"],
+      "rows": [["value A", "value B"]]
+    }
+  ],
+  "slides": [],
+  "missing_fields": []
+}
+Use at least one sheet. Rows must be arrays.
+""".strip()
+
+    if office_format == "pptx":
+        options = normalize_presentation_options(presentation_options)
+        return f"""
+Return JSON:
+{{
+  "title": "short deck title",
+  "office_format": "pptx",
+  "body": "one-sentence deck summary",
+  "document_kind": "presentation",
+  "design": {{
+    "style": "executive|modern|bold|minimal",
+    "composition": "editorial|geometric|split|spotlight",
+    "motif": "lines|blocks|circles|frames",
+    "background": "6-digit HEX without #",
+    "surface": "6-digit HEX without #",
+    "primary": "6-digit HEX without #",
+    "secondary": "6-digit HEX without #",
+    "accent": "6-digit HEX without #",
+    "warm": "6-digit HEX without #",
+    "text": "6-digit HEX without #",
+    "muted": "6-digit HEX without #",
+    "heading_font": "presentation-safe font",
+    "body_font": "presentation-safe font",
+    "palette_reason": "short reason this visual direction fits"
+  }},
+  "sheets": [],
+  "slides": [
+    {{
+      "layout": "cover|agenda|statement|kpi|cards|comparison|timeline|chart|quote|closing",
+      "variant": "auto|editorial|geometric|split|spotlight",
+      "eyebrow": "optional short section label",
+      "title": "Slide title",
+      "subtitle": "optional subtitle",
+      "body": "optional short body",
+      "bullets": ["short point"],
+      "takeaway": "one clear audience takeaway",
+      "stats": [{{"value": "18%", "label": "Growth", "detail": "short context"}}],
+      "cards": [{{"title": "Card title", "body": "one short explanation", "value": "optional value"}}],
+      "columns": [{{"title": "Column title", "body": "short explanation", "bullets": ["short point"]}}],
+      "steps": [{{"title": "Step title", "body": "short explanation"}}],
+      "chart": {{
+        "type": "column|bar|line|area|pie|doughnut",
+        "title": "chart title",
+        "categories": ["Q1", "Q2"],
+        "series": [{{"name": "Series name", "values": [10, 20]}}]
+      }},
+      "quote": "optional quote text",
+      "attribution": "optional attribution",
+      "notes": "speaker script or useful talking points"
+    }}
+  ],
+  "missing_fields": []
+}}
+
+Presentation brief:
+- Requested style: {options['style']} (when auto, choose the best listed style for the topic).
+- Audience: {options['audience']}.
+- Detail level: {options['detail']}.
+- Create exactly {options['slide_count']} slides unless the user's prompt explicitly requires a different count.
+
+Presentation quality rules:
+- Reins is the presentation art director. Choose a distinctive visual direction for this specific topic and audience.
+- Choose a composition system from: {", ".join(sorted(PRESENTATION_COMPOSITIONS - {"structured"}))}.
+- Assign slide variants intentionally. Use at least three variants across the deck and avoid repeating one geometry throughout.
+- Always return every design field. Use accessible, visibly differentiated colors and 6-digit HEX values without #.
+- Choose heading_font and body_font from: {", ".join(PRESENTATION_FONT_CHOICES)}.
+- When style is auto, make an independent design decision; do not default mechanically to the modern preset.
+- Build a coherent narrative arc that can be understood from the slide titles alone.
+- Start with a cover and end with a closing/next-step slide.
+- Use at least four different layouts. Do not turn every slide into title plus bullets.
+- Give each slide one job and one dominant visual structure.
+- Use stats only for real numbers supplied by the user or defensible calculations; never invent factual metrics.
+- Use charts only when meaningful numeric data exists. Categories and every series must have equal lengths.
+- Keep visible copy concise: at most 5 bullets, 4 stats/cards/steps, or 2 comparison columns per slide.
+- Write action-oriented, specific titles. Avoid generic titles such as "Overview" when a useful claim is possible.
+- Include a useful takeaway and speaker notes on every content slide.
+- Do not emit placeholders, TODOs, bracketed filler, markdown, emoji, or instructions about slide design.
+- Omit unused arrays/objects or return them empty. Content must fit directly into a finished presentation.
+""".strip()
+
+    return """
+Return JSON:
+{
+  "title": "short document title",
+  "office_format": "docx",
+  "body": "complete Word document body",
+  "document_kind": "report|letter|application|notice|memo|other",
+  "sheets": [],
+  "slides": [],
+  "missing_fields": []
+}
+Body should be final document text. Use plain section headings and simple "- " bullets.
+""".strip()
+
+
+def build_office_content_prompt(
+    *,
+    user_prompt: str,
+    office_format: str,
+    title: str | None = None,
+    language: str = "en",
+    presentation_options: dict[str, Any] | None = None,
+) -> str:
+    normalized = normalize_office_format(office_format)
+    title_hint = normalize_title(title, default="") if title else ""
+
+    return f"""
+You are Reins, writing structured content for Reins Office.
+
+The user wants an Office file created by OfficeCLI.
+
+Office format: {normalized}
+Language: {language}
+Title hint: {title_hint or "(none)"}
+
+User request:
+{user_prompt}
+
+Rules:
+- Return only valid JSON.
+- Do not include markdown fences.
+- Do not explain your process.
+- Think through the request internally before writing JSON.
+- Create finished, usable content for the requested file, not a generic template.
+- Infer practical sections, rows, slides, examples, and recommendations from the user request.
+- Use professional placeholders only when specific private facts are truly missing.
+- office_format must be exactly "{normalized}".
+- Make the content useful enough to render directly into the requested Office file.
+
+{_schema_instruction(normalized, presentation_options)}
+""".strip()
+
+
+def _call_reins_json(prompt: str, *, timeout: int) -> dict[str, Any]:
+    invocation = _resolve_reins_invocation()
+    if not invocation:
+        raise OfficeContentError("Could not find the Reins CLI for content generation.")
+
+    command = [*invocation.command, "-z", prompt]
+    env = os.environ.copy()
+    if invocation.python_path:
+        current = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = os.pathsep.join(
+            [str(invocation.python_path), current] if current else [str(invocation.python_path)]
+        )
+
+    completed = subprocess.run(
+        command,
+        cwd=str(invocation.cwd) if invocation.cwd else None,
+        env=env,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout,
+        check=False,
+    )
+
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        raise OfficeContentError(detail or f"Reins exited {completed.returncode}.")
+
+    return _parse_json_from_text(completed.stdout)
+
+
+def call_reins_json(prompt: str, *, timeout: int = 180) -> dict[str, Any]:
+    """Run a one-shot Reins turn and require a JSON object response."""
+    return _call_reins_json(prompt, timeout=timeout)
+
+
+def reins_status() -> dict[str, object]:
+    invocation = _resolve_reins_invocation()
+    return {
+        "available": invocation is not None,
+        "command": invocation.command if invocation else None,
+    }
+
+
+def _topic_from_prompt(prompt: str) -> str:
+    text = re.sub(r"\s+", " ", str(prompt or "")).strip(" .")
+    text = re.sub(
+        r"^(please|can you|could you|create|make|generate|write|prepare|draft|build|produce)\s+",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    ).strip(" .")
+    text = re.sub(
+        r"^(a|an|the)\s+",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    ).strip(" .")
+    return text[:90] or "Requested Office Document"
+
+
+def _fallback_docx(prompt: str, title: str) -> dict[str, Any]:
+    topic = _topic_from_prompt(prompt)
+    body = "\n\n".join(
+        [
+            "Overview",
+            f"This document has been prepared for {topic}.",
+            "Key Points",
+            "- Confirm dates, names, amounts, and responsible parties.",
+            "- Review the content with the relevant stakeholder.",
+            "- Save the approved version with the project record.",
+            "Details",
+            "[Add final details here.]",
+        ]
+    )
+    return {
+        "title": title,
+        "office_format": "docx",
+        "body": body,
+        "document_kind": "other",
+        "sheets": [],
+        "slides": [],
+        "missing_fields": [],
+        "generator": "fallback",
+    }
+
+
+def _fallback_xlsx(prompt: str, title: str) -> dict[str, Any]:
+    topic = _topic_from_prompt(prompt)
+    return {
+        "title": title,
+        "office_format": "xlsx",
+        "body": f"Workbook for {topic}.",
+        "document_kind": "spreadsheet",
+        "sheets": [
+            {
+                "name": "Tracking",
+                "headers": ["Item", "Description", "Owner", "Due Date", "Status"],
+                "rows": [
+                    [1, f"Confirm scope for {topic}", "[Name]", "[Date]", "Pending"],
+                    [2, "Collect supporting information", "[Name]", "[Date]", "Pending"],
+                    [3, "Review and finalize", "[Name]", "[Date]", "Pending"],
+                ],
+            }
+        ],
+        "slides": [],
+        "missing_fields": [],
+        "generator": "fallback",
+    }
+
+
+def _fallback_pptx(
+    prompt: str,
+    title: str,
+    presentation_options: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    topic = _topic_from_prompt(prompt)
+    options = normalize_presentation_options(presentation_options)
+    return {
+        "title": title,
+        "office_format": "pptx",
+        "body": f"Presentation for {topic}.",
+        "document_kind": "presentation",
+        "design": {
+            "style": "modern" if options["style"] == "auto" else options["style"],
+            "palette_reason": "Clear, contemporary presentation styling.",
+        },
+        "sheets": [],
+        "slides": [
+            {
+                "layout": "cover",
+                "title": title,
+                "subtitle": f"A practical briefing on {topic}",
+                "takeaway": "Prepared by Reins Office",
+                "notes": f"Introduce the purpose of this briefing on {topic}.",
+            },
+            {
+                "layout": "cards",
+                "title": "The briefing aligns context, decisions, and action",
+                "cards": [
+                    {"title": "Context", "body": f"Clarify what matters most for {topic}."},
+                    {"title": "Decisions", "body": "Surface the choices that need stakeholder input."},
+                    {"title": "Action", "body": "Translate the discussion into owned next steps."},
+                ],
+                "takeaway": "A shared frame keeps the discussion focused.",
+                "notes": "Walk through the three outcomes expected from the session.",
+            },
+            {
+                "layout": "comparison",
+                "title": "Current understanding and open decisions need separation",
+                "columns": [
+                    {
+                        "title": "What we know",
+                        "bullets": [f"The work centers on {topic}.", "Stakeholder alignment is required."],
+                    },
+                    {
+                        "title": "What to decide",
+                        "bullets": ["Confirm scope and success criteria.", "Assign accountable owners."],
+                    },
+                ],
+                "takeaway": "Resolve decisions without reopening settled context.",
+                "notes": "Confirm known facts first, then focus discussion on the open choices.",
+            },
+            {
+                "layout": "timeline",
+                "title": "A short execution path turns alignment into progress",
+                "steps": [
+                    {"title": "Confirm", "body": "Validate scope and assumptions."},
+                    {"title": "Assign", "body": "Name owners and target dates."},
+                    {"title": "Deliver", "body": "Complete the agreed work."},
+                    {"title": "Review", "body": "Measure results and adjust."},
+                ],
+                "takeaway": "Every next step needs an owner and a review point.",
+                "notes": "Use this sequence to agree the immediate operating cadence.",
+            },
+            {
+                "layout": "closing",
+                "title": "Move forward with a clear owner and first milestone",
+                "bullets": [
+                    "Confirm the accountable owner.",
+                    "Set the first measurable milestone.",
+                    "Schedule the next review.",
+                ],
+                "takeaway": "Turn this briefing into one concrete commitment.",
+                "notes": "Close by confirming the owner, first milestone, and review date.",
+            },
+        ],
+        "missing_fields": [],
+        "generator": "fallback",
+    }
+
+
+def _fallback_content(
+    prompt: str,
+    office_format: str,
+    title: str | None,
+    presentation_options: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    topic = _topic_from_prompt(prompt)
+    fallback_title = normalize_title(title or topic)
+    normalized = normalize_office_format(office_format)
+    if normalized == "xlsx":
+        return _fallback_xlsx(prompt, fallback_title)
+    if normalized == "pptx":
+        return _fallback_pptx(prompt, fallback_title, presentation_options)
+    return _fallback_docx(prompt, fallback_title)
+
+
+def _list_or_empty(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def normalize_content_payload(
+    raw: dict[str, Any],
+    *,
+    office_format: str,
+    prompt: str,
+    title: str | None = None,
+    generator: str = "reins",
+) -> dict[str, Any]:
+    normalized = normalize_office_format(raw.get("office_format") or office_format)
+    if normalized != normalize_office_format(office_format):
+        normalized = normalize_office_format(office_format)
+
+    safe_title = normalize_title(raw.get("title") or title or _topic_from_prompt(prompt))
+
+    sheets: list[dict[str, Any]] = []
+    for sheet in _list_or_empty(raw.get("sheets")):
+        if not isinstance(sheet, dict):
+            continue
+        headers = sheet.get("headers") or sheet.get("columns") or []
+        rows = sheet.get("rows") or []
+        sheets.append(
+            {
+                "name": str(sheet.get("name") or "Sheet1"),
+                "headers": headers if isinstance(headers, list) else [],
+                "rows": rows if isinstance(rows, list) else [],
+            }
+        )
+
+    slides: list[dict[str, Any]] = []
+    for slide in _list_or_empty(raw.get("slides")):
+        if not isinstance(slide, dict):
+            continue
+        bullets = slide.get("bullets") or []
+        chart = slide.get("chart") if isinstance(slide.get("chart"), dict) else {}
+        slides.append(
+            {
+                "layout": str(slide.get("layout") or "statement").strip().lower(),
+                "variant": (
+                    str(slide.get("variant") or "auto").strip().lower()
+                    if str(slide.get("variant") or "auto").strip().lower()
+                    in {"auto", *PRESENTATION_COMPOSITIONS}
+                    else "auto"
+                ),
+                "eyebrow": str(slide.get("eyebrow") or ""),
+                "title": str(slide.get("title") or safe_title),
+                "subtitle": str(slide.get("subtitle") or ""),
+                "body": str(slide.get("body") or ""),
+                "bullets": bullets if isinstance(bullets, list) else [],
+                "takeaway": str(slide.get("takeaway") or ""),
+                "stats": _list_or_empty(slide.get("stats"))[:4],
+                "cards": _list_or_empty(slide.get("cards"))[:4],
+                "columns": _list_or_empty(slide.get("columns"))[:2],
+                "steps": _list_or_empty(slide.get("steps"))[:4],
+                "chart": chart,
+                "quote": str(slide.get("quote") or ""),
+                "attribution": str(slide.get("attribution") or ""),
+                "notes": str(slide.get("notes") or ""),
+            }
+        )
+
+    design = normalize_presentation_design(raw.get("design"))
+
+    return {
+        "title": safe_title,
+        "office_format": normalized,
+        "body": str(raw.get("body") or ""),
+        "document_kind": str(raw.get("document_kind") or "other"),
+        "missing_fields": _list_or_empty(raw.get("missing_fields")),
+        "sheets": sheets,
+        "slides": slides,
+        "design": design,
+        "generator": str(raw.get("generator") or generator),
+    }
+
+
+def _apply_presentation_options(
+    content: dict[str, Any],
+    *,
+    office_format: str,
+    presentation_options: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if normalize_office_format(office_format) != "pptx":
+        return content
+
+    options = normalize_presentation_options(presentation_options)
+    design = content.get("design") if isinstance(content.get("design"), dict) else {}
+    generated_style = normalize_presentation_options({"style": design.get("style")})["style"]
+    design = dict(design)
+    design["style"] = (
+        options["style"]
+        if options["style"] != "auto"
+        else ("modern" if generated_style == "auto" else generated_style)
+    )
+    content["design"] = design
+    content["presentation_options"] = options
+    return content
+
+
+def generate_office_content(
+    *,
+    prompt: str,
+    office_format: str,
+    title: str | None = None,
+    language: str = "en",
+    timeout: int = 180,
+    use_reins: bool = True,
+    presentation_options: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    normalized = normalize_office_format(office_format)
+
+    brain_disabled = (
+        os.environ.get("REINS_OFFICE_DISABLE_BRAIN") == "1"
+        or os.environ.get("REINS_OFFICE_DISABLE_HERMES") == "1"
+    )
+    if use_reins and not brain_disabled:
+        try:
+            raw = _call_reins_json(
+                build_office_content_prompt(
+                    user_prompt=prompt,
+                    office_format=normalized,
+                    title=title,
+                    language=language,
+                    presentation_options=presentation_options,
+                ),
+                timeout=timeout,
+            )
+            return _apply_presentation_options(
+                normalize_content_payload(
+                    raw,
+                    office_format=normalized,
+                    prompt=prompt,
+                    title=title,
+                    generator="reins",
+                ),
+                office_format=normalized,
+                presentation_options=presentation_options,
+            )
+        except Exception as exc:
+            if os.environ.get("REINS_OFFICE_ALLOW_FALLBACK") == "1":
+                fallback = _fallback_content(prompt, normalized, title, presentation_options)
+                fallback["generator"] = "fallback"
+                fallback["generator_error"] = {
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                }
+                return _apply_presentation_options(
+                    normalize_content_payload(
+                        fallback,
+                        office_format=normalized,
+                        prompt=prompt,
+                        title=title,
+                        generator="fallback",
+                    ),
+                    office_format=normalized,
+                    presentation_options=presentation_options,
+                )
+            raise OfficeContentError(
+                "Reins failed to generate Office content. "
+                "Office creation now requires Reins by default; use --no-reins only for explicit fallback testing. "
+                f"{type(exc).__name__}: {exc}"
+            ) from exc
+
+    return _apply_presentation_options(
+        normalize_content_payload(
+            _fallback_content(prompt, normalized, title, presentation_options),
+            office_format=normalized,
+            prompt=prompt,
+            title=title,
+            generator="fallback",
+        ),
+        office_format=normalized,
+        presentation_options=presentation_options,
+    )

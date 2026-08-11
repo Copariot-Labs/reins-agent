@@ -113,6 +113,7 @@ export default {
     apiRelay: '中转站',
     history: '历史',
     presentations: '演示文稿',
+    office: '办公',
     jobs: '任务',
     kanban: '看板',
     models: '模型',

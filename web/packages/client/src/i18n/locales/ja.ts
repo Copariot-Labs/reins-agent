@@ -112,6 +112,7 @@ export default {
     apiRelay: 'APIリレー',
     history: '履歴',
     presentations: 'プレゼンテーション',
+    office: 'Office',
     jobs: 'ジョブ',
     models: 'モデル',
     profiles: 'プロファイル',

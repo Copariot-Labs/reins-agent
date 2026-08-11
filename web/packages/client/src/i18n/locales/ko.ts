@@ -112,6 +112,7 @@ export default {
     apiRelay: 'API 릴레이',
     history: '기록',
     presentations: '프레젠테이션',
+    office: 'Office',
     jobs: '예약 작업',
     models: '모델',
     profiles: '프로필',

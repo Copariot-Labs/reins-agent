@@ -112,6 +112,7 @@ export default {
     apiRelay: 'API Relay',
     history: 'Historique',
     presentations: 'Presentations',
+    office: 'Office',
     jobs: 'Taches planifiees',
     models: 'Modeles',
     profiles: 'Profils',

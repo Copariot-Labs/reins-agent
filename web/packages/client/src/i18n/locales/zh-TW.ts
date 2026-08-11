@@ -112,6 +112,7 @@ export default {
     apiRelay: '中轉站',
     history: '歷史',
     presentations: '簡報',
+    office: '辦公',
     jobs: '任務',
     kanban: '看板',
     models: '模型',
