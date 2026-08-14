@@ -35,7 +35,7 @@ const format = ref<OfficeFormat>('docx')
 const formatFilter = ref<FormatFilter>('all')
 const title = ref('')
 const prompt = ref('')
-const language = ref('en')
+const language = ref('zh')
 const presentationStyle = ref<OfficePresentationStyle>('auto')
 const presentationAudience = ref<OfficePresentationAudience>('general')
 const presentationDetail = ref<OfficePresentationDetail>('balanced')
@@ -92,7 +92,7 @@ const copy = computed(() => {
       loadFailed: '加载 Office 文件失败',
       downloadFailed: '下载失败',
       downloadSuccess: '下载已开始',
-      ready: 'Reins 与 OfficeCLI 已连接',
+      ready: '已连接',
       partial: 'Office 服务未完全连接',
       setup: '配置',
       lastChange: '上次修改',
@@ -125,12 +125,12 @@ const copy = computed(() => {
     presentationDetail: 'Content density',
     slideCount: 'Slides',
     create: 'Create file',
-    apply: 'Apply revision',
+    apply: 'Apply changes',
     creating: 'Reins is creating',
     revising: 'Reins is revising',
     created: 'Office file created',
-    revised: 'Revision applied',
-    revision: 'revisions',
+    revised: 'Changes applied',
+    revision: 'modification',
     validated: 'Validated',
     promptRequired: 'Enter an Office instruction',
     createFailed: 'Failed to create Office file',
@@ -138,7 +138,7 @@ const copy = computed(() => {
     loadFailed: 'Failed to load Office files',
     downloadFailed: 'Download failed',
     downloadSuccess: 'Download started',
-    ready: 'Reins and OfficeCLI connected',
+    ready: 'Connected',
     partial: 'Office services need attention',
     setup: 'Setup',
     lastChange: 'Last change',
@@ -152,10 +152,8 @@ const formatOptions = [
 ]
 
 const languageOptions = [
-  { label: 'English', value: 'en' },
   { label: '中文', value: 'zh' },
-  { label: '日本語', value: 'ja' },
-  { label: '한국어', value: 'ko' },
+  { label: 'English', value: 'en' },
 ]
 
 const presentationStyleOptions = [
@@ -668,6 +666,7 @@ onMounted(loadOffice)
   flex: 1;
   overflow: auto;
   padding: 6px;
+  margin-top: 16px;
 }
 
 .document-list.loading {

@@ -4,10 +4,7 @@ import re
 
 from typing import Any
 
-from reins.features.artifacts.hermes_writer import (
-    HermesArtifactError,
-    run_hermes_for_artifact,
-)
+from reins.features.office.content_writer import OfficeContentError, generate_office_content
 from reins.features.presentation.models import (
     PresentationPlan,
     PresentationRequest,
@@ -45,13 +42,21 @@ def create_presentation_plan(
         return create_basic_plan(request)
 
     try:
-        payload = run_hermes_for_artifact(
+        payload = generate_office_content(
             prompt=_planning_prompt(request),
-            artifact_format="pptx",
+            office_format="pptx",
+            title=request.title,
+            language=request.language,
             timeout=int(request.metadata.get("planner_timeout", 180)),
+            presentation_options={
+                "style": request.style.value,
+                "slide_count": request.slide_count,
+                "audience": request.audience or "general",
+                "detail": request.metadata.get("detail", "balanced"),
+            },
         )
         return plan_from_model_payload(request, payload)
-    except (HermesArtifactError, ValueError, TypeError) as exc:
+    except (OfficeContentError, ValueError, TypeError) as exc:
         plan = create_basic_plan(request)
         plan.metadata.update(
             {

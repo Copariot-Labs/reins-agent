@@ -51,7 +51,7 @@ describe('LoginView password login', () => {
 
     expect(mockLoginWithPassword).toHaveBeenCalledWith('admin', '123456')
     expect(mockSetApiKey).toHaveBeenCalledWith('jwt-token')
-    expect(mockReplace).toHaveBeenCalledWith('/hermes/chat')
+    expect(mockReplace).toHaveBeenCalledWith('/reins/chat')
   })
 
   it('shows the default login hint', () => {

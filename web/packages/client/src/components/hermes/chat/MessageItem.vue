@@ -19,6 +19,7 @@ import {
 import { useGlobalSpeech } from "@/composables/useSpeech";
 import { useVoiceSettings } from "@/composables/useVoiceSettings";
 import { speedToEdgeRate, hzToEdgePitch } from "@/utils/ttsHelpers";
+import type { OfficeDocument } from "@/api/reins/office";
 
 const TOOL_PAYLOAD_DISPLAY_LIMIT = 1000;
 const JSON_STRING_DISPLAY_LIMIT = 200;
@@ -29,6 +30,9 @@ const JSON_MAX_ITEMS_PER_ARRAY = 50;
 const JSON_TRUNCATED_KEY = "__truncated__";
 
 const props = defineProps<{ message: Message; highlight?: boolean; headingIdPrefix?: string }>();
+const emit = defineEmits<{
+  previewOffice: [document: OfficeDocument];
+}>();
 const { t } = useI18n();
 const toast = useMessage();
 
@@ -354,6 +358,15 @@ function handleAttachmentDownload(att: { name: string; url: string; type: string
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+  }
+}
+
+async function downloadOfficeDocument(document: OfficeDocument) {
+  toast.info(t("download.downloading"));
+  try {
+    await downloadFile(document.path, document.file_name);
+  } catch (err: any) {
+    toast.error(err?.message || t("download.downloadFailed"));
   }
 }
 
@@ -924,6 +937,33 @@ onBeforeUnmount(() => {
               :content="message.content"
               :heading-id-prefix="effectiveHeadingIdPrefix"
             />
+            <div v-if="message.role === 'assistant' && message.officeDocument" class="office-result-card">
+              <div class="office-result-file">
+                <span class="office-result-format" :class="message.officeDocument.kind">
+                  {{ message.officeDocument.kind.charAt(0).toUpperCase() }}
+                </span>
+                <div>
+                  <strong>{{ message.officeDocument.title }}</strong>
+                  <span>{{ message.officeDocument.kind.toUpperCase() }}</span>
+                </div>
+              </div>
+              <div class="office-result-actions">
+                <button type="button" @click="downloadOfficeDocument(message.officeDocument)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <path d="m7 10 5 5 5-5M12 15V3" />
+                  </svg>
+                  {{ t('files.download') }}
+                </button>
+                <button type="button" class="primary" @click="emit('previewOffice', message.officeDocument)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                  {{ t('files.preview') }}
+                </button>
+              </div>
+            </div>
 
             <!-- Render system message content -->
             <MarkdownRenderer
@@ -1147,6 +1187,91 @@ onBeforeUnmount(() => {
       0 0 20px rgba(255, 107, 107, 0.2);
     animation: rainbow-glow 4s linear infinite;
   }
+}
+
+.office-result-card {
+  min-width: min(420px, 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid $border-color;
+  border-radius: 10px;
+  background: $bg-primary;
+}
+
+.office-result-file,
+.office-result-actions {
+  display: flex;
+  align-items: center;
+}
+
+.office-result-file {
+  min-width: 0;
+  gap: 10px;
+}
+
+.office-result-file > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+
+.office-result-file strong {
+  overflow: hidden;
+  color: $text-primary;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.office-result-file > div > span {
+  color: $text-muted;
+  font-size: 10px;
+}
+
+.office-result-format {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 30px;
+  border-radius: 8px;
+  color: #fff;
+  background: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.office-result-format.xlsx { background: #16803d; }
+.office-result-format.pptx { background: #c2410c; }
+
+.office-result-actions { gap: 6px; }
+
+.office-result-actions button {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid $border-color;
+  border-radius: 8px;
+  color: $text-secondary;
+  background: $bg-card;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.office-result-actions button:hover { color: $text-primary; background: $bg-secondary; }
+.office-result-actions button.primary { color: #fff; border-color: var(--accent-primary); background: var(--accent-primary); }
+
+@media (max-width: 640px) {
+  .office-result-card { min-width: 0; align-items: stretch; flex-direction: column; }
+  .office-result-actions button { flex: 1; justify-content: center; }
 }
 
 .command-result {

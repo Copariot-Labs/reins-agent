@@ -1,6 +1,6 @@
 # Reins Agent
 
-Reins Agent is a local-first personal agent product built on top of the upstream Hermes Agent runtime. Reins owns the product wrapper, local data home, Finance tools, WeCom work-order tools, artifacts, presentations, and Web UI integration. Hermes remains the upstream core for chat, models, memory, skills, gateway, and the agent loop.
+Reins Agent is a local-first personal agent product built on top of the upstream Hermes Agent runtime. Reins owns the product wrapper, local data home, Finance tools, WeCom work-order tools, Office documents, presentations, and Web UI integration. Hermes remains the upstream core for chat, models, memory, skills, gateway, and the agent loop.
 
 `vendor/hermes-agent/` is upstream source. Do not patch it for Reins product work unless you are intentionally updating the vendored runtime.
 
@@ -13,7 +13,7 @@ Reins Agent is a local-first personal agent product built on top of the upstream
 │   └── features/               # Reins-owned product features
 │       ├── finance/            # Local finance parser, SQLite, reports, CSV, plugin
 │       ├── wecom/              # WeCom work orders, ticket API polling, Excel ledger
-│       ├── artifacts/          # Chat-triggered Office/text artifact creation
+│       ├── office/             # Chat-triggered Word, Excel, and PowerPoint creation
 │       └── presentation/       # Presentation jobs and engines
 ├── web/                        # Vue/Koa Web UI
 ├── scripts/                    # Local helper scripts
@@ -93,7 +93,7 @@ Core paths:
 <REINS_HOME>/finance/finance.sqlite
 <REINS_HOME>/wecom/wecom.sqlite
 <REINS_HOME>/wecom/records.xlsx
-<REINS_HOME>/artifacts/
+<REINS_HOME>/office/
 <REINS_HOME>/presentations/
 <REINS_HOME>/web-ui/
 <REINS_HOME>/plugins/
@@ -120,7 +120,7 @@ Reins-owned commands:
 ```bash
 reins finance --help
 reins wecom --help
-reins artifacts --help
+reins office --help
 reins presentation --help
 reins web
 reins migrate hermes
@@ -466,12 +466,12 @@ Excel ledger open: ticket recording and WeCom notification continue, and the
 command reports that the workbook refresh is pending. Close Excel and run
 `reins wecom records export` to refresh it.
 
-## Artifacts And Presentations
+## Office And Presentations
 
-Artifacts can create local DOCX/XLSX/PPTX/TXT/JSON files from chat-style requests:
+Reins Office creates local DOCX/XLSX/PPTX files from the Office page or chat-style requests:
 
 ```bash
-reins artifacts --help
+reins office --help
 reins chat "create a maintenance notice document for residents"
 ```
 

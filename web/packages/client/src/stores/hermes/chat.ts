@@ -33,6 +33,7 @@ import {
   playCompletionSound,
 } from '@/utils/completion-sound';
 import { detectThinkingBoundary } from '@/utils/thinking-parser';
+import type { OfficeDocument } from '@/api/reins/office';
 
 // Re-export ContentBlock for convenience
 export type ContentBlock = ContentBlockImport;
@@ -46,6 +47,13 @@ export interface Attachment {
   file?: File;
 }
 
+export type ChatWorkTool =
+  | 'document'
+  | 'spreadsheet'
+  | 'slides'
+  | 'research'
+  | 'browser';
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool' | 'command';
@@ -58,6 +66,7 @@ export interface Message {
   toolResult?: string;
   toolStatus?: 'running' | 'done' | 'error';
   toolDuration?: number; // 工具执行时长（秒）
+  officeDocument?: OfficeDocument;
   isStreaming?: boolean;
   attachments?: Attachment[];
   // 思考/推理文本。两条来源：
@@ -319,7 +328,7 @@ function mapHermesMessages(msgs: HermesMessage[]): Message[] {
       systemType: msg.role === 'command' ? 'command' : undefined,
     });
   }
-  return result;
+  return linkOfficeDocumentsToAssistantMessages(result);
 }
 
 function mapHermesSession(s: SessionSummary): Session {
@@ -344,6 +353,60 @@ function mapHermesSession(s: SessionSummary): Session {
       s.last_active != null ? Math.round(s.last_active * 1000) : undefined,
     workspace: s.workspace || null,
   };
+}
+
+export function officeDocumentFromToolResult(toolResult?: string): OfficeDocument | null {
+  if (!toolResult) return null;
+  try {
+    const parsed = JSON.parse(toolResult) as {
+      office_document?: OfficeDocument | null;
+    };
+    return parsed.office_document?.id ? parsed.office_document : null;
+  } catch {
+    return null;
+  }
+}
+
+export function officeDocumentFromEvent(event: unknown): OfficeDocument | null {
+  if (!event || typeof event !== 'object') return null;
+  const payload = event as {
+    office_document?: OfficeDocument | null;
+    result?: { office_document?: OfficeDocument | null } | null;
+  };
+  const document = payload.office_document || payload.result?.office_document;
+  return document?.id ? document : null;
+}
+
+export function linkOfficeDocumentsToAssistantMessages(messages: Message[]): Message[] {
+  let pendingDocument: OfficeDocument | null = null;
+  for (const message of messages) {
+    if (message.role === 'tool' && message.toolName === 'create_office_document') {
+      pendingDocument = officeDocumentFromToolResult(message.toolResult) || pendingDocument;
+      continue;
+    }
+    if (message.role === 'assistant' && pendingDocument) {
+      message.officeDocument = pendingDocument;
+      pendingDocument = null;
+    }
+  }
+  return messages;
+}
+
+export function officeDocumentFromMessages(messages: Message[]): OfficeDocument | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.officeDocument?.id) return message.officeDocument;
+    if (
+      message.role !== 'tool' ||
+      message.toolName !== 'create_office_document' ||
+      !message.toolResult
+    ) {
+      continue;
+    }
+    const document = officeDocumentFromToolResult(message.toolResult);
+    if (document) return document;
+  }
+  return null;
 }
 
 const STORAGE_KEY_PREFIX = 'hermes_active_session_';
@@ -416,14 +479,6 @@ function setItemBestEffort(key: string, value: string) {
     localStorage.setItem(key, value);
   } catch {
     // quota exceeded or private mode — ignore, cache is best-effort
-  }
-}
-
-function getItemBestEffort(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
   }
 }
 
@@ -515,6 +570,9 @@ export const useChatStore = defineStore('chat', () => {
   const messages = computed<Message[]>(
     () => activeSession.value?.messages || [],
   );
+  const activeOfficeDocument = computed<OfficeDocument | null>(() =>
+    officeDocumentFromMessages(messages.value),
+  );
 
   function isSessionLive(sessionId: string): boolean {
     return (
@@ -562,23 +620,17 @@ export const useChatStore = defineStore('chat', () => {
       }
       sessions.value = fresh;
 
-      // Restore route-selected session first (tab-local source of truth),
-      // then current in-memory session, then persisted legacy/default choice,
-      // then fallback to the most recent session.
+      // Only activate an explicitly routed session or keep the session already
+      // open in this tab. Loading the task list by itself must leave the chat
+      // overview visible instead of opening the newest task automatically.
       const currentId = activeSessionId.value;
-      const legacyActiveKey = legacyStorageKey();
-      const storedId =
-        getItemBestEffort(storageKey()) ||
-        (legacyActiveKey ? getItemBestEffort(LEGACY_STORAGE_KEY) : null);
       const targetId =
         preferredSessionId &&
         sessions.value.some((s) => s.id === preferredSessionId)
           ? preferredSessionId
           : currentId && sessions.value.some((s) => s.id === currentId)
             ? currentId
-            : storedId && sessions.value.some((s) => s.id === storedId)
-              ? storedId
-              : sessions.value[0]?.id;
+            : null;
       if (targetId) {
         await switchSession(targetId);
       } else {
@@ -850,6 +902,8 @@ export const useChatStore = defineStore('chat', () => {
                   if (toolMsgs.length > 0) {
                     const output =
                       typeof e.output === 'string' ? e.output : undefined;
+                    const officeDocument =
+                      officeDocumentFromEvent(e) || officeDocumentFromToolResult(output);
                     updateMessage(sessionId, toolMsgs[toolMsgs.length - 1].id, {
                       toolStatus:
                         e.error === true || isToolOutputError(output)
@@ -857,6 +911,7 @@ export const useChatStore = defineStore('chat', () => {
                           : 'done',
                       toolDuration: e.duration,
                       toolResult: output,
+                      officeDocument: officeDocument || undefined,
                     });
                   }
                 } else if (String(e.event || '').startsWith('subagent.')) {
@@ -1000,6 +1055,20 @@ export const useChatStore = defineStore('chat', () => {
     const idx = s.messages.findIndex((m) => m.id === id);
     if (idx !== -1) {
       s.messages[idx] = { ...s.messages[idx], ...update };
+    }
+  }
+
+  function attachOfficeDocumentToLatestAssistant(
+    sessionId: string,
+    document: OfficeDocument,
+    preferredMessageId?: string | null,
+  ) {
+    const msgs = getSessionMsgs(sessionId);
+    const assistant = preferredMessageId
+      ? msgs.find((message) => message.id === preferredMessageId && message.role === 'assistant')
+      : [...msgs].reverse().find((message) => message.role === 'assistant');
+    if (assistant) {
+      updateMessage(sessionId, assistant.id, { officeDocument: document });
     }
   }
 
@@ -1555,7 +1624,11 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  async function sendMessage(content: string, attachments?: Attachment[]) {
+  async function sendMessage(
+    content: string,
+    attachments?: Attachment[],
+    options: { workTool?: ChatWorkTool } = {},
+  ) {
     if (!content.trim() && !(attachments && attachments.length > 0)) return;
 
     primeCompletionBellIfEnabled();
@@ -1649,6 +1722,7 @@ export const useChatStore = defineStore('chat', () => {
         activeSession.value?.provider || appStore.selectedProvider;
       const runPayload = {
         input,
+        work_tool: options.workTool,
         session_id: sid,
         profile:
           activeSession.value?.profile ||
@@ -2073,6 +2147,8 @@ export const useChatStore = defineStore('chat', () => {
                   typeof (evt as any).output === 'string'
                     ? (evt as any).output
                     : undefined;
+                const officeDocument =
+                  officeDocumentFromEvent(evt) || officeDocumentFromToolResult(output);
                 const hasError =
                   (evt as any).error === true || isToolOutputError(output);
                 const duration = (evt as any).duration;
@@ -2080,6 +2156,7 @@ export const useChatStore = defineStore('chat', () => {
                   toolStatus: hasError ? 'error' : 'done',
                   toolDuration: duration,
                   toolResult: output,
+                  officeDocument: officeDocument || undefined,
                 });
               }
 
@@ -2175,6 +2252,14 @@ export const useChatStore = defineStore('chat', () => {
                   });
                   runProducedAssistantText = true;
                 }
+              }
+              const completedOfficeDocument = officeDocumentFromEvent(evt);
+              if (completedOfficeDocument) {
+                attachOfficeDocumentToLatestAssistant(
+                  sid,
+                  completedOfficeDocument,
+                  activeAssistantMessageId,
+                );
               }
               // Workaround for upstream hermes-agent bug: when the agent
               // layer silently swallows an error (e.g. invalid API key,
@@ -2578,12 +2663,15 @@ export const useChatStore = defineStore('chat', () => {
               typeof (evt as any).output === 'string'
                 ? (evt as any).output
                 : undefined;
+            const officeDocument =
+              officeDocumentFromEvent(evt) || officeDocumentFromToolResult(output);
             const hasError =
               (evt as any).error === true || isToolOutputError(output);
             updateMessage(sid, toolMsgs[toolMsgs.length - 1].id, {
               toolStatus: hasError ? 'error' : 'done',
               toolDuration: (evt as any).duration,
               toolResult: output,
+              officeDocument: officeDocument || undefined,
             });
           }
 
@@ -2643,6 +2731,14 @@ export const useChatStore = defineStore('chat', () => {
               if ((evt as any).contextTokens != null)
                 target.contextTokens = (evt as any).contextTokens;
             }
+          }
+          const completedOfficeDocument = officeDocumentFromEvent(evt);
+          if (completedOfficeDocument) {
+            attachOfficeDocumentToLatestAssistant(
+              sid,
+              completedOfficeDocument,
+              activeAssistantMessageId,
+            );
           }
           // Check if backend provided parsed content (from stringified array format)
           let finalOutputTrimmed = '';
@@ -3021,6 +3117,7 @@ export const useChatStore = defineStore('chat', () => {
     activeSession,
     focusMessageId,
     messages,
+    activeOfficeDocument,
     isStreaming,
     isRunActive,
     isSessionLive,
@@ -3038,6 +3135,7 @@ export const useChatStore = defineStore('chat', () => {
     sessionsLoaded,
     isLoadingMessages,
 
+    clearActiveSession,
     newChat,
     newCliSession,
     switchSession,

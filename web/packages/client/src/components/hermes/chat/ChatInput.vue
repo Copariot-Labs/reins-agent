@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Attachment } from '@/stores/hermes/chat'
 import { useChatStore } from '@/stores/hermes/chat'
-import { useChatCapabilitiesStore, type BrowserCapabilityMode } from '@/stores/hermes/chat-capabilities'
+import { useChatCapabilitiesStore } from '@/stores/hermes/chat-capabilities'
 import { useAppStore } from '@/stores/hermes/app'
 import { useProfilesStore } from '@/stores/hermes/profiles'
 import { fetchContextLength } from '@/api/hermes/sessions'
@@ -9,20 +9,29 @@ import { setModelContext } from '@/api/hermes/model-context'
 import {
   connectVisibleBrowser,
   disconnectVisibleBrowser,
-  fetchVisibleBrowserStatus,
   type VisibleBrowserStatus,
 } from '@/api/hermes/browser'
 import { fetchComputerUseDoctor, fetchComputerUseStatus, type ComputerUseCheck } from '@/api/hermes/computer-use'
-import { NButton, NTooltip, NSwitch, NModal, NInputNumber, NSelect, useMessage } from 'naive-ui'
+import { NButton, NTooltip, NModal, NInputNumber, useMessage } from 'naive-ui'
 import { computed, ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToolTraceVisibility } from '@/composables/useToolTraceVisibility'
+import {
+  getWorkSuggestions,
+  getWorkToolOptions,
+  shouldShowNewChatSuggestions,
+  type WorkSuggestion,
+  type WorkTool,
+} from './work-suggestions'
 
 const chatStore = useChatStore()
 const capabilitiesStore = useChatCapabilitiesStore()
 const appStore = useAppStore()
 const profilesStore = useProfilesStore()
-const { t } = useI18n()
+const { t, locale } = useI18n()
+const emit = defineEmits<{
+  sessionStarted: [sessionId: string]
+}>()
 const message = useMessage()
 const { toolTraceVisible, toggleToolTraceVisible } = useToolTraceVisibility()
 const inputText = ref('')
@@ -38,24 +47,73 @@ const isCheckingComputerUse = ref(false)
 const visibleBrowserStatus = ref<VisibleBrowserStatus | null>(null)
 const computerUseStatus = ref<ComputerUseCheck | null>(null)
 const computerUseDoctor = ref<ComputerUseCheck | null>(null)
+const suggestionsDismissedForSession = ref(false)
 
-const browserModeOptions: Array<{ label: string; value: BrowserCapabilityMode }> = [
-  { label: 'Browse off', value: 'off' },
-  { label: 'Backend', value: 'backend' },
-  { label: 'Visible', value: 'connected' },
-]
-
-const computerUseMode = computed<'off' | 'on'>({
-  get: () => capabilitiesStore.computerUseEnabled ? 'on' : 'off',
-  set: (value) => {
-    capabilitiesStore.computerUseEnabled = value === 'on'
-  },
+const selectedWorkTool = ref<WorkTool>('general')
+const isChinese = computed(() => locale.value.toLowerCase().startsWith('zh'))
+const workToolOptions = computed(() => getWorkToolOptions(isChinese.value))
+const selectedWorkToolOption = computed(() =>
+  workToolOptions.value.find(option => option.id === selectedWorkTool.value),
+)
+const workSuggestions = computed(() =>
+  getWorkSuggestions(selectedWorkTool.value, isChinese.value),
+)
+const showNewChatSuggestions = computed(() => {
+  if (chatStore.isLoadingSessions || suggestionsDismissedForSession.value) return false
+  const session = chatStore.activeSession
+  return shouldShowNewChatSuggestions({
+    hasSession: Boolean(session),
+    title: session?.title,
+    messageCount: session?.messageCount,
+    messageTotal: session?.messageTotal,
+    loadedMessageCount: session?.loadedMessageCount,
+    visibleMessageCount: chatStore.messages.length,
+    isLoadingMessages: chatStore.isLoadingMessages,
+  })
+})
+const composerPlaceholder = computed(() => {
+  const selected = selectedWorkToolOption.value
+  if (!selected) return t('chat.inputPlaceholder')
+  return isChinese.value
+    ? `告诉 Reins 你想用${selected.label}完成什么…`
+    : `Tell Reins what you want to accomplish with ${selected.label.toLowerCase()}...`
 })
 
-const computerUseOptions: Array<{ label: string; value: 'off' | 'on' }> = [
-  { label: 'Desktop off', value: 'off' },
-  { label: 'Computer Use', value: 'on' },
-]
+function selectWorkTool(tool: WorkTool) {
+  const nextTool = selectedWorkTool.value === tool ? 'general' : tool
+  selectedWorkTool.value = nextTool
+  if (nextTool === 'research' && capabilitiesStore.browserMode === 'off') {
+    capabilitiesStore.browserMode = 'backend'
+  }
+  if (nextTool === 'browser') {
+    capabilitiesStore.browserMode = 'connected'
+  }
+  nextTick(() => textareaRef.value?.focus())
+}
+
+function clearWorkTool() {
+  selectedWorkTool.value = 'general'
+  nextTick(() => textareaRef.value?.focus())
+}
+
+function applyWorkSuggestion(suggestion: WorkSuggestion) {
+  inputText.value = suggestion.prompt
+  nextTick(() => {
+    const el = textareaRef.value
+    if (!el) return
+    el.focus()
+    el.setSelectionRange(inputText.value.length, inputText.value.length)
+    handleInput({ target: el } as unknown as Event)
+  })
+}
+
+watch(
+  () => chatStore.activeSessionId,
+  () => {
+    selectedWorkTool.value = 'general'
+    suggestionsDismissedForSession.value = false
+  },
+)
 
 async function ensureVisibleBrowserConnected(showToast = true) {
   if (isConnectingVisibleBrowser.value) return
@@ -82,23 +140,6 @@ async function ensureVisibleBrowserDisconnected(showToast = false) {
     visibleBrowserStatus.value = await disconnectVisibleBrowser()
   } catch (err: any) {
     if (showToast) message.error(`Visible browser disconnect failed: ${err?.message || err}`)
-  } finally {
-    isConnectingVisibleBrowser.value = false
-  }
-}
-
-async function refreshVisibleBrowserStatus(showToast = false) {
-  if (isConnectingVisibleBrowser.value) return
-  isConnectingVisibleBrowser.value = true
-  try {
-    const status = await fetchVisibleBrowserStatus()
-    visibleBrowserStatus.value = status
-    if (showToast) {
-      if (status.connected) message.success('Visible browser connected')
-      else message.warning(status.error || 'Visible browser disconnected')
-    }
-  } catch (err: any) {
-    if (showToast) message.error(`Visible browser status failed: ${err?.message || err}`)
   } finally {
     isConnectingVisibleBrowser.value = false
   }
@@ -416,8 +457,6 @@ const totalTokens = computed(() => {
   return input + output
 })
 
-const remainingTokens = computed(() => Math.max(0, contextLength.value - totalTokens.value))
-
 const usagePercent = computed(() =>
   Math.min((totalTokens.value / contextLength.value) * 100, 100),
 )
@@ -509,9 +548,23 @@ function handleSend() {
   const text = inputText.value.trim()
   if (!text && attachments.value.length === 0) return
 
-  chatStore.sendMessage(text, attachments.value.length > 0 ? attachments.value : undefined)
+  const startsSession = !chatStore.activeSessionId
+  suggestionsDismissedForSession.value = true
+  chatStore.sendMessage(
+    text,
+    attachments.value.length > 0 ? attachments.value : undefined,
+    {
+      workTool: selectedWorkTool.value === 'general'
+        ? undefined
+        : selectedWorkTool.value,
+    },
+  )
+  if (startsSession && chatStore.activeSessionId) {
+    emit('sessionStarted', chatStore.activeSessionId)
+  }
   inputText.value = ''
   attachments.value = []
+  selectedWorkTool.value = 'general'
   slashActive.value = false
 
   if (textareaRef.value) {
@@ -617,137 +670,40 @@ function isImage(type: string): boolean {
 
 <template>
   <div class="chat-input-area">
-    <!-- Top bar: attach + auto play speech + context info -->
-    <div class="input-top-bar">
-      <NTooltip trigger="hover">
-        <template #trigger>
-          <NButton quaternary size="tiny" @click="handleAttachClick" circle>
-            <template #icon>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-            </template>
-          </NButton>
-        </template>
-        {{ t('chat.attachFiles') }}
-      </NTooltip>
-
-      <div class="auto-play-speech-switch">
-        <NTooltip trigger="hover">
-          <template #trigger>
-            <div class="switch-label">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polygon points="5 3 19 12 5 21 5 3"/>
-              </svg>
-            </div>
-          </template>
-          {{ t('chat.autoPlaySpeech') }}
-        </NTooltip>
-        <NSwitch
-          size="small"
-          v-model:value="autoPlaySpeech"
-          :round="false"
-        />
-      </div>
-
-      <NTooltip trigger="hover">
-        <template #trigger>
-          <NButton
-            quaternary
-            size="tiny"
-            class="tool-trace-toggle"
-            :class="{ active: toolTraceVisible }"
-            :aria-label="toolTraceVisible ? t('chat.hideToolCalls') : t('chat.showToolCalls')"
-            @click="toggleToolTraceVisible"
-          >
-            <svg class="tool-trace-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14.7 6.3a4.5 4.5 0 0 0-5.8 5.8L3.5 17.5a2.1 2.1 0 0 0 3 3l5.4-5.4a4.5 4.5 0 0 0 5.8-5.8l-3 3-3-3 3-3z"/>
-            </svg>
-          </NButton>
-        </template>
-        {{ toolTraceVisible ? t('chat.hideToolCalls') : t('chat.showToolCalls') }}
-      </NTooltip>
-
-      <NTooltip trigger="hover">
-        <template #trigger>
-          <div class="capability-control browser-control">
-            <button
-              type="button"
-              class="connection-dot"
-              :class="visibleBrowserStatusClass"
-              :aria-label="visibleBrowserStatusLabel"
-              @click.stop="refreshVisibleBrowserStatus(true)"
-            ></button>
-            <span class="capability-icon" aria-hidden="true">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="9"/>
-                <path d="M3 12h18"/>
-                <path d="M12 3a13.5 13.5 0 0 1 0 18"/>
-                <path d="M12 3a13.5 13.5 0 0 0 0 18"/>
-              </svg>
-            </span>
-            <NSelect
-              v-model:value="capabilitiesStore.browserMode"
-              size="tiny"
-              class="capability-select browser-select"
-              :options="browserModeOptions"
-              :consistent-menu-width="false"
-              :loading="isConnectingVisibleBrowser"
-            />
-          </div>
-        </template>
-        {{ visibleBrowserStatusLabel }}
-      </NTooltip>
-
-      <NTooltip trigger="hover">
-        <template #trigger>
-          <div class="capability-control computer-control">
-            <button
-              type="button"
-              class="connection-dot"
-              :class="computerUseStatusClass"
-              :aria-label="computerUseStatusLabel"
-              @click.stop="refreshComputerUseStatus(true)"
-            ></button>
-            <span class="capability-icon" aria-hidden="true">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="4" width="18" height="12" rx="2"/>
-                <path d="M8 20h8"/>
-                <path d="M12 16v4"/>
-              </svg>
-            </span>
-            <NSelect
-              v-model:value="computerUseMode"
-              size="tiny"
-              class="capability-select computer-select"
-              :options="computerUseOptions"
-              :consistent-menu-width="false"
-            />
-          </div>
-        </template>
-        {{ computerUseStatusLabel }}
-      </NTooltip>
-
-      <span v-if="totalTokens > 0" class="context-info" :class="{ 'context-warning': usagePercent > 80 }">
-        {{ formatTokens(totalTokens) }} /
-        <NTooltip trigger="hover">
-          <template #trigger>
-            <span class="context-limit-editable" @click="handleEditContextLimit">
-              {{ formatTokens(contextLength) }}
-            </span>
-          </template>
-          <span>{{ t('chat.contextClickToEdit') }}</span>
-        </NTooltip>
-        · {{ t('chat.contextRemaining') }} {{ formatTokens(remainingTokens) }}
-      </span>
-      <div v-if="totalTokens > 0" class="context-bar">
-        <div
-          class="context-bar-fill"
-          :class="{
-            'context-bar-warn': usagePercent > 60 && usagePercent <= 80,
-            'context-bar-danger': usagePercent > 80,
-          }"
-          :style="{ width: `${usagePercent}%` }"
-        />
-      </div>
+    <div
+      v-if="showNewChatSuggestions"
+      class="work-tool-strip"
+      :class="{ 'suggestion-strip': selectedWorkTool !== 'general' }"
+      :aria-label="selectedWorkTool === 'general' ? 'Work tools' : 'Suggested tasks'"
+    >
+      <template v-if="selectedWorkTool === 'general'">
+        <button
+          v-for="tool in workToolOptions"
+          :key="tool.id"
+          type="button"
+          class="work-tool-chip"
+          @click="selectWorkTool(tool.id)"
+        >
+          <svg v-if="tool.icon === 'document'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l4 4v16H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v5h5M8 12h7M8 16h6"/></svg>
+          <svg v-else-if="tool.icon === 'spreadsheet'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+          <svg v-else-if="tool.icon === 'slides'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 22l4-4 4 4M8 8h8M8 12h5"/></svg>
+          <svg v-else-if="tool.icon === 'research'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="10" cy="10" r="6"/><path d="m14.5 14.5 5 5M17 3v4M15 5h4"/></svg>
+          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
+          <span>{{ tool.label }}</span>
+        </button>
+      </template>
+      <template v-else>
+        <button
+          v-for="suggestion in workSuggestions"
+          :key="suggestion.id"
+          type="button"
+          class="work-suggestion-chip"
+          @click="applyWorkSuggestion(suggestion)"
+        >
+          <span>{{ suggestion.label }}</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m7 7 10 10M9 17h8V9"/></svg>
+        </button>
+      </template>
     </div>
 
     <!-- Attachment previews -->
@@ -790,12 +746,23 @@ function isImage(type: string): boolean {
         @change="handleFileChange"
       />
       <div class="resize-handle" @mousedown="startResize"></div>
+      <div v-if="selectedWorkToolOption" class="selected-work-tool-row">
+        <button type="button" class="selected-work-tool-pill" @click="clearWorkTool">
+          <svg v-if="selectedWorkToolOption.icon === 'document'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l4 4v16H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v5h5M8 12h7M8 16h6"/></svg>
+          <svg v-else-if="selectedWorkToolOption.icon === 'spreadsheet'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+          <svg v-else-if="selectedWorkToolOption.icon === 'slides'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 22l4-4 4 4M8 8h8M8 12h5"/></svg>
+          <svg v-else-if="selectedWorkToolOption.icon === 'research'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10" cy="10" r="6"/><path d="m14.5 14.5 5 5M17 3v4M15 5h4"/></svg>
+          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
+          <span>{{ selectedWorkToolOption.label }}</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m7 7 10 10M17 7 7 17"/></svg>
+        </button>
+      </div>
       <textarea
         ref="textareaRef"
         v-model="inputText"
         class="input-textarea"
         :style="textareaHeight ? { height: textareaHeight + 'px' } : {}"
-        :placeholder="t('chat.inputPlaceholder')"
+        :placeholder="composerPlaceholder"
         rows="1"
         @keydown="handleKeydown"
         @compositionstart="handleCompositionStart"
@@ -824,6 +791,56 @@ function isImage(type: string): boolean {
         </div>
       </Transition>
       <div class="input-actions">
+        <div class="composer-controls">
+          <NTooltip trigger="hover">
+            <template #trigger>
+              <button type="button" class="round-action" @click="handleAttachClick">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
+              </button>
+            </template>
+            {{ t('chat.attachFiles') }}
+          </NTooltip>
+
+          <!-- <NTooltip trigger="hover">
+            <template #trigger>
+              <button type="button" class="composer-mode" @click="selectWorkTool('browser')">
+                <span class="connection-dot" :class="visibleBrowserStatusClass" />
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/></svg>
+                <span>{{ capabilitiesStore.browserMode === 'connected' ? 'Visible' : capabilitiesStore.browserMode === 'backend' ? 'Research' : 'Browse off' }}</span>
+              </button>
+            </template>
+            {{ visibleBrowserStatusLabel }}
+          </NTooltip> -->
+
+          <NTooltip trigger="hover">
+            <template #trigger>
+              <button
+                type="button"
+                class="composer-mode"
+                :class="{ active: capabilitiesStore.computerUseEnabled }"
+                @click="capabilitiesStore.computerUseEnabled = !capabilitiesStore.computerUseEnabled"
+              >
+                <span class="connection-dot" :class="computerUseStatusClass" />
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                <span>{{ isChinese ? '桌面' : 'Desktop' }}</span>
+              </button>
+            </template>
+            {{ computerUseStatusLabel }}
+          </NTooltip>
+
+          <NTooltip trigger="hover">
+            <template #trigger>
+              <button type="button" class="round-action" :class="{ active: toolTraceVisible }" @click="toggleToolTraceVisible">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4.5 4.5 0 0 0-5.8 5.8L3.5 17.5a2.1 2.1 0 0 0 3 3l5.4-5.4a4.5 4.5 0 0 0 5.8-5.8l-3 3-3-3 3-3z"/></svg>
+              </button>
+            </template>
+            {{ toolTraceVisible ? t('chat.hideToolCalls') : t('chat.showToolCalls') }}
+          </NTooltip>
+        </div>
+
+        <span v-if="totalTokens > 0" class="context-info" :class="{ 'context-warning': usagePercent > 80 }">
+          {{ formatTokens(totalTokens) }} / <span class="context-limit-editable" @click="handleEditContextLimit">{{ formatTokens(contextLength) }}</span>
+        </span>
         <NButton
           v-if="chatStore.isStreaming"
           size="small"
@@ -834,6 +851,7 @@ function isImage(type: string): boolean {
           {{ t('chat.stop') }}
         </NButton>
         <NButton
+          class="send-action"
           size="small"
           type="primary"
           :disabled="!canSend"
@@ -842,7 +860,6 @@ function isImage(type: string): boolean {
           <template #icon>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
           </template>
-          {{ t('chat.send') }}
         </NButton>
       </div>
     </div>
@@ -894,17 +911,80 @@ function isImage(type: string): boolean {
 @use '@/styles/variables' as *;
 
 .chat-input-area {
-  padding: 12px 20px 16px;
-  border-top: 1px solid $border-color;
+  width: min(820px, calc(100% - 34px));
+  margin: 0 auto;
+  padding: 0 0 18px;
   flex-shrink: 0;
 }
 
-.input-top-bar {
+.work-tool-strip {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  gap: 7px;
+  padding: 0 0 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.work-tool-strip::-webkit-scrollbar { display: none; }
+
+.work-tool-chip {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  padding: 0 13px;
+  border: 1px solid $border-color;
+  border-radius: 999px;
+  color: $text-secondary;
+  background: $bg-card;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: color .15s ease, background .15s ease, border-color .15s ease;
+}
+
+.work-tool-chip:hover,
+.work-tool-chip.active {
+  color: $text-primary;
+  border-color: $text-muted;
+  background: $bg-secondary;
+}
+
+.work-suggestion-chip {
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
   gap: 8px;
-  padding: 0 0 6px;
+  flex: 0 0 auto;
+  max-width: 230px;
+  padding: 0 15px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: $text-primary;
+  background: $bg-secondary;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease, transform .15s ease;
+}
+
+.work-suggestion-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-suggestion-chip svg {
+  flex: 0 0 auto;
+  color: $text-muted;
+}
+
+.work-suggestion-chip:hover {
+  border-color: $text-muted;
+  background: $bg-card;
+  transform: translateY(-1px);
 }
 
 .auto-play-speech-switch {
@@ -1188,23 +1268,51 @@ function isImage(type: string): boolean {
 }
 
 .input-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   background-color: $bg-input;
   border: 1px solid $border-color;
-  border-radius: $radius-md;
-  padding: 10px 12px;
+  border-radius: 18px;
+  padding: 15px 16px 12px;
   position: relative;
-  transition: border-color $transition-fast, background-color $transition-fast;
+  box-shadow: 0 12px 38px rgba(0, 0, 0, .07);
+  transition: border-color $transition-fast, background-color $transition-fast, box-shadow $transition-fast;
 
   &:focus-within {
-    border-color: $accent-primary;
+    border-color: $text-muted;
+    box-shadow: 0 16px 42px rgba(0, 0, 0, .10);
   }
 
   .dark & {
     background-color: #333333;
   }
+}
+
+.selected-work-tool-row {
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+  padding-bottom: 3px;
+}
+
+.selected-work-tool-pill {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  color: $text-primary;
+  background: rgba(var(--accent-primary-rgb), .16);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background .15s ease;
+}
+
+.selected-work-tool-pill:hover {
+  background: rgba(var(--accent-primary-rgb), .23);
 }
 
 .resize-handle {
@@ -1229,11 +1337,11 @@ function isImage(type: string): boolean {
   outline: none;
   color: $text-primary;
   font-family: $font-ui;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.5;
   resize: none;
   max-height: 400px;
-  min-height: 20px;
+  min-height: 66px;
   overflow-y: auto;
 
   &::placeholder {
@@ -1246,9 +1354,71 @@ function isImage(type: string): boolean {
 
 .input-actions {
   display: flex;
-  gap: 6px;
-  flex-shrink: 0;
+  justify-content: flex-end;
+  gap: 8px;
   align-items: center;
+  min-width: 0;
+  padding-top: 7px;
+}
+
+.composer-controls {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.composer-controls::-webkit-scrollbar { display: none; }
+
+.round-action,
+.composer-mode {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 8px;
+  color: $text-muted;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.round-action { width: 30px; }
+
+.composer-mode {
+  gap: 5px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.round-action:hover,
+.round-action.active,
+.composer-mode:hover,
+.composer-mode.active {
+  color: $text-primary;
+  background: $bg-secondary;
+}
+
+.composer-mode .connection-dot {
+  width: 7px;
+  height: 7px;
+  flex-basis: 7px;
+}
+
+.send-action {
+  min-width: 38px !important;
+  width: 38px;
+  height: 38px;
+  border-radius: 50% !important;
+}
+
+.send-action :deep(.n-button__content > span:last-child) {
+  display: none;
 }
 
 .slash-command-dropdown {
@@ -1268,6 +1438,15 @@ function isImage(type: string): boolean {
   .dark & {
     background: #2a2a2a;
   }
+}
+
+@media (max-width: $breakpoint-mobile) {
+  .chat-input-area { width: calc(100% - 20px); padding-bottom: 10px; }
+  .work-tool-chip { height: 32px; padding-inline: 11px; }
+  .work-suggestion-chip { height: 34px; padding-inline: 12px; }
+  .input-wrapper { border-radius: 15px; padding: 12px; }
+  .input-textarea { min-height: 54px; }
+  .composer-mode span:last-child { display: none; }
 }
 
 .slash-command-item {

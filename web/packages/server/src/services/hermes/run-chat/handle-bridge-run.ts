@@ -4,7 +4,6 @@
  */
 
 import type { Server, Socket } from 'socket.io'
-import { basename } from 'path'
 import { getSystemPrompt } from '../../../lib/llm-prompt'
 import { getSession, createSession, addMessage, updateSession, updateSessionStats } from '../../../db/hermes/session-store'
 import { updateUsage } from '../../../db/hermes/usage-store'
@@ -31,7 +30,12 @@ import type { ChatCapabilities, ContentBlock, QueuedRun, SessionState } from './
 import type { ChatMessage } from '../../../lib/context-compressor'
 import { resolveBridgeRunModelConfig, type RunModelGroup } from './model-config'
 import { filterBridgeToolCallMarkupDelta, flushPendingToolCallMarkup } from './bridge-delta'
-import { mayNeedArtifactPreprocess, preprocessArtifactChatMessage, type ArtifactChatPreprocessResult } from '../artifacts'
+import {
+  createOfficeChatDocument,
+  mayNeedOfficeChat,
+  type OfficeChatResult,
+  type OfficeChatWorkTool,
+} from '../../reins/office-chat'
 import { chatCapabilitiesInstructions, chatCapabilitiesKey, normalizeChatCapabilities, toBridgeCapabilities } from './capabilities'
 import { prepareBrowserForRun } from '../browser-connection'
 import {
@@ -213,7 +217,7 @@ async function ensureBridgeFixedContext(args: {
 export async function handleBridgeRun(
   nsp: ReturnType<Server['of']>,
   socket: Socket,
-  data: { input: string | ContentBlock[]; display_input?: string | ContentBlock[] | null; display_role?: 'user' | 'command'; storage_message?: string; session_id?: string; model?: string; provider?: string; model_groups?: RunModelGroup[]; instructions?: string; capabilities?: ChatCapabilities; source?: string; queue_id?: string; peerExcludeSocketId?: string },
+  data: { input: string | ContentBlock[]; display_input?: string | ContentBlock[] | null; display_role?: 'user' | 'command'; storage_message?: string; work_tool?: 'document' | 'spreadsheet' | 'slides' | 'research' | 'browser'; session_id?: string; model?: string; provider?: string; model_groups?: RunModelGroup[]; instructions?: string; capabilities?: ChatCapabilities; source?: string; queue_id?: string; peerExcludeSocketId?: string },
   profile: string,
   sessionMap: Map<string, SessionState>,
   bridge: AgentBridgeClient,
@@ -255,6 +259,7 @@ export async function handleBridgeRun(
   const runContext = [
     `[Current Hermes profile: ${profile}]`,
     sessionRow?.workspace ? `[Current working directory: ${sessionRow.workspace}]` : '',
+    workToolInstruction(data.work_tool),
     ...chatCapabilitiesInstructions(normalizedCapabilities),
     ...(weComWorkflow?.instructions || []),
     'When calling Hermes Web UI endpoints from tools or skills, include the current Hermes profile as the X-Hermes-Profile header if the endpoint supports profile-scoped behavior.',
@@ -347,9 +352,10 @@ export async function handleBridgeRun(
     }
   }
 
-  if (!skipUserMessage && displayRole === 'user' && typeof input === 'string') {
-    const artifactHandled = await maybeHandleArtifactChatRun({
-      input: actualInputStr,
+  if (!skipUserMessage && displayRole === 'user') {
+    const officeHandled = await maybeHandleOfficeChatRun({
+      input: officePromptFromInput(input),
+      workTool: data.work_tool,
       sessionId: session_id,
       profile,
       state,
@@ -359,7 +365,7 @@ export async function handleBridgeRun(
       socket,
       dequeueNextQueuedRun,
     })
-    if (artifactHandled) return
+    if (officeHandled) return
   }
 
   const browserConnection = await prepareBrowserForRun(profile, normalizedCapabilities)
@@ -647,8 +653,9 @@ function emitWeComWorkflowToolCompleted(args: {
   args.emit('tool.completed', payload)
 }
 
-async function maybeHandleArtifactChatRun(args: {
+async function maybeHandleOfficeChatRun(args: {
   input: string
+  workTool?: OfficeChatWorkTool
   sessionId: string
   profile: string
   state: SessionState
@@ -658,10 +665,10 @@ async function maybeHandleArtifactChatRun(args: {
   socket: Socket
   dequeueNextQueuedRun: (socket: Socket, sessionId: string, fallbackProfile?: string) => void
 }): Promise<boolean> {
-  if (!mayNeedArtifactPreprocess(args.input)) return false
+  if (!mayNeedOfficeChat(args.input, args.workTool)) return false
 
-  const runId = `artifact_run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
-  const toolCallId = `artifact_tool_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+  const runId = `office_run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+  const toolCallId = `office_tool_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
   args.state.runId = runId
 
   pushState(args.sessionMap, args.sessionId, 'run.started', {
@@ -679,8 +686,8 @@ async function maybeHandleArtifactChatRun(args: {
     args.state,
     args.sessionId,
     args.runMarker,
-    'create_artifact',
-    { prompt: args.input },
+    'create_office_document',
+    { prompt: args.input, format: args.workTool || 'auto' },
     toolCallId,
   )
   const startedPayload = {
@@ -690,33 +697,33 @@ async function maybeHandleArtifactChatRun(args: {
     tool: startedTool.name,
     name: startedTool.name,
     arguments: startedTool.arguments,
-    preview: 'Generating structured content and writing the artifact file',
+    preview: 'Creating the document with Reins Office',
   }
   pushState(args.sessionMap, args.sessionId, 'tool.started', startedPayload)
   args.emit('tool.started', startedPayload)
 
-  let result: ArtifactChatPreprocessResult
+  let result: OfficeChatResult
   try {
-    result = await preprocessArtifactChatMessage(args.input)
+    result = await createOfficeChatDocument(args.input, args.workTool)
   } catch (err) {
     result = {
       handled: true,
       message: err instanceof Error ? err.message : String(err),
       exit_code: 1,
-      artifact: null,
+      document: null,
     }
   }
 
-  await finishArtifactChatRun(args, result.handled ? result : {
+  await finishOfficeChatRun(args, result.handled ? result : {
     handled: true,
-    message: 'The artifact request could not be handled.',
+    message: 'The Office document request could not be handled.',
     exit_code: 1,
-    artifact: null,
+    document: null,
   }, { runId, toolCallId: startedTool.id, toolName: startedTool.name })
   return true
 }
 
-async function finishArtifactChatRun(args: {
+async function finishOfficeChatRun(args: {
   input: string
   sessionId: string
   profile: string
@@ -726,9 +733,9 @@ async function finishArtifactChatRun(args: {
   sessionMap: Map<string, SessionState>
   socket: Socket
   dequeueNextQueuedRun: (socket: Socket, sessionId: string, fallbackProfile?: string) => void
-}, result: ArtifactChatPreprocessResult, runInfo: { runId: string; toolCallId: string; toolName: string }): Promise<void> {
+}, result: OfficeChatResult, runInfo: { runId: string; toolCallId: string; toolName: string }): Promise<void> {
   const failed = result.exit_code !== 0
-  let output = failed ? (result.message || '') : formatArtifactAssistantMessage(result)
+  let output = failed ? (result.message || '') : formatOfficeAssistantMessage(result)
 
   const completedTool = recordBridgeToolCompleted(
     args.state,
@@ -737,7 +744,7 @@ async function finishArtifactChatRun(args: {
     runInfo.toolName,
     {
       tool_call_id: runInfo.toolCallId,
-      result: artifactToolResult(result, failed),
+      result: officeToolResult(result, failed),
       is_error: failed,
     },
   )
@@ -748,6 +755,7 @@ async function finishArtifactChatRun(args: {
     tool: runInfo.toolName,
     name: runInfo.toolName,
     output: completedTool.output,
+    office_document: result.document,
     duration: completedTool.duration,
     error: failed || undefined,
   }
@@ -756,15 +764,13 @@ async function finishArtifactChatRun(args: {
 
   if (!failed) {
     if (!output.trim()) {
-      const artifact = result.artifact || {}
-      const path = typeof artifact.path === 'string' ? artifact.path : ''
-      const title = typeof artifact.title === 'string' ? artifact.title : 'Artifact'
-      const kind = typeof artifact.kind === 'string' ? artifact.kind : 'artifact'
+      const document = result.document
+      const title = document?.title || 'Office Document'
+      const kind = document?.kind || 'document'
       output = [
-        'Artifact created successfully.',
+        'Office document created successfully.',
         `Title: ${title}`,
         `Type: ${kind}`,
-        path ? `Path: ${path}` : '',
       ].filter(Boolean).join('\n')
     }
 
@@ -812,7 +818,7 @@ async function finishArtifactChatRun(args: {
     args.emit('run.failed', {
       event: 'run.failed',
       run_id: runInfo.runId,
-      error: output || 'Artifact creation failed',
+      error: output || 'Office document creation failed',
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
       queue_remaining: queueRemaining,
@@ -823,7 +829,7 @@ async function finishArtifactChatRun(args: {
       run_id: runInfo.runId,
       output,
       result: {
-        artifact: result.artifact || null,
+        office_document: result.document,
       },
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
@@ -843,59 +849,49 @@ async function finishArtifactChatRun(args: {
   }
 }
 
-function escapeMarkdownLinkText(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/\]/g, '\\]')
-}
+function formatOfficeAssistantMessage(result: OfficeChatResult): string {
+  const document = result.document
+  const title = document?.title.trim() || 'Office Document'
+  const kind = document?.kind.toUpperCase() || 'OFFICE'
 
-function markdownLocalFileHref(path: string): string {
-  return encodeURI(path)
-    .replace(/\(/g, '%28')
-    .replace(/\)/g, '%29')
-    .replace(/#/g, '%23')
-}
+  if (!document) return result.message || 'Office document created successfully.'
 
-function artifactDisplayName(artifact: Record<string, unknown>): string {
-  const path = typeof artifact.path === 'string' ? artifact.path : ''
-  return typeof artifact.file_name === 'string' && artifact.file_name.trim()
-    ? artifact.file_name.trim()
-    : path
-      ? basename(path)
-      : 'artifact'
-}
-
-function formatArtifactAssistantMessage(result: ArtifactChatPreprocessResult): string {
-  const artifact = result.artifact || {}
-  const path = typeof artifact.path === 'string' ? artifact.path : ''
-  const title = typeof artifact.title === 'string' && artifact.title.trim()
-    ? artifact.title.trim()
-    : 'Artifact'
-  const kind = typeof artifact.kind === 'string' && artifact.kind.trim()
-    ? artifact.kind.trim().toUpperCase()
-    : 'ARTIFACT'
-
-  if (!path) return result.message || 'Artifact created successfully.'
-
-  const fileName = artifactDisplayName(artifact)
   return [
-    'Artifact created successfully.',
+    'Office document created successfully.',
     '',
     `- Title: ${title}`,
     `- Type: ${kind}`,
-    '',
-    'Download:',
-    `[${escapeMarkdownLinkText(fileName)}](${markdownLocalFileHref(path)})`,
-    '',
-    `- Path: \`${path}\``,
   ].join('\n')
 }
 
-function artifactToolResult(result: ArtifactChatPreprocessResult, failed: boolean): string {
-  const artifact = result.artifact || null
+function officeToolResult(result: OfficeChatResult, failed: boolean): string {
   return JSON.stringify({
     ok: !failed,
     message: result.message,
-    artifact,
+    office_document: result.document,
   }, null, 2)
+}
+
+function workToolInstruction(workTool?: OfficeChatWorkTool): string {
+  if (workTool === 'research') {
+    return '[Selected work tool: Deep research. Perform source-backed research and cite the sources used.]'
+  }
+  if (workTool === 'browser') {
+    return '[Selected work tool: Browser. Use the connected visible browser to complete the task.]'
+  }
+  if (workTool === 'document' || workTool === 'spreadsheet' || workTool === 'slides') {
+    return `[Selected work tool: ${workTool}. Use Reins Office for Office-file creation.]`
+  }
+  return ''
+}
+
+function officePromptFromInput(input: string | ContentBlock[]): string {
+  if (typeof input === 'string') return input
+  return input.map((block) => {
+    if (block.type === 'text') return block.text
+    const label = block.type === 'image' ? 'Attached image' : 'Attached file'
+    return `[${label}: ${block.name || block.path}; local path: ${block.path}]`
+  }).filter(Boolean).join('\n')
 }
 
 async function refreshFinalContextUsage(args: {

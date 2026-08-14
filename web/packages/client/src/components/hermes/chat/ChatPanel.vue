@@ -21,11 +21,12 @@ import { useI18n } from "vue-i18n";
 import { copyToClipboard } from "@/utils/clipboard";
 import FolderPicker from "./FolderPicker.vue";
 import ChatInput from "./ChatInput.vue";
-import ConversationMonitorPane from "./ConversationMonitorPane.vue";
 import MessageList from "./MessageList.vue";
 import SessionListItem from "./SessionListItem.vue";
 import DrawerPanel from "./DrawerPanel.vue";
 import OutlinePanel from "./OutlinePanel.vue";
+import OfficePreviewPanel from "@/components/reins/OfficePreviewPanel.vue";
+import type { OfficeDocument } from "@/api/reins/office";
 
 const chatStore = useChatStore();
 const appStore = useAppStore();
@@ -33,14 +34,14 @@ const profilesStore = useProfilesStore();
 const sessionBrowserPrefsStore = useSessionBrowserPrefsStore();
 const router = useRouter();
 const message = useMessage();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 const showDrawer = ref(false);
 const drawerActiveTab = ref<"terminal" | "files">("files");
 const showOutline = ref(false);
+const showOfficePreview = ref(false);
+const previewOfficeDocument = ref<OfficeDocument | null>(null);
 const messageListRef = ref<InstanceType<typeof MessageList> | null>(null);
-
-const currentMode = ref<"chat" | "live">("chat");
 
 // Batch selection mode
 const isBatchMode = ref(false);
@@ -54,10 +55,7 @@ const isBatchDeleting = ref(false);
 // only flips it to `false` AFTER the first render, causing a visible flash
 // where the session list covers the chat content ("auto-fixes after a
 // moment" — that was the race).
-const showSessions = ref(
-  typeof window === "undefined" ||
-    !window.matchMedia("(max-width: 768px)").matches,
-);
+const showSessions = ref(false);
 let mobileQuery: MediaQueryList | null = null;
 const isMobile = ref(false);
 
@@ -83,6 +81,13 @@ async function handleSessionClick(sessionId: string) {
     params: { sessionId },
   });
   if (mobileQuery?.matches) showSessions.value = false;
+}
+
+async function handleSessionStarted(sessionId: string) {
+  await router.replace({
+    name: "hermes.session",
+    params: { sessionId },
+  });
 }
 
 function handleMobileChange(e: MediaQueryListEvent | MediaQueryList) {
@@ -160,12 +165,39 @@ watch(
 const activeSessionTitle = computed(
   () => chatStore.activeSession?.title || t("chat.newChat"),
 );
-
-const headerTitle = computed(() =>
-  currentMode.value === "live"
-    ? t("chat.liveSessions")
-    : activeSessionTitle.value,
+const activeOfficeDocument = computed(() => chatStore.activeOfficeDocument);
+const activeOfficePreviewKey = computed(
+  () => `${chatStore.activeSessionId || ''}:${activeOfficeDocument.value?.id || ''}`,
 );
+
+watch(
+  activeOfficePreviewKey,
+  () => {
+    previewOfficeDocument.value = activeOfficeDocument.value;
+    showOfficePreview.value = Boolean(activeOfficeDocument.value);
+  },
+  { immediate: true },
+);
+
+function openOfficePreview(document: OfficeDocument) {
+  previewOfficeDocument.value = document;
+  showOfficePreview.value = true;
+}
+
+function toggleLatestOfficePreview() {
+  if (showOfficePreview.value) {
+    showOfficePreview.value = false;
+    return;
+  }
+  if (activeOfficeDocument.value) openOfficePreview(activeOfficeDocument.value);
+}
+
+const headerTitle = computed(() => activeSessionTitle.value);
+const isChinese = computed(() => locale.value.toLowerCase().startsWith("zh"));
+const welcomeTitle = computed(() => isChinese.value ? "Reins 今天能帮你完成什么？" : "What can Reins help you accomplish?");
+const welcomeDescription = computed(() => isChinese.value
+  ? "在一个工作空间里完成研究、文档、分析和实际任务。"
+  : "One workspace for research, documents, analysis, and getting real work done.");
 
 const activeApproval = computed(() => chatStore.activePendingApproval);
 const visibleApproval = computed(() => activeApproval.value);
@@ -698,14 +730,8 @@ async function handleSessionModelCustomSubmit() {
 
 <template>
   <div class="chat-panel">
-    <div
-      v-if="currentMode === 'chat'"
-      class="session-backdrop"
-      :class="{ active: showSessions }"
-      @click="showSessions = false"
-    />
+    <div class="session-backdrop" :class="{ active: showSessions }" @click="showSessions = false" />
     <aside
-      v-if="currentMode === 'chat'"
       class="session-list"
       :class="{ collapsed: !showSessions }"
     >
@@ -1095,7 +1121,6 @@ async function handleSessionModelCustomSubmit() {
       <header class="chat-header">
         <div class="header-left">
           <NButton
-            v-if="currentMode === 'chat'"
             quaternary
             size="small"
             @click="showSessions = !showSessions"
@@ -1130,90 +1155,54 @@ async function handleSessionModelCustomSubmit() {
           >
         </div>
         <div class="header-actions">
-          <!-- chat/live mode toggle hidden -->
-          <template v-if="currentMode === 'chat'">
-            <NTooltip trigger="hover">
-              <template #trigger>
-                <NButton
-                  quaternary
-                  size="small"
-                  @click="showOutline = !showOutline"
-                  circle
-                >
-                  <template #icon>
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.5"
-                    >
-                      <path d="M3 12h18M3 6h18M3 18h18" />
-                    </svg>
-                  </template>
-                </NButton>
-              </template>
-              {{ t("chat.outlineTitle") }}
-            </NTooltip>
-            <NTooltip trigger="hover">
-              <template #trigger>
-                <NButton
-                  quaternary
-                  size="small"
-                  @click="copySessionId()"
-                  circle
-                >
-                  <template #icon>
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.5"
-                    >
-                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                      <path
-                        d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
-                      />
-                    </svg>
-                  </template>
-                </NButton>
-              </template>
-              {{ t("chat.copySessionId") }}
-            </NTooltip>
-            <NButton size="small" :circle="isMobile" @click="openNewChatModal">
-              <template #icon>
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-              </template>
-              <template v-if="!isMobile">{{ t("chat.newChat") }}</template>
-            </NButton>
-          </template>
+          <NTooltip trigger="hover">
+            <template #trigger>
+              <NButton quaternary size="small" @click="showOutline = !showOutline" circle>
+                <template #icon>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 12h18M3 6h18M3 18h18" /></svg>
+                </template>
+              </NButton>
+            </template>
+            {{ t("chat.outlineTitle") }}
+          </NTooltip>
+          <NTooltip v-if="activeOfficeDocument" trigger="hover">
+            <template #trigger>
+              <NButton quaternary size="small" :class="{ active: showOfficePreview }" @click="toggleLatestOfficePreview" circle>
+                <template #icon>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></svg>
+                </template>
+              </NButton>
+            </template>
+            Preview
+          </NTooltip>
+          <NButton size="small" :circle="isMobile" @click="openNewChatModal">
+            <template #icon>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </template>
+            <template v-if="!isMobile">{{ t("chat.newChat") }}</template>
+          </NButton>
         </div>
       </header>
 
-      <template v-if="currentMode === 'chat'">
-        <div class="chat-content-wrapper">
+      <div class="chat-workspace">
+        <div class="chat-column">
+          <div v-if="chatStore.messages.length === 0" class="work-welcome">
+            <div class="welcome-mark">
+              <img src="/logo.jpg" alt="" />
+            </div>
+            <h1>{{ welcomeTitle }}</h1>
+            <p>{{ welcomeDescription }}</p>
+          </div>
+          <div class="chat-content-wrapper" :class="{ 'is-empty': chatStore.messages.length === 0 }">
           <div class="chat-main-content">
-            <MessageList ref="messageListRef" />
+            <MessageList ref="messageListRef" @preview-office="openOfficePreview" />
           </div>
           <OutlinePanel
             v-if="showOutline"
             :messages="chatStore.messages"
             @navigate="handleOutlineNavigate"
           />
-        </div>
+          </div>
         <div v-if="visibleApproval" class="approval-bar">
           <div class="approval-icon" aria-hidden="true">
             <svg
@@ -1330,12 +1319,14 @@ async function handleSessionModelCustomSubmit() {
             </div>
           </div>
         </div>
-        <ChatInput />
-      </template>
-      <ConversationMonitorPane
-        v-else
-        :human-only="sessionBrowserPrefsStore.humanOnly"
-      />
+          <ChatInput @session-started="handleSessionStarted" />
+        </div>
+        <OfficePreviewPanel
+          v-if="showOfficePreview && previewOfficeDocument"
+          :document="previewOfficeDocument"
+          @close="showOfficePreview = false"
+        />
+      </div>
     </div>
 
     <!-- Floating drawer button -->
@@ -1367,6 +1358,7 @@ async function handleSessionModelCustomSubmit() {
   display: flex;
   height: 100%;
   position: relative;
+  background: $bg-card;
 }
 
 .session-model-search {
@@ -1550,35 +1542,37 @@ async function handleSessionModelCustomSubmit() {
 }
 
 .session-list {
-  width: 220px;
-  border-right: 1px solid $border-color;
+  position: absolute;
+  left: 12px;
+  top: 58px;
+  z-index: 120;
+  width: 292px;
+  max-height: min(560px, calc(100% - 76px));
+  border: 1px solid $border-color;
+  border-radius: 14px;
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
-  transition:
-    width $transition-normal,
-    opacity $transition-normal;
+  background: $bg-card;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .13);
+  transition: opacity $transition-fast, transform $transition-fast;
   overflow: hidden;
 
   &.collapsed {
-    width: 0;
-    border-right: none;
     opacity: 0;
+    transform: translateY(-8px) scale(.98);
     pointer-events: none;
   }
 
   @media (max-width: $breakpoint-mobile) {
     position: absolute;
-    left: 0;
-    top: 0;
-    height: 100%;
+    left: 8px;
+    top: 58px;
+    height: auto;
     z-index: 120;
-    background: $bg-card;
-    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
-    width: 280px;
+    width: min(300px, calc(100vw - 16px));
 
     &.collapsed {
-      transform: translateX(-100%);
+      transform: translateY(-8px) scale(.98);
       opacity: 0;
     }
   }
@@ -1590,10 +1584,10 @@ async function handleSessionModelCustomSubmit() {
   }
 
   .session-backdrop {
-    position: absolute;
+    position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.4);
-    z-index: 110;
+    z-index: 109;
     opacity: 0;
     pointer-events: none;
     transition: opacity $transition-fast;
@@ -1890,11 +1884,80 @@ async function handleSessionModelCustomSubmit() {
   min-width: 0;
 }
 
+.chat-workspace {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chat-column {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: $bg-card;
+}
+
 .chat-content-wrapper {
   flex: 1;
   display: flex;
   overflow: hidden;
   position: relative;
+}
+
+.chat-content-wrapper.is-empty {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.work-welcome {
+  position: absolute;
+  left: 50%;
+  top: 45%;
+  z-index: 2;
+  width: min(620px, calc(100% - 48px));
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+}
+
+.welcome-mark {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 18px;
+  border-radius: 18px;
+  background: $bg-secondary;
+  border: 1px solid $border-color;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .07);
+}
+
+.welcome-mark img {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+}
+
+.work-welcome h1 {
+  margin: 0;
+  color: $text-primary;
+  font-size: clamp(25px, 3vw, 38px);
+  font-weight: 680;
+  line-height: 1.15;
+  letter-spacing: -.035em;
+}
+
+.work-welcome p {
+  max-width: 520px;
+  margin: 12px auto 0;
+  color: $text-muted;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .chat-main-content {
@@ -1909,7 +1972,8 @@ async function handleSessionModelCustomSubmit() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 21px 20px;
+  min-height: 64px;
+  padding: 14px 18px;
   border-bottom: 1px solid $border-color;
   flex-shrink: 0;
 }
@@ -1924,8 +1988,8 @@ async function handleSessionModelCustomSubmit() {
 }
 
 .header-session-title {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 650;
   color: $text-primary;
   white-space: nowrap;
   overflow: hidden;
@@ -1959,8 +2023,10 @@ async function handleSessionModelCustomSubmit() {
 
 @media (max-width: $breakpoint-mobile) {
   .chat-header {
-    padding: 16px 12px 16px 52px;
+    padding: 12px 10px 12px 50px;
   }
+
+  .work-welcome { top: 40%; }
 }
 
 .workspace-badge {

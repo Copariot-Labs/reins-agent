@@ -16,7 +16,6 @@ REINS_OWNED_COMMANDS = {
     "wechat",
     "wecom",
     "office",
-    "artifacts",
     "workmode",
     "presentation",
     "debug-env",
@@ -223,11 +222,6 @@ def handle_reins_owned_command(argv: Sequence[str]) -> int:
 
         return office_main(argv[1:])
 
-    if command == "artifacts":
-        from reins.features.artifacts.cli import main as artifacts_main
-
-        return artifacts_main(argv[1:])
-
     if command == "workmode":
         from reins.features.workmode.cli import main as workmode_main
 
@@ -280,13 +274,13 @@ def maybe_preprocess_chat(argv: Sequence[str]) -> int | None:
     if not message:
         return None
 
-    from reins.features.artifacts.plugin import preprocess_artifact_text
+    from reins.features.office.chat import preprocess_office_text
 
-    artifact_result = preprocess_artifact_text(message)
+    office_result = preprocess_office_text(message)
 
-    if artifact_result.handled:
-        print(artifact_result.message)
-        return artifact_result.exit_code
+    if office_result.handled:
+        print(office_result.message)
+        return office_result.exit_code
 
     from reins.features.finance.plugin import preprocess_finance_text
 

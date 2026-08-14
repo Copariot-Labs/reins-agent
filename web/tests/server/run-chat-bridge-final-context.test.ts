@@ -35,8 +35,8 @@ const syncBridgeReasoningToMessageMock = vi.fn()
 const recordBridgeToolStartedMock = vi.fn()
 const recordBridgeToolCompletedMock = vi.fn()
 const resolveBridgeRunModelConfigMock = vi.fn()
-const mayNeedArtifactPreprocessMock = vi.fn()
-const preprocessArtifactChatMessageMock = vi.fn()
+const mayNeedOfficeChatMock = vi.fn()
+const createOfficeChatDocumentMock = vi.fn()
 const prepareBrowserForRunMock = vi.fn()
 
 vi.mock('../../packages/server/src/lib/llm-prompt', () => ({
@@ -90,9 +90,9 @@ vi.mock('../../packages/server/src/services/hermes/run-chat/model-config', () =>
   resolveBridgeRunModelConfig: resolveBridgeRunModelConfigMock,
 }))
 
-vi.mock('../../packages/server/src/services/hermes/artifacts', () => ({
-  mayNeedArtifactPreprocess: mayNeedArtifactPreprocessMock,
-  preprocessArtifactChatMessage: preprocessArtifactChatMessageMock,
+vi.mock('../../packages/server/src/services/reins/office-chat', () => ({
+  mayNeedOfficeChat: mayNeedOfficeChatMock,
+  createOfficeChatDocument: createOfficeChatDocumentMock,
 }))
 
 vi.mock('../../packages/server/src/services/hermes/browser-connection', () => ({
@@ -131,16 +131,16 @@ describe('bridge run final context usage', () => {
     getSystemPromptMock.mockReturnValue('system prompt')
     getSessionMock.mockReturnValue({ id: 'session-1', profile: 'default', model: '', provider: '' })
     resolveBridgeRunModelConfigMock.mockResolvedValue({ model: 'gpt-test', provider: 'openai' })
-    mayNeedArtifactPreprocessMock.mockReturnValue(false)
-    preprocessArtifactChatMessageMock.mockResolvedValue({ handled: false, message: '', exit_code: 0, artifact: null })
+    mayNeedOfficeChatMock.mockReturnValue(false)
+    createOfficeChatDocumentMock.mockResolvedValue({ handled: false, message: '', exit_code: 0, document: null })
     prepareBrowserForRunMock.mockResolvedValue(null)
     recordBridgeToolStartedMock.mockReturnValue({
-      id: 'artifact-tool-1',
-      name: 'create_artifact',
+      id: 'office-tool-1',
+      name: 'create_office_document',
       arguments: '{"prompt":"create a maintenance report document"}',
     })
     recordBridgeToolCompletedMock.mockReturnValue({
-      id: 'artifact-tool-1',
+      id: 'office-tool-1',
       output: '{"ok":true}',
       duration: 0.2,
     })
@@ -419,24 +419,25 @@ describe('bridge run final context usage', () => {
     }))
   })
 
-  it('handles artifact chat messages without starting the agent bridge', async () => {
+  it('creates chat documents with Reins Office without starting the agent bridge', async () => {
     const emit = vi.fn()
     const nsp = makeNamespace(emit)
     const socket = makeSocket()
     const state = makeState()
     const sessionMap = new Map([['session-1', state]])
-    const artifact = {
-      id: 'artifact-1',
+    const document = {
+      id: 'office-1',
       title: 'Maintenance Report',
       kind: 'docx',
       path: '/tmp/maintenance-report.docx',
+      file_name: 'maintenance-report.docx',
     }
-    mayNeedArtifactPreprocessMock.mockReturnValueOnce(true)
-    preprocessArtifactChatMessageMock.mockResolvedValueOnce({
+    mayNeedOfficeChatMock.mockReturnValueOnce(true)
+    createOfficeChatDocumentMock.mockResolvedValueOnce({
       handled: true,
-      message: 'Artifact created successfully.\nPath: /tmp/maintenance-report.docx',
+      message: 'Office document created successfully.',
       exit_code: 0,
-      artifact,
+      document,
     })
     addMessageMock.mockReturnValue(42)
     const bridge = {
@@ -449,7 +450,11 @@ describe('bridge run final context usage', () => {
     await handleBridgeRun(
       nsp,
       socket,
-      { input: 'create a maintenance report document', session_id: 'session-1' },
+      {
+        input: 'create a maintenance report document',
+        work_tool: 'document',
+        session_id: 'session-1',
+      },
       'default',
       sessionMap,
       bridge,
@@ -458,49 +463,50 @@ describe('bridge run final context usage', () => {
       vi.fn(),
     )
 
-    expect(mayNeedArtifactPreprocessMock).toHaveBeenCalledWith('create a maintenance report document')
-    expect(preprocessArtifactChatMessageMock).toHaveBeenCalledWith('create a maintenance report document')
+    expect(mayNeedOfficeChatMock).toHaveBeenCalledWith('create a maintenance report document', 'document')
+    expect(createOfficeChatDocumentMock).toHaveBeenCalledWith('create a maintenance report document', 'document')
     expect(bridge.chat).not.toHaveBeenCalled()
     expect(buildCompressedHistoryMock).not.toHaveBeenCalled()
     expect(recordBridgeToolStartedMock).toHaveBeenCalledWith(
       state,
       'session-1',
       expect.stringMatching(/^cli_run_/),
-      'create_artifact',
-      { prompt: 'create a maintenance report document' },
-      expect.stringMatching(/^artifact_tool_/),
+      'create_office_document',
+      { prompt: 'create a maintenance report document', format: 'document' },
+      expect.stringMatching(/^office_tool_/),
     )
     expect(recordBridgeToolCompletedMock).toHaveBeenCalledWith(
       state,
       'session-1',
       expect.stringMatching(/^cli_run_/),
-      'create_artifact',
+      'create_office_document',
       expect.objectContaining({
-        tool_call_id: 'artifact-tool-1',
+        tool_call_id: 'office-tool-1',
         is_error: false,
       }),
     )
     expect(emit).toHaveBeenCalledWith('tool.started', expect.objectContaining({
-      tool: 'create_artifact',
-      preview: expect.stringContaining('Generating structured content'),
+      tool: 'create_office_document',
+      preview: expect.stringContaining('Reins Office'),
     }))
     expect(emit).toHaveBeenCalledWith('tool.completed', expect.objectContaining({
-      tool: 'create_artifact',
+      tool: 'create_office_document',
       output: '{"ok":true}',
+      office_document: document,
     }))
     expect(addMessageMock).toHaveBeenCalledWith(expect.objectContaining({
       role: 'assistant',
-      content: expect.stringContaining('Artifact created successfully'),
+      content: expect.stringContaining('Office document created successfully'),
     }))
     expect(emit).toHaveBeenCalledWith('message.delta', expect.objectContaining({
-      delta: expect.stringContaining('/tmp/maintenance-report.docx'),
+      delta: expect.not.stringContaining('/tmp/maintenance-report.docx'),
     }))
     expect(emit).toHaveBeenCalledWith('message.delta', expect.objectContaining({
-      delta: expect.stringContaining('[maintenance-report.docx](/tmp/maintenance-report.docx)'),
+      delta: expect.not.stringContaining('Path:'),
     }))
     expect(emit).toHaveBeenCalledWith('run.completed', expect.objectContaining({
-      result: { artifact },
-      output: expect.stringContaining('/tmp/maintenance-report.docx'),
+      result: { office_document: document },
+      output: expect.not.stringContaining('/tmp/maintenance-report.docx'),
     }))
     expect(state.isWorking).toBe(false)
   })

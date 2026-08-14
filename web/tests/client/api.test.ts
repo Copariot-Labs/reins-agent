@@ -16,6 +16,7 @@ import { getApiKey, setApiKey, clearApiKey, hasApiKey, getStoredUserRole, isStor
 import { getDownloadUrl } from '../../packages/client/src/api/hermes/download'
 import { uploadFiles } from '../../packages/client/src/api/hermes/files'
 import { batchDeleteSessions, importHermesSession } from '../../packages/client/src/api/hermes/sessions'
+import { fetchOfficePreviewHtml } from '../../packages/client/src/api/reins/office'
 import router from '@/router'
 
 function fakeJwt(payload: Record<string, unknown>) {
@@ -179,6 +180,37 @@ describe('API Client', () => {
       expect(url.searchParams.get('name')).toBe('report.txt')
       expect(url.searchParams.get('profile')).toBe('research')
       expect(url.searchParams.get('token')).toBe('secret-key')
+    })
+  })
+
+  describe('Office preview', () => {
+    it('fetches preview HTML through the authenticated client flow', async () => {
+      setApiKey('office-jwt')
+      localStorage.setItem('hermes_active_profile_name', 'research')
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve('<html><body>Office preview</body></html>'),
+      })
+
+      const html = await fetchOfficePreviewHtml('office/id')
+
+      expect(html).toContain('Office preview')
+      const [url, options] = mockFetch.mock.calls[0]
+      expect(url).toBe('/api/reins/office/documents/office%2Fid/preview?profile=research')
+      expect(options.headers.Authorization).toBe('Bearer office-jwt')
+    })
+
+    it('reports preview endpoint failures instead of leaving a blank frame', async () => {
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 503,
+        text: () => Promise.resolve('OfficeCLI preview unavailable'),
+      })
+
+      await expect(fetchOfficePreviewHtml('office-1')).rejects.toThrow(
+        'Office preview failed (503): OfficeCLI preview unavailable',
+      )
     })
   })
 

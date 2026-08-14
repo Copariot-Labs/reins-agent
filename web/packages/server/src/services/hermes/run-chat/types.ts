@@ -47,6 +47,7 @@ export interface QueuedRun {
   model_groups?: Array<{ provider: string; models: string[] }>
   instructions?: string
   capabilities?: ChatCapabilities
+  workTool?: 'document' | 'spreadsheet' | 'slides' | 'research' | 'browser'
   profile: string
   source?: ChatRunSource
   originSocketId?: string

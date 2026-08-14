@@ -24,7 +24,12 @@ const routeProfile = computed(() => {
   return typeof value === 'string' && value.trim() ? value : null
 })
 
+// The overview route must never render a previously active task while profile
+// and settings requests are still loading.
+if (!routeSessionId.value) chatStore.clearActiveSession()
+
 async function loadRouteSession() {
+  if (!routeSessionId.value) chatStore.clearActiveSession()
   await chatStore.loadSessions(chatStore.sessionProfileFilter, routeSessionId.value)
   if (routeSessionId.value && chatStore.activeSessionId !== routeSessionId.value) {
     await router.replace({ name: 'hermes.chat' })
@@ -45,6 +50,7 @@ onMounted(async () => {
 watch([routeSessionId, routeProfile], async ([sessionId]) => {
   if (!chatStore.sessionsLoaded) return
   if (!sessionId) {
+    chatStore.clearActiveSession()
     await chatStore.loadSessions(chatStore.sessionProfileFilter)
     return
   }

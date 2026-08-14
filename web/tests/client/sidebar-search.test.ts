@@ -20,6 +20,20 @@ const mockAppStore = vi.hoisted(() => ({
   doUpdate: vi.fn(),
   reloadClient: vi.fn(),
 }))
+const mockChatStore = vi.hoisted(() => ({
+  sessions: [],
+  sessionsLoaded: true,
+  sessionProfileFilter: null,
+  activeSessionId: null,
+  newChat: vi.fn(() => ({ id: 'new-session' })),
+  loadSessions: vi.fn(),
+  isSessionLive: vi.fn(() => false),
+}))
+const mockProfilesStore = vi.hoisted(() => ({
+  profiles: [],
+  activeProfileName: 'default',
+  fetchProfiles: vi.fn(),
+}))
 
 vi.mock('@/composables/useSessionSearch', () => ({
   useSessionSearch: () => ({
@@ -31,6 +45,14 @@ vi.mock('@/stores/hermes/app', () => ({
   useAppStore: () => mockAppStore,
 }))
 
+vi.mock('@/stores/hermes/chat', () => ({
+  useChatStore: () => mockChatStore,
+}))
+
+vi.mock('@/stores/hermes/profiles', () => ({
+  useProfilesStore: () => mockProfilesStore,
+}))
+
 vi.mock('@/api/client', () => ({
   isStoredSuperAdmin: () => true,
 }))
@@ -40,13 +62,14 @@ vi.mock('vue-router', async (importOriginal) => {
   return {
     ...actual,
     useRoute: () => ({ name: 'hermes.chat' }),
-    useRouter: () => ({ push: vi.fn() }),
+    useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   }
 })
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
     t: (key: string) => key,
+    locale: { value: 'en' },
   }),
   createI18n: () => ({
     global: { locale: { value: 'en' }, setLocaleMessage: vi.fn() },
@@ -155,14 +178,14 @@ describe('AppSidebar search entry', () => {
     })
 
     const updateButton = wrapper.findAll('button')
-      .find(node => node.text().includes('common.update Reins'))
+      .find(node => node.text().includes('common.update'))
     expect(updateButton).toBeTruthy()
 
     await updateButton!.trigger('click')
     expect(mockAppStore.doUpdate).toHaveBeenCalledTimes(1)
   })
 
-  it('uses short group labels and keeps group folding active when collapsed', async () => {
+  it('collapses to the compact icon rail', async () => {
     mockAppStore.sidebarCollapsed = true
     const wrapper = mount(AppSidebar, {
       global: {
@@ -177,16 +200,8 @@ describe('AppSidebar search entry', () => {
     })
 
     expect(wrapper.classes()).toContain('collapsed')
-    expect(wrapper.findAll('.nav-group-label span').map(node => node.text())).toEqual([
-      'sidebar.groupConversationShort',
-      'sidebar.groupMonitoringShort',
-      'sidebar.groupSystemShort',
-    ])
-
-    const monitoringGroup = wrapper.findAll('.nav-group')[1]
-    expect(monitoringGroup.find('.nav-group-items').attributes('style')).toBeUndefined()
-
-    await monitoringGroup.find('.nav-group-label').trigger('click')
-    expect(monitoringGroup.find('.nav-group-items').attributes('style')).toContain('display: none')
+    expect(wrapper.find('.new-task-button').exists()).toBe(true)
+    expect(wrapper.find('.task-section').exists()).toBe(true)
+    expect(wrapper.find('.utility-sections').exists()).toBe(true)
   })
 })

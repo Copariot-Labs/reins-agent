@@ -10,6 +10,7 @@ from reins.features.office.editor import (
     normalize_revision_plan,
 )
 from reins.features.office.content_writer import build_office_content_prompt, generate_office_content
+from reins.features.office.chat import infer_office_format, should_handle_office_chat
 from reins.features.office.renderer import render_office_content
 from reins.features.office.schemas import (
     OfficeDocumentRecord,
@@ -62,6 +63,14 @@ def test_office_format_aliases():
     assert normalize_office_format("excel") == "xlsx"
     assert normalize_office_format("ppt") == "pptx"
     assert normalize_office_format("unknown") == "docx"
+
+
+def test_main_chat_routes_document_requests_to_office():
+    assert should_handle_office_chat("create a maintenance notice document")
+    assert infer_office_format("create an Excel maintenance tracker") == "xlsx"
+    assert infer_office_format("制作一个会议演示文稿") == "pptx"
+    assert not should_handle_office_chat("what is a maintenance report?")
+    assert not should_handle_office_chat("hello")
 
 
 def test_legacy_generator_name_is_presented_as_reins():

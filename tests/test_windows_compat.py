@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from reins.compat import paths, web
-from reins.features.artifacts.plugin import open_command_for_path
+from reins.features.office.chat import open_command_for_path
 from reins.features.presentation.engines.utils import get_venv_python
 
 
@@ -70,7 +70,7 @@ class WindowsCompatTests(unittest.TestCase):
                 "C:/repo/reins-agent/external/.venvs/ppt-master/Scripts/python.exe",
             )
 
-    def test_artifact_open_command_is_platform_specific(self) -> None:
+    def test_office_open_command_is_platform_specific(self) -> None:
         path = "C:/Users/Tester/Desktop/report.docx"
         self.assertEqual(
             open_command_for_path(path, platform="win32"),

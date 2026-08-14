@@ -87,3 +87,20 @@ export function getOfficePreviewUrl(documentId: string, version = ''): string {
   const query = params.toString()
   return `${getBaseUrlValue()}/api/reins/office/documents/${encodeURIComponent(documentId)}/preview${query ? `?${query}` : ''}`
 }
+
+export async function fetchOfficePreviewHtml(documentId: string): Promise<string> {
+  const params = new URLSearchParams()
+  const profile = getActiveProfileName()
+  if (profile) params.set('profile', profile)
+  const query = params.toString()
+  const url = `${getBaseUrlValue()}/api/reins/office/documents/${encodeURIComponent(documentId)}/preview${query ? `?${query}` : ''}`
+  const token = getApiKey()
+  const response = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '')
+    throw new Error(`Office preview failed (${response.status})${detail ? `: ${detail}` : ''}`)
+  }
+  return response.text()
+}

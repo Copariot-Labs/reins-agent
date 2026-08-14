@@ -6,6 +6,11 @@ import MessageItem from "./MessageItem.vue";
 import { useChatStore } from "@/stores/hermes/chat";
 import { useToolTraceVisibility } from "@/composables/useToolTraceVisibility";
 import ThinkingIndicator from "./ThinkingIndicator.vue";
+import type { OfficeDocument } from "@/api/reins/office";
+
+const emit = defineEmits<{
+  previewOffice: [document: OfficeDocument];
+}>();
 
 const chatStore = useChatStore();
 const { t } = useI18n();
@@ -205,6 +210,7 @@ defineExpose({
       <MessageItem
         :message="msg"
         :highlight="chatStore.focusMessageId === msg.id"
+        @preview-office="emit('previewOffice', $event)"
       />
     </template>
     <template #after>

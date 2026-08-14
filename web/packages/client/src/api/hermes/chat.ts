@@ -24,6 +24,11 @@ export interface ChatCapabilities {
 
 export interface StartRunRequest {
   input: string | ContentBlock[]
+  /** Optional text shown and persisted as the user message when the execution
+   * input contains internal routing instructions. */
+  display_input?: string | ContentBlock[] | null
+  /** Explicit work surface selected in the composer. */
+  work_tool?: 'document' | 'spreadsheet' | 'slides' | 'research' | 'browser'
   instructions?: string
   session_id?: string
   profile?: string

@@ -102,6 +102,7 @@ export class ChatRunSocket {
       display_input?: string | ContentBlock[] | null
       display_role?: 'user' | 'command'
       storage_message?: string
+      work_tool?: 'document' | 'spreadsheet' | 'slides' | 'research' | 'browser'
       session_id?: string
       model?: string
       instructions?: string
@@ -163,6 +164,7 @@ export class ChatRunSocket {
             model_groups: data.model_groups,
             instructions: data.instructions,
             capabilities: data.capabilities,
+            workTool: data.work_tool,
             profile: runProfile,
             source,
             originSocketId: socket.id,
@@ -280,6 +282,7 @@ export class ChatRunSocket {
       display_input?: string | ContentBlock[] | null
       display_role?: 'user' | 'command'
       storage_message?: string
+      work_tool?: 'document' | 'spreadsheet' | 'slides' | 'research' | 'browser'
       session_id?: string
       model?: string
       provider?: string
@@ -381,6 +384,7 @@ export class ChatRunSocket {
       display_input: next.displayInput,
       display_role: next.displayRole,
       storage_message: next.storageMessage,
+      work_tool: next.workTool,
       session_id: sessionId,
       model: next.model,
       provider: next.provider,

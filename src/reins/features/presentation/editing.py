@@ -14,10 +14,7 @@ from xml.etree import ElementTree as ET
 
 from pptx import Presentation
 
-from reins.features.artifacts.hermes_writer import (
-    HermesArtifactError,
-    run_local_json_model,
-)
+from reins.features.office.content_writer import OfficeContentError, call_reins_json
 from reins.features.presentation.engines.frontend_slides import (
     FrontendSlidesEngine,
 )
@@ -280,11 +277,11 @@ Rules:
   set requires_layout_change=true and return no changes.
 """.strip()
     try:
-        return run_local_json_model(
-            prompt=prompt,
+        return call_reins_json(
+            prompt,
             timeout=int(request.metadata.get("planner_timeout", 180)),
         )
-    except HermesArtifactError as exc:
+    except OfficeContentError as exc:
         raise PresentationEditError(
             "The edit instruction needs the local presentation model, but it "
             f"was unavailable: {exc}"
