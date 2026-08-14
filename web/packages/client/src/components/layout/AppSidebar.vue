@@ -92,7 +92,6 @@ onMounted(async () => {
       <RouteLinkItem class="sidebar-logo" :to="{ name: 'hermes.chat' }">
         <img src="/logo.jpg" alt="Reins" class="brand-mark" />
         <span class="logo-text">Reins</span>
-        <span class="version-text">AI</span>
       </RouteLinkItem>
       <button
         class="collapse-btn"
@@ -107,25 +106,30 @@ onMounted(async () => {
       </button>
     </div>
 
-    <button class="new-task-button" type="button" @click="startNewTask">
+    <!-- <button class="new-task-button" type="button" @click="startNewTask">
       <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
         <path d="M21 15a3 3 0 0 1-3 3H8l-5 3V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z" />
         <path d="M12 7v6M9 10h6" />
       </svg>
       <span>{{ copy.newTask }}</span>
-    </button>
-
+    </button>  -->
     <nav class="primary-nav" :aria-label="copy.workspace">
-      <RouteLinkItem class="nav-item" :to="{ name: 'hermes.chat' }" :active="isNavActive('hermes.chat')">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="8" r="4" />
-          <path d="M5 21a7 7 0 0 1 14 0" />
-          <path d="M18.5 3.5l.55 1.45 1.45.55-1.45.55-.55 1.45-.55-1.45-1.45-.55 1.45-.55z" />
-        </svg>
-        <span>{{ copy.assistant }}</span>
-      </RouteLinkItem>
+      <RouteLinkItem class="nav-item compact" :to="{name: 'hermes.chat'}" type="button" @click="startNewTask">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15a3 3 0 0 1-3 3H8l-5 3V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z" />
+        <path d="M12 7v6M9 10h6" />
+      </svg>
+      <span>{{ copy.newTask }}</span>
+    </RouteLinkItem> 
+      <!-- <RouteLinkItem class="nav-item compact" :to="{ name: 'hermes.chat' }" :active="isNavActive('hermes.chat')" @click="startNewTask">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15a3 3 0 0 1-3 3H8l-5 3V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z" />
+        <path d="M12 7v6M9 10h6" />
+      </svg>
+        <span>{{ copy.newTask }}</span>
+      </RouteLinkItem> -->
 
-      <RouteLinkItem class="nav-item" :to="{ name: 'hermes.office' }" :active="selectedKey === 'hermes.office'">
+      <RouteLinkItem class="nav-item compact" :to="{ name: 'hermes.office' }" :active="selectedKey === 'hermes.office'">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
           <path d="M6 3h8l4 4v14H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
           <path d="M14 3v5h5M8 13h6M8 17h6" />
@@ -198,6 +202,22 @@ onMounted(async () => {
           </svg>
           <span>{{ t('sidebar.settings') }}</span>
         </RouteLinkItem>
+
+        <!-- Model -->
+         <RouteLinkItem class="nav-item compact" :to="{ name: 'hermes.models' }" :active="selectedKey === 'hermes.models'">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M12 1v4" />
+              <path d="M12 19v4" />
+              <path d="M1 12h4" />
+              <path d="M19 12h4" />
+              <path d="M4.22 4.22l2.83 2.83" />
+              <path d="M16.95 16.95l2.83 2.83" />
+              <path d="M4.22 19.78l2.83-2.83" />
+              <path d="M16.95 7.05l2.83-2.83" />
+            </svg>
+            <span>{{ t("sidebar.models") }}</span>
+          </RouteLinkItem>
       </section>
     </div>
 
@@ -309,7 +329,7 @@ onMounted(async () => {
   align-items: center;
   gap: 12px;
   margin: 8px 0 10px;
-  padding: 0 15px;
+  padding: 0 10px;
   border-radius: 14px;
   font-size: 15px;
   font-weight: 650;

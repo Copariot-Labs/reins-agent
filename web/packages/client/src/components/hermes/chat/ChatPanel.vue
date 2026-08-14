@@ -1159,7 +1159,10 @@ async function handleSessionModelCustomSubmit() {
             <template #trigger>
               <NButton quaternary size="small" @click="showOutline = !showOutline" circle>
                 <template #icon>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 12h18M3 6h18M3 18h18" /></svg>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 6v6l4 2" />
+                  </svg>
                 </template>
               </NButton>
             </template>
