@@ -1,20 +1,20 @@
 {
-  "name": "hermes-web-ui",
+  "name": "reins-web",
   "version": "0.6.4",
-  "description": "Self-hosted AI chat dashboard for Hermes Agent — multi-model web UI with multi-platform integration",
+  "description": "Self-hosted AI chat dashboard for Reins Agent",
   "repository": {
     "type": "git",
-    "url": "https://github.com/EKKOLearnAI/hermes-web-ui.git"
+    "url": "https://github.com/Copariot-Labs/reins-agent"
   },
-  "homepage": "https://ekkolearnai.com",
+  "homepage": "",
   "license": "BSL-1.1",
   "engines": {
     "node": ">=23.0.0"
   },
   "keywords": [
-    "hermes",
-    "hermes-agent",
-    "hermes-web",
+    "reins",
+    "reins-agent",
+    "reins-web",
     "agent",
     "ai",
     "ai-agent",

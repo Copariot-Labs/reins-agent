@@ -188,19 +188,19 @@ watch(
   },
 )
 
-const visibleBrowserStatusLabel = computed(() => {
-  if (isConnectingVisibleBrowser.value) return 'Checking visible browser...'
-  const status = visibleBrowserStatus.value
-  if (!status) return 'Visible browser status unknown'
-  if (status.connected) return `Visible browser connected${status.browser ? `: ${status.browser}` : ''}`
-  return status.error ? `Visible browser disconnected: ${status.error}` : 'Visible browser disconnected'
-})
+// const visibleBrowserStatusLabel = computed(() => {
+//   if (isConnectingVisibleBrowser.value) return 'Checking visible browser...'
+//   const status = visibleBrowserStatus.value
+//   if (!status) return 'Visible browser status unknown'
+//   if (status.connected) return `Visible browser connected${status.browser ? `: ${status.browser}` : ''}`
+//   return status.error ? `Visible browser disconnected: ${status.error}` : 'Visible browser disconnected'
+// })
 
-const visibleBrowserStatusClass = computed(() => {
-  if (isConnectingVisibleBrowser.value) return 'checking'
-  if (!visibleBrowserStatus.value) return 'unknown'
-  return visibleBrowserStatus.value.connected ? 'ready' : 'error'
-})
+// const visibleBrowserStatusClass = computed(() => {
+//   if (isConnectingVisibleBrowser.value) return 'checking'
+//   if (!visibleBrowserStatus.value) return 'unknown'
+//   return visibleBrowserStatus.value.connected ? 'ready' : 'error'
+// })
 
 const computerUseStatusLabel = computed(() => {
   if (isCheckingComputerUse.value) return 'Checking computer use...'

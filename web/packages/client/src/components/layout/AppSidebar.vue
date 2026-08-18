@@ -55,9 +55,9 @@ const recentSessions = computed(() => [...chatStore.sessions]
   .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0))
   .slice(0, 30))
 
-function isNavActive(...names: string[]) {
-  return names.includes(selectedKey.value)
-}
+// function isNavActive(...names: string[]) {
+//   return names.includes(selectedKey.value)
+// }
 
 async function startNewTask() {
   chatStore.clearActiveSession()

@@ -4,8 +4,17 @@
   "version": "0.1.0",
   "identifier": "com.copariot.reins",
   "build": {
+    "beforeDevCommand": {
+      "script": "pnpm run dev:client",
+      "cwd": "../../web",
+      "wait": false
+    },
+    "beforeBuildCommand": {
+      "script": "pnpm build",
+      "cwd": "../../web"
+    },
     "devUrl": "http://localhost:8649",
-    "frontendDist": "../dist"
+    "frontendDist": "../../web/dist/client"
   },
   "app": {
     "windows": [
@@ -27,6 +36,15 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all"
+    "targets": ["nsis"],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "perMachine"
+      }
+    }
   }
 }
