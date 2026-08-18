@@ -1,8 +1,11 @@
 use std::{
-    path::{Path, PathBuf},
+    path::Path,
     process::{Child, Command, Stdio},
     sync::Mutex,
 };
+
+#[cfg(debug_assertions)]
+use std::path::PathBuf;
 
 #[cfg(not(debug_assertions))]
 use std::{
@@ -146,10 +149,10 @@ fn start_backend(app: &tauri::App) -> Result<Option<Child>, String> {
         ));
     }
 
-    let local_app_data = std::env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::temp_dir().join("Reins"));
-    let reins_home = local_app_data.join("reins");
+    let reins_home = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| format!("Failed to resolve Reins data directory: {error}"))?;
     std::fs::create_dir_all(reins_home.join("logs"))
         .map_err(|error| format!("Failed to create Reins data directory: {error}"))?;
 

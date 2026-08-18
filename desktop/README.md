@@ -69,7 +69,7 @@ Without those secrets, the workflow still creates an unsigned test installer.
 Mutable data is stored outside the installation directory:
 
 ```text
-%LOCALAPPDATA%\reins
+%LOCALAPPDATA%\com.copariot.reins
 ```
 
 This includes the local database, generated Office documents, Finance data,

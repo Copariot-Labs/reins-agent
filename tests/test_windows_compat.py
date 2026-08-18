@@ -11,6 +11,27 @@ from reins.features.office.chat import open_command_for_path
 
 
 class WindowsCompatTests(unittest.TestCase):
+    def test_windows_desktop_installer_does_not_lock_its_install_directory(self) -> None:
+        hooks = (
+            Path(__file__).resolve().parents[1]
+            / "desktop"
+            / "src-tauri"
+            / "windows"
+            / "hooks.nsh"
+        ).read_text(encoding="utf-8")
+        desktop_runtime = (
+            Path(__file__).resolve().parents[1]
+            / "desktop"
+            / "src-tauri"
+            / "src"
+            / "lib.rs"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn("/inheritance:r", hooks)
+        self.assertNotIn("/grant:r", hooks)
+        self.assertIn("/inheritance:e /reset", hooks)
+        self.assertIn("app_local_data_dir()", desktop_runtime)
+
     def test_windows_runtime_allows_install_into_private_managed_python(self) -> None:
         staging_script = (
             Path(__file__).resolve().parents[1]
