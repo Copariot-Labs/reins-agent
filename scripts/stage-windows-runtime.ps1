@@ -43,6 +43,11 @@ $Cargo = Require-Command "cargo.exe"
 $Dotnet = Require-Command "dotnet.exe"
 $Node = Require-Command "node.exe"
 
+$WebLockfile = Join-Path $WebRoot "pnpm-lock.yaml"
+if (-not (Test-Path $WebLockfile)) {
+    throw "Required build input is missing: $WebLockfile. Commit the web lockfile before building the Windows installer."
+}
+
 Write-Host "==> Building the Reins web application" -ForegroundColor Cyan
 Invoke-Checked $Pnpm @("install", "--frozen-lockfile") $WebRoot
 Invoke-Checked $Pnpm @("build") $WebRoot
