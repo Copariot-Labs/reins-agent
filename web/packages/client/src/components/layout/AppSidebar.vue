@@ -96,6 +96,7 @@ onMounted(async () => {
       <button
         class="collapse-btn"
         type="button"
+        :aria-expanded="!appStore.sidebarCollapsed"
         :title="appStore.sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse')"
         @click="appStore.toggleSidebarCollapsed()"
       >
@@ -515,7 +516,6 @@ onMounted(async () => {
 
 .sidebar.collapsed .logo-text,
 .sidebar.collapsed .version-text,
-.sidebar.collapsed .collapse-btn,
 .sidebar.collapsed .new-task-button span,
 .sidebar.collapsed .nav-item span,
 .sidebar.collapsed .task-section,
@@ -524,7 +524,9 @@ onMounted(async () => {
   display: none;
 }
 
-.sidebar.collapsed .sidebar-brand-row { justify-content: center; }
+.sidebar.collapsed .sidebar-brand-row { justify-content: center; padding-inline: 0; }
+.sidebar.collapsed .sidebar-logo { display: none; }
+.sidebar.collapsed .collapse-btn { display: grid; flex: 0 0 30px; }
 .sidebar.collapsed .new-task-button,
 .sidebar.collapsed .nav-item { justify-content: center; padding: 0; }
 .sidebar.collapsed :deep(.profile-selector .selector-label),
@@ -551,6 +553,7 @@ onMounted(async () => {
   .sidebar.collapsed .sidebar-footer { display: block; }
   .sidebar.collapsed .new-task-button,
   .sidebar.collapsed .nav-item { justify-content: flex-start; padding: 0 13px; }
+  .sidebar.collapsed .sidebar-logo { display: flex; }
   .sidebar.collapsed :deep(.profile-selector .selector-label),
   .sidebar.collapsed :deep(.profile-selector .profile-name) { display: block; }
 }

@@ -1,4 +1,5 @@
 import { request, getApiKey, getBaseUrlValue } from '../client'
+import { saveBlob } from './download'
 
 export interface SessionSummary {
   id: string
@@ -237,11 +238,7 @@ export async function exportSession(id: string, mode: 'full' | 'compressed' = 'f
   let filename = `session_${id}.${ext}`
   const match = contentDisposition.match(/filename\*?=(?:UTF-8'')?([^;\n]+)/i)
   if (match) filename = decodeURIComponent(match[1].replace(/"/g, ''))
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(a.href)
+  await saveBlob(blob, filename)
 }
 
 export interface UsageStatsResponse {

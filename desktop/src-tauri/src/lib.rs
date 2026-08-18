@@ -8,6 +8,31 @@ use tauri::Manager;
 
 struct BackendProcess(Mutex<Option<Child>>);
 
+#[tauri::command]
+async fn save_download(file_name: String, bytes: Vec<u8>) -> Result<bool, String> {
+    let safe_file_name = Path::new(&file_name)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("download")
+        .to_owned();
+
+    let Some(target) = rfd::AsyncFileDialog::new()
+        .set_file_name(&safe_file_name)
+        .save_file()
+        .await
+    else {
+        return Ok(false);
+    };
+
+    target
+        .write(&bytes)
+        .await
+        .map_err(|error| format!("Failed to save {}: {error}", target.path().display()))?;
+
+    Ok(true)
+}
+
 fn project_root() -> Result<PathBuf, String> {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
@@ -92,6 +117,7 @@ fn stop_backend(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![save_download])
         .setup(|app| {
             #[cfg(debug_assertions)]
             {

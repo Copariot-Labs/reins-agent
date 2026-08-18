@@ -314,8 +314,8 @@ async function submitInstruction() {
 async function downloadDocument(document: OfficeDocument | null) {
   if (!document) return
   try {
-    await downloadFile(document.path, document.file_name)
-    message.success(copy.value.downloadSuccess)
+    const saved = await downloadFile(document.path, document.file_name)
+    if (saved) message.success(copy.value.downloadSuccess)
   } catch (err: any) {
     message.error(err?.message || copy.value.downloadFailed)
   }

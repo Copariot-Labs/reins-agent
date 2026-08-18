@@ -1,4 +1,5 @@
 import { request, getBaseUrlValue, getApiKey } from '../client'
+import { saveBlob } from './download'
 
 export interface HermesProfile {
   name: string
@@ -184,13 +185,7 @@ export async function exportProfile(name: string): Promise<boolean> {
     if (!res.ok) throw new Error()
 
     const blob = await res.blob()
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `hermes-profile-${name}.tar.gz`
-    a.click()
-    URL.revokeObjectURL(url)
-    return true
+    return saveBlob(blob, `hermes-profile-${name}.tar.gz`)
   } catch {
     return false
   }

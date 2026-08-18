@@ -14,7 +14,7 @@ import { parseThinking, countThinkingChars } from '@/utils/thinking-parser'
 import { useGlobalSpeech } from '@/composables/useSpeech'
 import { useVoiceSettings } from '@/composables/useVoiceSettings'
 import { speedToEdgeRate, hzToEdgePitch } from '@/utils/ttsHelpers'
-import { getDownloadUrl } from '@/api/hermes/download'
+import { downloadUrl, getDownloadUrl } from '@/api/hermes/download'
 import type { ChatMessage, RoomAgent } from '@/api/hermes/group-chat'
 
 const TOOL_PAYLOAD_DISPLAY_LIMIT = 1000
@@ -122,6 +122,14 @@ const renderedAttachments = computed(() => {
     })
 })
 const hasAttachments = computed(() => renderedAttachments.value.length > 0)
+
+async function handleAttachmentDownload(attachment: { url: string; name: string }) {
+    try {
+        await downloadUrl(attachment.url, attachment.name)
+    } catch (error: any) {
+        toast.error(error?.message || t('download.downloadFailed'))
+    }
+}
 const displayBody = computed(() => {
     if (props.message.role !== 'user') return assistantBody.value
     const blocks = contentBlocks.value
@@ -461,14 +469,14 @@ onBeforeUnmount(() => {
                         :class="{ image: isImage(att.type) }"
                     >
                         <img v-if="isImage(att.type)" :src="att.url" :alt="att.name" class="msg-attachment-thumb" @click="previewUrl = att.url" />
-                        <a v-else class="msg-attachment-file" :href="att.url" :title="t('download.downloadFile')">
+                        <button v-else type="button" class="msg-attachment-file" :title="t('download.downloadFile')" @click="handleAttachmentDownload(att)">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                                 <polyline points="14 2 14 8 20 8" />
                             </svg>
                             <span class="att-name">{{ att.name }}</span>
                             <span class="att-size">{{ formatSize(att.size) }}</span>
-                        </a>
+                        </button>
                     </div>
                 </div>
                 <div v-if="hasThinking" class="thinking-block" :class="{ expanded: thinkingExpanded }">
@@ -922,8 +930,13 @@ onBeforeUnmount(() => {
     min-width: 140px;
     max-width: 220px;
     padding: 8px 10px;
+    border: 0;
     color: $text-secondary;
+    background: transparent;
+    font: inherit;
+    text-align: left;
     text-decoration: none;
+    cursor: pointer;
 
     .att-name {
         flex: 1;

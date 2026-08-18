@@ -3,6 +3,7 @@ import {
   getBaseUrlValue,
   request,
 } from '../client'
+import { saveBlob } from './download'
 
 export interface WorkOrderRecord {
   id: number
@@ -133,13 +134,6 @@ export async function downloadWorkOrdersExcel(): Promise<string> {
 
   const blob = await response.blob()
   const fileName = downloadName(response.headers.get('Content-Disposition'))
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
+  await saveBlob(blob, fileName)
   return fileName
 }

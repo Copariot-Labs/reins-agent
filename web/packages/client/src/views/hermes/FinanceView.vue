@@ -151,8 +151,8 @@ async function exportData() {
   exporting.value = true
   try {
     const exported = await exportFinanceData(queryParams())
-    await downloadFile(exported.path, exported.fileName)
-    message.success(t('finance.exportSuccess', { count: exported.count }))
+    const saved = await downloadFile(exported.path, exported.fileName)
+    if (saved) message.success(t('finance.exportSuccess', { count: exported.count }))
   } catch (err: any) {
     message.error(err?.message || t('finance.exportFailed'))
   } finally {

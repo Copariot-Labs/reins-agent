@@ -3,7 +3,7 @@ import type { Message, ContentBlock } from "@/stores/hermes/chat";
 import { computed, onBeforeUnmount, onMounted, ref, watchEffect } from "vue";
 import { useI18n } from "vue-i18n";
 import { useMessage } from "naive-ui";
-import { downloadFile, getDownloadUrl } from "@/api/hermes/download";
+import { downloadFile, downloadUrl, getDownloadUrl } from "@/api/hermes/download";
 import { copyToClipboard } from "@/utils/clipboard";
 import MarkdownRenderer from "./MarkdownRenderer.vue";
 import { parseThinking, countThinkingChars } from "@/utils/thinking-parser";
@@ -342,22 +342,20 @@ function getFilePathFromContent(attName: string): string | null {
   return null;
 }
 
-function handleAttachmentDownload(att: { name: string; url: string; type: string }) {
+async function handleAttachmentDownload(att: { name: string; url: string; type: string }) {
   const filePath = getFilePathFromContent(att.name);
   if (filePath) {
     toast.info(t("download.downloading"));
-    downloadFile(filePath, att.name).catch((err: Error) => {
+    await downloadFile(filePath, att.name).catch((err: Error) => {
       toast.error(err.message || t("download.downloadFailed"));
     });
     return;
   }
-  if (att.url && att.url.startsWith("blob:")) {
-    const a = document.createElement("a");
-    a.href = att.url;
-    a.download = att.name;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+  if (att.url) {
+    toast.info(t("download.downloading"));
+    await downloadUrl(att.url, att.name).catch((err: Error) => {
+      toast.error(err.message || t("download.downloadFailed"));
+    });
   }
 }
 

@@ -26,6 +26,7 @@ import {
   type PresentationSessionTurn,
   type PresentationStyle,
 } from '@/api/hermes/presentations'
+import { downloadUrl } from '@/api/hermes/download'
 
 const { locale } = useI18n()
 const message = useMessage()
@@ -259,13 +260,15 @@ async function handleSend() {
   }
 }
 
-function download(turn: PresentationSessionTurn) {
-  const anchor = document.createElement('a')
-  anchor.href = presentationDownloadUrl(turn.job.job_id)
-  anchor.download = turn.job.output_file_name || 'presentation'
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
+async function download(turn: PresentationSessionTurn) {
+  try {
+    await downloadUrl(
+      presentationDownloadUrl(turn.job.job_id),
+      turn.job.output_file_name || 'presentation',
+    )
+  } catch (error: any) {
+    message.error(error?.message || copy.value.loadFailed)
+  }
 }
 
 function preview(turn: PresentationSessionTurn) {

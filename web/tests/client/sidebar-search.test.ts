@@ -138,6 +138,7 @@ describe('AppSidebar search entry', () => {
     mockAppStore.clientOutdated = false
     mockAppStore.updating = false
     mockAppStore.sidebarCollapsed = false
+    mockAppStore.toggleSidebarCollapsed.mockClear()
     mockAppStore.reloadClient.mockClear()
     mockAppStore.doUpdate.mockReset()
   })
@@ -200,7 +201,12 @@ describe('AppSidebar search entry', () => {
     })
 
     expect(wrapper.classes()).toContain('collapsed')
-    expect(wrapper.find('.new-task-button').exists()).toBe(true)
+    const restoreButton = wrapper.find('.collapse-btn')
+    expect(restoreButton.exists()).toBe(true)
+    expect(restoreButton.attributes('aria-expanded')).toBe('false')
+    await restoreButton.trigger('click')
+    expect(mockAppStore.toggleSidebarCollapsed).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('.primary-nav').exists()).toBe(true)
     expect(wrapper.find('.task-section').exists()).toBe(true)
     expect(wrapper.find('.utility-sections').exists()).toBe(true)
   })
