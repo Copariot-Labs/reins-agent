@@ -11,6 +11,16 @@ from reins.features.office.chat import open_command_for_path
 
 
 class WindowsCompatTests(unittest.TestCase):
+    def test_windows_runtime_allows_install_into_private_managed_python(self) -> None:
+        staging_script = (
+            Path(__file__).resolve().parents[1]
+            / "scripts"
+            / "stage-windows-runtime.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('"--break-system-packages"', staging_script)
+        self.assertIn("Private Reins Python runtime verified", staging_script)
+
     def test_windows_installer_uses_slow_start_safe_health_check(self) -> None:
         installer = (
             Path(__file__).resolve().parents[1]

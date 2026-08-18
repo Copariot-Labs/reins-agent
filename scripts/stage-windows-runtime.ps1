@@ -109,10 +109,12 @@ if (-not (Test-Path $RuntimePython)) {
     throw "The private Python runtime was not staged at $RuntimePython"
 }
 Invoke-Checked $Uv @(
-    "pip", "install", "--python", $RuntimePython, "--system",
+    "pip", "install", "--python", $RuntimePython, "--system", "--break-system-packages",
     (Join-Path $ProjectRoot "vendor\hermes-agent"),
     $ProjectRoot
 )
+$RuntimeProbe = "import importlib.util; names=('hermes_cli','playwright','reins','run_agent'); missing=[name for name in names if importlib.util.find_spec(name) is None]; assert not missing, f'Missing runtime modules: {missing}'; print('Private Reins Python runtime verified')"
+Invoke-Checked $RuntimePython @("-c", $RuntimeProbe)
 
 $PlaywrightBrowsers = Join-Path $Runtime "playwright"
 $PreviousPlaywrightPath = $env:PLAYWRIGHT_BROWSERS_PATH
