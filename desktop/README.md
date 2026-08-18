@@ -54,7 +54,18 @@ not be committed.
 ## GitHub Actions build
 
 Run **Build Reins for Windows** manually from the Actions page, or push a tag
-matching `desktop-v*`. Download the `Reins-Windows-x64` workflow artifact.
+matching `desktop-v*`. Manual builds provide the `Reins-Windows-x64` workflow
+artifact for testing. Tagged builds also create a GitHub Release and attach:
+
+```text
+Reins-Setup-x64.exe
+Reins-Setup-x64.exe.sha256
+```
+
+Release downloads are public when the GitHub repository is public. Releases in
+a private repository remain available only to people who can access the
+repository. Re-running a tagged workflow replaces the files on its existing
+release instead of creating duplicates.
 
 For a public release, configure these repository secrets so the workflow signs
 the installer and avoids Windows' unsigned-publisher warning:
@@ -62,7 +73,8 @@ the installer and avoids Windows' unsigned-publisher warning:
 - `WINDOWS_SIGNING_PFX_BASE64`: Base64-encoded Authenticode `.pfx` certificate
 - `WINDOWS_SIGNING_PFX_PASSWORD`: Certificate password
 
-Without those secrets, the workflow still creates an unsigned test installer.
+Without those secrets, the workflow still publishes the installer but marks a
+new tagged release as a pre-release because the executable is unsigned.
 
 ## User data and background work
 

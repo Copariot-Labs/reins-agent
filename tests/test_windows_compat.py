@@ -11,6 +11,20 @@ from reins.features.office.chat import open_command_for_path
 
 
 class WindowsCompatTests(unittest.TestCase):
+    def test_tagged_windows_build_publishes_release_assets(self) -> None:
+        workflow = (
+            Path(__file__).resolve().parents[1]
+            / ".github"
+            / "workflows"
+            / "windows-desktop.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("contents: write", workflow)
+        self.assertIn('"release", "create"', workflow)
+        self.assertIn("gh release upload", workflow)
+        self.assertIn("Reins-Setup-x64.exe.sha256", workflow)
+        self.assertIn("startsWith(github.ref, 'refs/tags/desktop-v')", workflow)
+
     def test_windows_desktop_installer_does_not_lock_its_install_directory(self) -> None:
         hooks = (
             Path(__file__).resolve().parents[1]
