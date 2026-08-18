@@ -2279,7 +2279,7 @@ export const useChatStore = defineStore('chat', () => {
                   id: uid(),
                   role: 'system',
                   content:
-                    'Error: Agent returned no output. The model call may have failed (e.g. invalid API key, model not supported by provider, or context exceeded). Check the hermes-agent logs for details.',
+                    'Error: Reins returned no output. The model call may have failed (e.g. invalid API key, model not supported by provider, or context exceeded). Check the Reins logs for details.',
                   timestamp: Date.now(),
                 });
               } else {
@@ -2782,7 +2782,7 @@ export const useChatStore = defineStore('chat', () => {
               id: uid(),
               role: 'system',
               content:
-                'Error: Agent returned no output. The model call may have failed (e.g. invalid API key, model not supported by provider, or context exceeded). Check the hermes-agent logs for details.',
+                'Error: Reins returned no output. The model call may have failed (e.g. invalid API key, model not supported by provider, or context exceeded). Check the Reins logs for details.',
               timestamp: Date.now(),
             });
           } else {

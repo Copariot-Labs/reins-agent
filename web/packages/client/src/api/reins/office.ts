@@ -24,7 +24,6 @@ export interface OfficeDocument {
   revision_count: number
   prompt: string
   generator: string
-  officecli_bin: string | null
   command_count: number
   metadata: Record<string, unknown>
 }
@@ -39,14 +38,10 @@ export interface OfficeCreateInput {
 
 export interface OfficeStatus {
   available: boolean
-  binary: string | null
-  version: string | null
   error: string | null
   setup_hint: string
   reins_available: boolean
-  reins_command: string[] | null
   documents: number
-  index_path: string
 }
 
 export async function fetchOfficeStatus(): Promise<OfficeStatus> {

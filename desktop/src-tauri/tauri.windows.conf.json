@@ -1,0 +1,24 @@
+{
+  "build": {
+    "beforeBuildCommand": {
+      "script": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts\\stage-windows-runtime.ps1",
+      "cwd": "../..",
+      "wait": true
+    }
+  },
+  "bundle": {
+    "resources": [
+      "runtime"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "./windows/hooks.nsh",
+        "languages": [
+          "English",
+          "SimpChinese"
+        ]
+      }
+    }
+  }
+}

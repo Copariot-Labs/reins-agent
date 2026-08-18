@@ -8,7 +8,6 @@ from unittest.mock import patch
 
 from reins.compat import paths, web
 from reins.features.office.chat import open_command_for_path
-from reins.features.presentation.engines.utils import get_venv_python
 
 
 class WindowsCompatTests(unittest.TestCase):
@@ -61,14 +60,6 @@ class WindowsCompatTests(unittest.TestCase):
                 "C:/repo/reins-agent/.venv/Scripts/python.exe",
             )
             self.assertEqual(web._activation_command(), r".venv\Scripts\Activate.ps1")
-
-    def test_presentation_venv_python_uses_windows_layout(self) -> None:
-        venv = Path("C:/repo/reins-agent/external/.venvs/ppt-master")
-        with patch("reins.features.presentation.engines.utils.os.name", "nt"):
-            self.assertEqual(
-                str(get_venv_python(venv)).replace("\\", "/"),
-                "C:/repo/reins-agent/external/.venvs/ppt-master/Scripts/python.exe",
-            )
 
     def test_office_open_command_is_platform_specific(self) -> None:
         path = "C:/Users/Tester/Desktop/report.docx"

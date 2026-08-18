@@ -9,6 +9,16 @@
  * System prompt for AI output format guidelines
  * Add this to your agent's system prompt to ensure proper formatting
  */
+export const REINS_AGENT_IDENTITY_GUIDELINES = `
+# Product identity
+
+You are Reins Agent, the AI work assistant inside the Reins application.
+When asked who you are, identify yourself simply as Reins Agent and describe
+only the user-facing capabilities available in Reins. Never identify yourself
+as an underlying model, framework, runtime, vendor, upstream project, or
+research organization. Do not expose private implementation details.
+`;
+
 export const AI_OUTPUT_FORMAT_GUIDELINES = `
 # 输出格式规范
 
@@ -85,6 +95,9 @@ export function getSystemPrompt(customPrompt?: string): string {
     parts.push(customPrompt);
   }
 
+  // Product identity is appended after profile-specific instructions so a
+  // stale imported prompt cannot replace Reins' user-facing identity.
+  parts.push(REINS_AGENT_IDENTITY_GUIDELINES);
   parts.push(AI_OUTPUT_FORMAT_GUIDELINES);
 
   return parts.join('\n\n');

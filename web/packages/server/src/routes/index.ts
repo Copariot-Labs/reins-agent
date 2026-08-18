@@ -37,7 +37,6 @@ import { browserRoutes } from './hermes/browser'
 import { computerUseRoutes } from './hermes/computer-use'
 import { wecomRoutes } from './hermes/wecom'
 import { workOrderRoutes } from './hermes/work-orders'
-import { presentationRoutes } from './hermes/presentations'
 import { officeRoutes } from './reins/office'
 
 /**
@@ -87,7 +86,6 @@ export function registerRoutes(app: any, authMiddleware: Array<(ctx: Context, ne
   app.use(wecomRoutes.routes())                // Must be before proxy
   app.use(workOrderRoutes.routes())            // Must be before proxy
   app.use(officeRoutes.routes())               // Must be before proxy
-  app.use(presentationRoutes.routes())         // Must be before proxy
   app.use(proxyRoutes.routes())
 
   // Proxy catch-all middleware (must be last)

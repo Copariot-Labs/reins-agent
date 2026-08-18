@@ -10,7 +10,6 @@
 
 import type { Server, Socket } from 'socket.io'
 import { logger } from '../../logger'
-import { getSystemPrompt } from '../../../lib/llm-prompt'
 import { getSession } from '../../../db/hermes/session-store'
 import { getActiveProfileName, getProfileDir, listProfileNamesFromDisk } from '../hermes-profile'
 import { AgentBridgeClient } from '../agent-bridge'
@@ -300,19 +299,8 @@ export class ChatRunSocket {
     if (data.session_id && source === 'cli' && isSessionCommand(data.input)) return
 
     if (source === 'cli') {
-      let fullInstructions = data.instructions
-        ? `${getSystemPrompt()}\n${data.instructions}`
-        : getSystemPrompt()
-      if (data.session_id) {
-        const sessionRow = getSession(data.session_id)
-        if (sessionRow?.workspace) {
-          const workspaceCtx = `[Current working directory: ${sessionRow.workspace}]`
-          fullInstructions = `\n${workspaceCtx}\n${fullInstructions}`
-        }
-      }
-
       await handleBridgeRun(
-        this.nsp, socket, { ...data, instructions: fullInstructions }, profile,
+        this.nsp, socket, data, profile,
         this.sessionMap, this.bridge,
         skipUserMessage,
         loadSessionStateFromDb,

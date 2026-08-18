@@ -231,9 +231,6 @@ export async function handleBridgeRun(
     return
   }
 
-  let fullInstructions = instructions
-    ? `${getSystemPrompt()}\n${instructions}`
-    : getSystemPrompt()
   const sessionRow = getSession(session_id)
   const requestText = typeof input === 'string' ? input : contentBlocksToString(input)
   const weComWorkflow = data.display_role === 'command' ? null : buildWeComWorkflow(requestText)
@@ -257,14 +254,16 @@ export async function handleBridgeRun(
     if (Object.keys(updates).length > 0) updateSession(session_id, updates)
   }
   const runContext = [
-    `[Current Hermes profile: ${profile}]`,
+    `[Current Reins profile: ${profile}]`,
     sessionRow?.workspace ? `[Current working directory: ${sessionRow.workspace}]` : '',
     workToolInstruction(data.work_tool),
     ...chatCapabilitiesInstructions(normalizedCapabilities),
     ...(weComWorkflow?.instructions || []),
-    'When calling Hermes Web UI endpoints from tools or skills, include the current Hermes profile as the X-Hermes-Profile header if the endpoint supports profile-scoped behavior.',
+    'When calling internal Reins endpoints from tools or skills, include the current profile as the X-Hermes-Profile header if the endpoint supports profile-scoped behavior. Treat the header name as a private implementation detail.',
   ].filter(Boolean).join('\n')
-  fullInstructions = `\n${runContext}\n${fullInstructions}`
+  const fullInstructions = [runContext, instructions, getSystemPrompt()]
+    .filter(Boolean)
+    .join('\n')
 
   const runMarker = `cli_run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
   const now = Math.floor(Date.now() / 1000)

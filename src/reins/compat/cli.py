@@ -16,8 +16,8 @@ REINS_OWNED_COMMANDS = {
     "wechat",
     "wecom",
     "office",
+    "bootstrap",
     "workmode",
-    "presentation",
     "debug-env",
     "web",
 }
@@ -86,12 +86,12 @@ Main interface:
   reins chat "your message"
   reins web
 
-Hermes computer-use:
+Reins computer use:
   reins computer-use install
   reins computer-use status
   reins -t computer_use chat
 
-Core Hermes commands:
+Core Reins commands:
   reins model
   reins tools
   reins config
@@ -108,7 +108,7 @@ Reins commands:
   reins update
   reins finance
   reins office
-  reins presentation
+  reins bootstrap
   reins wecom
   reins debug-env
 
@@ -222,19 +222,19 @@ def handle_reins_owned_command(argv: Sequence[str]) -> int:
 
         return office_main(argv[1:])
 
+    if command == "bootstrap":
+        from reins.product_setup import main as product_setup_main
+
+        return product_setup_main(list(argv[1:]))
+
     if command == "workmode":
         from reins.features.workmode.cli import main as workmode_main
 
         print(
             "Warning: `reins workmode` is legacy/debug only. "
-            "Use `reins chat`, `reins web`, or Hermes computer-use for the main agent flow."
+            "Use `reins chat`, `reins web`, or Reins computer use for the main agent flow."
         )
         return workmode_main(argv[1:])
-
-    if command == "presentation":
-        from reins.features.presentation.cli import main as presentation_main
-
-        return presentation_main(argv[1:])
 
     if command == "web":
         from reins.compat.web import run_web

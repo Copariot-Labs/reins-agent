@@ -70,13 +70,13 @@ def run_web(argv: Sequence[str] | None = None) -> int:
         return 1
 
     if not hermes_agent_root.exists():
-        print(f"Hermes Agent vendor directory not found: {hermes_agent_root}")
+        print(f"Reins agent runtime directory not found: {hermes_agent_root}")
         print("The repository checkout is incomplete; clone or update Reins again.")
         return 1
 
     if not (hermes_agent_root / "run_agent.py").exists():
-        print(f"Hermes Agent run_agent.py not found: {hermes_agent_root / 'run_agent.py'}")
-        print("Your vendor/hermes-agent checkout may be incomplete.")
+        print(f"Reins agent runtime entry point not found: {hermes_agent_root / 'run_agent.py'}")
+        print("Your Reins runtime checkout may be incomplete.")
         return 1
 
     reins_bin = _find_reins_bin()

@@ -17,6 +17,7 @@ import { getActiveProfileName } from '../../services/hermes/hermes-profile'
 import { HermesSkillInjector } from '../../services/hermes/skill-injector'
 import type { HermesProfile } from '../../services/hermes/hermes-cli'
 import { listUserProfiles } from '../../db/hermes/users-store'
+import { ensureReinsProductReady } from '../../services/reins/product-setup'
 
 const bridgeCleanupClient = () => new AgentBridgeClient({ connectRetryMs: 0, timeoutMs: 5000 })
 
@@ -389,6 +390,7 @@ export async function create(ctx: any) {
     }
 
     await injectBundledSkillsForProfile(name)
+    await ensureReinsProductReady()
 
     ctx.body = {
       success: true,

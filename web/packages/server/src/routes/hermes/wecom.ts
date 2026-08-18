@@ -3,8 +3,26 @@ import {
   processWeComWorkOrder,
   processWeComWorkOrderReply,
 } from '../../services/hermes/wecom';
+import {
+  getWeComSetupStatus,
+  saveWeComSetup,
+} from '../../services/reins/wecom-setup';
+import { requireSuperAdmin } from '../../middleware/user-auth';
 
 export const wecomRoutes = new Router();
+
+wecomRoutes.get('/api/reins/wecom/setup', requireSuperAdmin, async (ctx) => {
+  ctx.body = await getWeComSetupStatus();
+});
+
+wecomRoutes.post('/api/reins/wecom/setup', requireSuperAdmin, async (ctx) => {
+  try {
+    ctx.body = await saveWeComSetup((ctx.request.body || {}) as Record<string, any>);
+  } catch (err: any) {
+    ctx.status = statusFromErrorMessage(err?.message || 'WeCom setup failed');
+    ctx.body = { error: err?.message || 'WeCom setup failed' };
+  }
+});
 
 function getBearerToken(ctx: any): string {
   const auth = String(ctx.headers.authorization || '').trim();

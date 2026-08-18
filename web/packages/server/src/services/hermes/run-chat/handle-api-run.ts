@@ -96,17 +96,17 @@ export async function handleApiRun(
 ) {
   const { input, session_id, model, provider, instructions } = data
 
-  // Build full instructions with system prompt + workspace context
-  let fullInstructions = instructions
-    ? `${getSystemPrompt()}\n${instructions}`
-    : getSystemPrompt()
+  // Keep request-specific context before the authoritative Reins identity.
+  const customInstructions: string[] = []
   if (session_id) {
     const sessionRow = getSession(session_id)
     if (sessionRow?.workspace) {
-      const workspaceCtx = `[Current working directory: ${sessionRow.workspace}]`
-      fullInstructions = `\n${workspaceCtx}\n${fullInstructions}`
+      customInstructions.push(`[Current working directory: ${sessionRow.workspace}]`)
     }
   }
+  if (instructions) customInstructions.push(instructions)
+  customInstructions.push(getSystemPrompt())
+  const fullInstructions = customInstructions.join('\n')
 
   const upstream = ''
   const apiKey = undefined

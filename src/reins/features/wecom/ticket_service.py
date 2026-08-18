@@ -23,6 +23,15 @@ WINDOWS_TASK_STATE_LABELS = {
     3: "ready",
     4: "running",
 }
+SERVICE_RUNTIME_ENV_KEYS = (
+    "REINS_RUNTIME_ROOT",
+    "HERMES_AGENT_ROOT",
+    "HERMES_WEB_UI_SKILLS_DIR",
+    "OFFICECLI_BIN",
+    "OFFICECLI_SKIP_UPDATE",
+    "PLAYWRIGHT_BROWSERS_PATH",
+    "PYTHONHOME",
+)
 
 
 def service_plist_path(*, home: Path | None = None) -> Path:
@@ -50,6 +59,19 @@ def systemd_unit_path(*, config_home: Path | None = None) -> Path:
 
 def service_target() -> str:
     return f"gui/{os.getuid()}/{SERVICE_LABEL}"
+
+
+def _service_runtime_environment() -> dict[str, str]:
+    """Keep bundled-runtime paths available after the desktop app exits.
+
+    Only product runtime paths are persisted. Credentials continue to be read
+    from the private Reins .env file by the background process.
+    """
+    return {
+        key: value
+        for key in SERVICE_RUNTIME_ENV_KEYS
+        if (value := os.environ.get(key, "").strip())
+    }
 
 
 def service_python_path() -> Path:
@@ -145,6 +167,7 @@ def build_service_definition(*, interval: float = 30.0) -> dict[str, Any]:
             "PYTHONUNBUFFERED": "1",
             "PYTHONUTF8": "1",
             "REINS_HOME": str(reins_home),
+            **_service_runtime_environment(),
         },
         "KeepAlive": True,
         "ProcessType": "Background",
@@ -185,6 +208,10 @@ def build_windows_task_script(*, interval: float = 30.0) -> str:
         str(max(5.0, float(interval))),
     ]
     argument_lines = "\n".join(f"    {_powershell_quote(argument)}" for argument in arguments)
+    runtime_environment = [
+        f"$env:{key} = {_powershell_quote(value)}"
+        for key, value in _service_runtime_environment().items()
+    ]
     return "\n".join(
         [
             "$ErrorActionPreference = 'Stop'",
@@ -194,6 +221,7 @@ def build_windows_task_script(*, interval: float = 30.0) -> str:
             "$env:PYTHONIOENCODING = 'utf-8'",
             "$env:PYTHONUNBUFFERED = '1'",
             "$env:PYTHONUTF8 = '1'",
+            *runtime_environment,
             f"$python = {_powershell_quote(service_python_path())}",
             "$arguments = @(",
             argument_lines,
@@ -233,6 +261,10 @@ def build_linux_poller_script(*, interval: float = 30.0) -> str:
         str(max(5.0, float(interval))),
     ]
     command = " ".join(shlex.quote(argument) for argument in arguments)
+    runtime_environment = [
+        f"export {key}={shlex.quote(value)}"
+        for key, value in _service_runtime_environment().items()
+    ]
     return "\n".join(
         [
             "#!/bin/sh",
@@ -243,6 +275,7 @@ def build_linux_poller_script(*, interval: float = 30.0) -> str:
             "export PYTHONIOENCODING=utf-8",
             "export PYTHONUNBUFFERED=1",
             "export PYTHONUTF8=1",
+            *runtime_environment,
             f"mkdir -p {shlex.quote(str(logs_dir))}",
             f"exec >>{shlex.quote(str(logs_dir / 'ticket-poller.log'))} "
             f"2>>{shlex.quote(str(logs_dir / 'ticket-poller.error.log'))}",

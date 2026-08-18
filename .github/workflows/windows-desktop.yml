@@ -1,0 +1,96 @@
+name: Build Reins for Windows
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "desktop-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  windows-installer:
+    name: Windows x64 installer
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out Reins
+        uses: actions/checkout@v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "10.13.1"
+          run_install: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+
+      - name: Install .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Install Rust target
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add x86_64-pc-windows-msvc
+
+      - name: Build the Reins setup executable
+        shell: pwsh
+        run: ./scripts/build-windows-desktop.ps1
+
+      - name: Sign installer when a certificate is configured
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+        run: |
+          if (-not $env:WINDOWS_SIGNING_PFX_BASE64) {
+            Write-Host "No Windows signing certificate configured; publishing an unsigned test build."
+            exit 0
+          }
+
+          $certificate = Join-Path $env:RUNNER_TEMP "reins-signing.pfx"
+          [IO.File]::WriteAllBytes(
+            $certificate,
+            [Convert]::FromBase64String($env:WINDOWS_SIGNING_PFX_BASE64)
+          )
+          try {
+            $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse |
+              Where-Object FullName -Match '\\x64\\signtool\.exe$' |
+              Sort-Object FullName -Descending |
+              Select-Object -First 1
+            if (-not $signtool) { throw "signtool.exe was not found" }
+            & $signtool.FullName sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com `
+              /f $certificate /p $env:WINDOWS_SIGNING_PFX_PASSWORD release\Reins-Setup-x64.exe
+            if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed" }
+          }
+          finally {
+            Remove-Item -Force $certificate -ErrorAction SilentlyContinue
+          }
+
+      - name: Create SHA-256 checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash release\Reins-Setup-x64.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Reins-Setup-x64.exe" | Set-Content release\Reins-Setup-x64.exe.sha256 -Encoding ascii
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v6
+        with:
+          name: Reins-Windows-x64
+          path: |
+            release/Reins-Setup-x64.exe
+            release/Reins-Setup-x64.exe.sha256
+          if-no-files-found: error
+          retention-days: 30

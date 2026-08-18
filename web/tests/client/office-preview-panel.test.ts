@@ -38,7 +38,6 @@ const document: OfficeDocument = {
   revision_count: 0,
   prompt: 'create document',
   generator: 'reins',
-  officecli_bin: null,
   command_count: 1,
   metadata: {},
 }

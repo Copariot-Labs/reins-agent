@@ -129,7 +129,6 @@ def create_office_document(
             path=path,
             prompt=cleaned_prompt,
             generator=str(content_payload.get("generator") or "reins"),
-            officecli_bin=client.binary,
             command_count=client.command_count,
             metadata={
                 "language": language,
@@ -176,7 +175,7 @@ def preview_office_document(
         env_overrides={"OFFICECLI_NO_AUTO_RESIDENT": "1"},
     )
     if not preview_path.exists():
-        raise OfficeServiceError("OfficeCLI did not create the HTML preview.")
+        raise OfficeServiceError("Reins Office did not create the preview.")
     return preview_path
 
 
@@ -215,7 +214,7 @@ def _revise_structured_presentation(
     revision = {
         "summary": str(revision_plan.get("summary") or "Presentation updated"),
         "command_count": client.command_count,
-        "validation": "OfficeCLI validation and layout checks passed.",
+        "validation": "Reins Office validation and layout checks passed.",
         "issues": {"count": 0, "issues": []},
     }
     metadata = dict(record.metadata)
@@ -248,7 +247,6 @@ def _revise_structured_presentation(
         revision_count=record.revision_count + 1,
         prompt=record.prompt,
         generator="reins",
-        officecli_bin=client.binary,
         command_count=record.command_count + client.command_count,
         metadata=metadata,
     )
@@ -345,7 +343,6 @@ def revise_office_document(
         revision_count=record.revision_count + 1,
         prompt=record.prompt,
         generator="reins",
-        officecli_bin=client.binary,
         command_count=record.command_count + client.command_count,
         metadata=metadata,
     )

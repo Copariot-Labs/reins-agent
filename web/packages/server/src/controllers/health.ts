@@ -84,11 +84,11 @@ export function startVersionCheck(): void {
 
 export async function healthCheck(ctx: any) {
   const raw = await hermesCli.getVersion()
-  const hermesVersion = raw.split('\n')[0].replace('Hermes Agent ', '') || ''
+  const reinsVersion = raw.split('\n')[0].replace(/^(?:Reins|Hermes Agent)\s+/, '') || ''
   ctx.body = {
     status: 'ok',
-    platform: 'hermes-agent',
-    version: hermesVersion,
+    platform: 'reins',
+    version: reinsVersion,
     gateway: 'running',
     webui_version: LOCAL_VERSION,
     webui_latest: isUpdateCheckDisabled() ? '' : cachedLatestVersion,

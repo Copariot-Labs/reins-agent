@@ -1592,7 +1592,7 @@ def render_office_content(
         issue_count = _office_issue_count(issues.stdout or issues.stderr)
         if issue_count:
             raise OfficeRenderError(
-                f"OfficeCLI found {issue_count} presentation layout issue(s). "
+                f"Reins Office found {issue_count} presentation layout issue(s). "
                 "Shorten the requested slide copy or revise the presentation structure."
             )
     return path

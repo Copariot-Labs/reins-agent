@@ -17,6 +17,19 @@ def get_plugin_dir() -> Path:
     return get_plugins_dir() / PLUGIN_NAME
 
 
+def get_plugin_dirs() -> list[Path]:
+    home = get_reins_home()
+    homes = [home]
+    profiles = home / "profiles"
+    if profiles.is_dir():
+        homes.extend(
+            path
+            for path in profiles.iterdir()
+            if path.is_dir() and not path.name.startswith(".")
+        )
+    return [path / "plugins" / PLUGIN_NAME for path in homes]
+
+
 def get_source_plugin_file() -> Path:
     return Path(__file__).resolve().parent / "hermes_plugin.py"
 
@@ -28,7 +41,7 @@ def write_plugin_yaml(plugin_dir: Path) -> None:
             [
                 "name: reins-finance",
                 'version: "0.1.0"',
-                "description: Reins local finance tools for Hermes Agent",
+                "description: Reins local finance tools",
                 "kind: standalone",
                 "provides_tools:",
                 "  - finance_parse_transaction_text",
@@ -63,22 +76,22 @@ def write_plugin_init(plugin_dir: Path) -> None:
     )
 
 
-def install_hermes_plugin() -> Path:
-    plugin_dir = get_plugin_dir()
-    plugin_dir.mkdir(parents=True, exist_ok=True)
+def install_hermes_plugin() -> list[Path]:
+    plugin_dirs = get_plugin_dirs()
+    for plugin_dir in plugin_dirs:
+        plugin_dir.mkdir(parents=True, exist_ok=True)
+        write_plugin_yaml(plugin_dir)
+        write_plugin_init(plugin_dir)
+    return plugin_dirs
 
-    write_plugin_yaml(plugin_dir)
-    write_plugin_init(plugin_dir)
 
-    return plugin_dir
-
-
-def print_install_instructions(plugin_dir: Path) -> None:
-    print("Reins Finance Hermes plugin installed.")
-    print(f"Plugin directory: {plugin_dir}")
+def print_install_instructions(plugin_dirs: list[Path]) -> None:
+    print("Reins Finance integration installed.")
+    for plugin_dir in plugin_dirs:
+        print(f"Plugin directory: {plugin_dir}")
     print()
     print("Enable it with:")
     print("  reins plugins enable reins-finance")
     print()
-    print("Then restart chat:")
+    print("Then restart Reins chat:")
     print('  reins chat "帮我记录今天买咖啡 28"')

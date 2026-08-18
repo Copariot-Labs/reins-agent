@@ -4,6 +4,14 @@ use std::{
     sync::Mutex,
 };
 
+#[cfg(not(debug_assertions))]
+use std::{
+    io::{Read, Write},
+    net::{SocketAddr, TcpStream},
+    thread,
+    time::{Duration, Instant},
+};
+
 use tauri::Manager;
 
 struct BackendProcess(Mutex<Option<Child>>);
@@ -33,23 +41,52 @@ async fn save_download(file_name: String, bytes: Vec<u8>) -> Result<bool, String
     Ok(true)
 }
 
+#[cfg(debug_assertions)]
 fn project_root() -> Result<PathBuf, String> {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
-        .map_err(|error| {
-            format!("Failed to resolve Reins project root: {error}")
-        })
+        .map_err(|error| format!("Failed to resolve Reins project root: {error}"))
+}
+
+#[cfg(not(debug_assertions))]
+fn backend_is_ready(port: u16) -> bool {
+    let address = SocketAddr::from(([127, 0, 0, 1], port));
+    let Ok(mut stream) = TcpStream::connect_timeout(&address, Duration::from_millis(500)) else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(700)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(700)));
+    if stream
+        .write_all(b"GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        .is_err()
+    {
+        return false;
+    }
+    let mut response = [0_u8; 512];
+    let Ok(length) = stream.read(&mut response) else {
+        return false;
+    };
+    String::from_utf8_lossy(&response[..length]).contains(" 200 ")
+}
+
+#[cfg(not(debug_assertions))]
+fn wait_for_backend(port: u16, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if backend_is_ready(port) {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(250));
+    }
+    backend_is_ready(port)
 }
 
 #[cfg(debug_assertions)]
-fn start_backend(
-    project_root: &Path,
-) -> Result<Child, String> {
+fn start_backend(project_root: &Path) -> Result<Child, String> {
     let web_root = project_root.join("web");
 
-    let server_entry =
-        web_root.join("packages/server/src/index.ts");
+    let server_entry = web_root.join("packages/server/src/index.ts");
 
     if !server_entry.exists() {
         return Err(format!(
@@ -63,11 +100,7 @@ fn start_backend(
     println!("Server: {}", server_entry.display());
 
     Command::new("node")
-        .args([
-            "-r",
-            "ts-node/register",
-            "packages/server/src/index.ts",
-        ])
+        .args(["-r", "ts-node/register", "packages/server/src/index.ts"])
         .current_dir(&web_root)
         .env("NODE_ENV", "development")
         .env("PORT", "8647")
@@ -75,14 +108,105 @@ fn start_backend(
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
-        .map_err(|error| {
-            format!("Failed to start Reins backend: {error}")
-        })
+        .map_err(|error| format!("Failed to start Reins backend: {error}"))
 }
 
-fn stop_backend(
-    state: &BackendProcess,
-) {
+#[cfg(not(debug_assertions))]
+fn start_backend(app: &tauri::App) -> Result<Option<Child>, String> {
+    const PORT: u16 = 8648;
+    if backend_is_ready(PORT) {
+        return Ok(None);
+    }
+
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|error| format!("Failed to resolve Reins resources: {error}"))?;
+    let runtime = resource_dir.join("runtime");
+    let node = runtime.join("node").join("node.exe");
+    let server = runtime.join("web").join("server").join("index.js");
+    let python = runtime.join("python").join("python.exe");
+    let reins = runtime.join("bin").join("reins-runtime.exe");
+    let officecli = runtime.join("bin").join("officecli.exe");
+    let agent_root = runtime.join("agent");
+    let skills = runtime.join("web").join("skills");
+
+    for required in [&node, &server, &python, &reins, &officecli] {
+        if !required.is_file() {
+            return Err(format!(
+                "Required Reins runtime file is missing: {}",
+                required.display()
+            ));
+        }
+    }
+    if !agent_root.join("run_agent.py").is_file() {
+        return Err(format!(
+            "Reins agent runtime is incomplete: {}",
+            agent_root.display()
+        ));
+    }
+
+    let local_app_data = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("Reins"));
+    let reins_home = local_app_data.join("reins");
+    std::fs::create_dir_all(reins_home.join("logs"))
+        .map_err(|error| format!("Failed to create Reins data directory: {error}"))?;
+
+    let mut path_entries = vec![
+        runtime.join("bin"),
+        runtime.join("python"),
+        runtime.join("node"),
+    ];
+    if let Some(existing) = std::env::var_os("PATH") {
+        path_entries.extend(std::env::split_paths(&existing));
+    }
+    let runtime_path = std::env::join_paths(path_entries)
+        .map_err(|error| format!("Failed to construct Reins runtime PATH: {error}"))?;
+
+    let mut command = Command::new(&node);
+    command
+        .arg(&server)
+        .current_dir(runtime.join("web"))
+        .env("NODE_ENV", "production")
+        .env("PORT", PORT.to_string())
+        .env("BIND_HOST", "127.0.0.1")
+        .env("REINS_DESKTOP", "1")
+        .env("REINS_HOME", &reins_home)
+        .env("HERMES_HOME", &reins_home)
+        .env("HERMES_WEB_UI_HOME", reins_home.join("web-ui"))
+        .env("REINS_RUNTIME_ROOT", &runtime)
+        .env("REINS_BIN", &reins)
+        .env("HERMES_BIN", &reins)
+        .env("REINS_SERVICE_PYTHON", &python)
+        .env("HERMES_AGENT_BRIDGE_PYTHON", &python)
+        .env("HERMES_AGENT_ROOT", &agent_root)
+        .env("HERMES_WEB_UI_SKILLS_DIR", &skills)
+        .env("OFFICECLI_BIN", &officecli)
+        .env("OFFICECLI_SKIP_UPDATE", "1")
+        .env("PLAYWRIGHT_BROWSERS_PATH", runtime.join("playwright"))
+        .env("PYTHONHOME", runtime.join("python"))
+        .env("PYTHONIOENCODING", "utf-8")
+        .env("PYTHONUTF8", "1")
+        .env("HERMES_WEB_UI_DISABLE_UPDATE_CHECK", "true")
+        .env("PATH", runtime_path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+
+    command
+        .spawn()
+        .map(Some)
+        .map_err(|error| format!("Failed to start the private Reins runtime: {error}"))
+}
+
+fn stop_backend(state: &BackendProcess) {
     let Ok(mut guard) = state.0.lock() else {
         eprintln!("Failed to lock Reins backend state");
         return;
@@ -92,23 +216,14 @@ fn stop_backend(
         return;
     };
 
-    println!(
-        "Stopping Reins backend (PID {})...",
-        backend.id()
-    );
+    println!("Stopping Reins backend (PID {})...", backend.id());
 
     if let Err(error) = backend.kill() {
-        eprintln!(
-            "Failed to stop Reins backend: {}",
-            error
-        );
+        eprintln!("Failed to stop Reins backend: {}", error);
     }
 
     if let Err(error) = backend.wait() {
-        eprintln!(
-            "Failed to wait for Reins backend: {}",
-            error
-        );
+        eprintln!("Failed to wait for Reins backend: {}", error);
     }
 
     println!("Reins backend stopped.");
@@ -122,29 +237,37 @@ pub fn run() {
             #[cfg(debug_assertions)]
             {
                 let root = project_root()
-                    .map_err(
-                        |error| -> Box<dyn std::error::Error> {
-                            error.into()
-                        },
-                    )?;
+                    .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
 
                 let backend = start_backend(&root)
-                    .map_err(
-                        |error| -> Box<dyn std::error::Error> {
-                            error.into()
-                        },
-                    )?;
+                    .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
 
-                println!(
-                    "Reins backend process started with PID {}",
-                    backend.id()
-                );
+                println!("Reins backend process started with PID {}", backend.id());
 
-                app.manage(
-                    BackendProcess(
-                        Mutex::new(Some(backend)),
-                    ),
-                );
+                app.manage(BackendProcess(Mutex::new(Some(backend))));
+            }
+
+            #[cfg(not(debug_assertions))]
+            {
+                let backend = start_backend(app)
+                    .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
+                app.manage(BackendProcess(Mutex::new(backend)));
+
+                let handle = app.handle().clone();
+                thread::spawn(move || {
+                    if !wait_for_backend(8648, Duration::from_secs(90)) {
+                        eprintln!("Reins runtime did not become ready within 90 seconds");
+                        return;
+                    }
+                    let Ok(url) = "http://127.0.0.1:8648".parse() else {
+                        return;
+                    };
+                    if let Some(window) = handle.get_webview_window("main") {
+                        if let Err(error) = window.navigate(url) {
+                            eprintln!("Failed to open the Reins interface: {error}");
+                        }
+                    }
+                });
             }
 
             Ok(())
@@ -154,13 +277,8 @@ pub fn run() {
 
     app.run(|app_handle, event| {
         if let tauri::RunEvent::Exit = event {
-            #[cfg(debug_assertions)]
-            {
-                if let Some(state) =
-                    app_handle.try_state::<BackendProcess>()
-                {
-                    stop_backend(&state);
-                }
+            if let Some(state) = app_handle.try_state::<BackendProcess>() {
+                stop_backend(&state);
             }
         }
     });

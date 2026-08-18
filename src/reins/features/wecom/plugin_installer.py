@@ -56,11 +56,11 @@ def install_hermes_plugin() -> list[Path]:
 
 
 def print_install_instructions(plugin_dirs: list[Path]) -> None:
-    print("Reins WeCom Hermes plugin installed.")
+    print("Reins WeCom integration installed.")
     for plugin_dir in plugin_dirs:
         print(f"Plugin directory: {plugin_dir}")
     print()
-    print("Enable it for the Hermes profile used by the WeCom gateway:")
+    print("Enable it for the Reins profile used by the WeCom gateway:")
     print("  reins plugins enable reins-wecom")
     print()
     print("Then restart the Web UI or its managed WeCom gateway.")

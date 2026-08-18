@@ -1,6 +1,6 @@
 # Reins Agent
 
-Reins Agent is a local-first personal agent product built on top of the upstream Hermes Agent runtime. Reins owns the product wrapper, local data home, Finance tools, WeCom work-order tools, Office documents, presentations, and Web UI integration. Hermes remains the upstream core for chat, models, memory, skills, gateway, and the agent loop.
+Reins Agent is a local-first personal agent product. Reins owns the product wrapper, local data home, Finance tools, WeCom work-order tools, Office documents, and Web UI integration. The bundled agent runtime provides chat, models, memory, skills, gateways, and the agent loop.
 
 `vendor/hermes-agent/` is upstream source. Do not patch it for Reins product work unless you are intentionally updating the vendored runtime.
 
@@ -13,8 +13,7 @@ Reins Agent is a local-first personal agent product built on top of the upstream
 │   └── features/               # Reins-owned product features
 │       ├── finance/            # Local finance parser, SQLite, reports, CSV, plugin
 │       ├── wecom/              # WeCom work orders, ticket API polling, Excel ledger
-│       ├── office/             # Chat-triggered Word, Excel, and PowerPoint creation
-│       └── presentation/       # Presentation jobs and engines
+│       └── office/             # Chat-triggered Word, Excel, and PowerPoint creation
 ├── web/                        # Vue/Koa Web UI
 ├── scripts/                    # Local helper scripts
 ├── external/                   # Optional local engines/assets
@@ -94,7 +93,6 @@ Core paths:
 <REINS_HOME>/wecom/wecom.sqlite
 <REINS_HOME>/wecom/records.xlsx
 <REINS_HOME>/office/
-<REINS_HOME>/presentations/
 <REINS_HOME>/web-ui/
 <REINS_HOME>/plugins/
 <REINS_HOME>/.env
@@ -121,7 +119,6 @@ Reins-owned commands:
 reins finance --help
 reins wecom --help
 reins office --help
-reins presentation --help
 reins web
 reins migrate hermes
 reins update
@@ -466,7 +463,7 @@ Excel ledger open: ticket recording and WeCom notification continue, and the
 command reports that the workbook refresh is pending. Close Excel and run
 `reins wecom records export` to refresh it.
 
-## Office And Presentations
+## Office
 
 Reins Office creates local DOCX/XLSX/PPTX files from the Office page or chat-style requests:
 
@@ -474,15 +471,6 @@ Reins Office creates local DOCX/XLSX/PPTX files from the Office page or chat-sty
 reins office --help
 reins chat "create a maintenance notice document for residents"
 ```
-
-Presentation jobs:
-
-```bash
-reins presentation --help
-reins presentation doctor
-```
-
-Optional presentation engines live under `external/`; configure and verify them with the presentation doctor before relying on them in development.
 
 ## Migration
 

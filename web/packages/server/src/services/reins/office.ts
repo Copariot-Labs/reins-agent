@@ -40,7 +40,6 @@ export interface OfficeDocumentDto {
   revision_count: number
   prompt: string
   generator: string
-  officecli_bin: string | null
   command_count: number
   metadata: Record<string, unknown>
 }
@@ -269,7 +268,6 @@ function normalizeDocument(value: unknown): OfficeDocumentDto {
     revision_count: Number(document.revision_count || 0),
     prompt: String(document.prompt || ''),
     generator: generator.toLowerCase() === 'hermes' ? 'reins' : generator,
-    officecli_bin: document.officecli_bin == null ? null : String(document.officecli_bin),
     command_count: Number(document.command_count || 0),
     metadata: document.metadata && typeof document.metadata === 'object'
       ? document.metadata as Record<string, unknown>
@@ -358,5 +356,17 @@ export async function listOfficeDocuments(limit: unknown = 25): Promise<OfficeDo
 }
 
 export async function getOfficeStatus(): Promise<Record<string, unknown>> {
-  return runReinsOfficeJson(['office', 'doctor', '--json'], { timeoutMs: 30_000, allowNonZero: true })
+  const payload = await runReinsOfficeJson(
+    ['office', 'doctor', '--json'],
+    { timeoutMs: 30_000, allowNonZero: true },
+  )
+  const available = Boolean(payload.available)
+  const reinsAvailable = Boolean(payload.reins_available)
+  return {
+    available,
+    reins_available: reinsAvailable,
+    documents: Number(payload.documents || 0),
+    error: available && reinsAvailable ? null : 'Reins Office support is unavailable.',
+    setup_hint: 'Restart Reins or reinstall the desktop app.',
+  }
 }

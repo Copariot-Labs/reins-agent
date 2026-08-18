@@ -47,7 +47,7 @@ def _presentation_options(args: argparse.Namespace) -> dict[str, object]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="reins office",
-        description="Create Office documents with Reins content and OfficeCLI rendering.",
+        description="Create Office documents with Reins.",
     )
     subparsers = parser.add_subparsers(dest="command")
 
@@ -82,13 +82,13 @@ def build_parser() -> argparse.ArgumentParser:
     content.add_argument("--json", action="store_true", dest="json_output")
     _add_presentation_arguments(content)
 
-    revise = subparsers.add_parser("revise", help="Revise an Office file with Reins and OfficeCLI.")
+    revise = subparsers.add_parser("revise", help="Revise an Office file with Reins.")
     revise.add_argument("--id", required=True, dest="document_id")
     revise.add_argument("--instruction", required=True)
     revise.add_argument("--timeout", type=int, default=180)
     revise.add_argument("--json", action="store_true", dest="json_output")
 
-    preview = subparsers.add_parser("preview", help="Render an Office file to HTML with OfficeCLI.")
+    preview = subparsers.add_parser("preview", help="Render an Office file preview with Reins.")
     preview.add_argument("--id", required=True, dest="document_id")
     preview.add_argument("--json", action="store_true", dest="json_output")
 
@@ -123,10 +123,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.json_output:
             _print_json(status)
         else:
-            print(f"OfficeCLI available: {status['available']}")
-            print(f"OfficeCLI binary: {status.get('binary') or '(not found)'}")
+            print(f"Reins Office available: {status['available']}")
             if status.get("version"):
-                print(f"OfficeCLI version: {status['version']}")
+                print(f"Reins Office version: {status['version']}")
             if status.get("error"):
                 print(f"Error: {status['error']}")
                 print(f"Setup: {status['setup_hint']}")

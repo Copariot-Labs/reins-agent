@@ -66,6 +66,13 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Private desktop runtime staging
+desktop/src-tauri/runtime/
+desktop/.runtime-python/
+desktop/.officecli-win-x64/
+desktop/runtime-launcher/target/
+release/
+
 # Generated docs
 site/
 docs/_build/

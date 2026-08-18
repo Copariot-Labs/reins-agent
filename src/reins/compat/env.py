@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from reins.compat.branding import ensure_reins_branding
 from reins.compat.paths import ensure_reins_home, get_reins_home
 
 
@@ -16,6 +17,10 @@ def prepare_env() -> Path:
     os.environ["HERMES_HOME"] = str(reins_home)
 
     os.environ.setdefault("REINS_PRODUCT_NAME", "Reins")
+
+    # Brand the runtime through its supported SOUL/config interfaces. The
+    # vendored agent remains replaceable without carrying a Reins patch set.
+    ensure_reins_branding(reins_home)
 
     return reins_home
 

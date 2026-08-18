@@ -59,7 +59,7 @@ def print_version() -> int:
         print(f"Reins git: {reins_branch or 'unknown'} {reins_commit or 'unknown'}")
 
     if hermes_version:
-        print(f"Core package: hermes-agent {hermes_version}")
+        print(f"Agent runtime: {hermes_version}")
 
     if hermes_branch or hermes_commit:
         print(f"Core git: {hermes_branch or 'unknown'} {hermes_commit or 'unknown'}")

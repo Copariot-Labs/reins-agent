@@ -32,7 +32,7 @@ class OfficeCliCommandError(OfficeCliError):
         self.returncode = returncode
         self.stdout = stdout
         self.stderr = stderr
-        message = stderr.strip() or stdout.strip() or f"officecli exited {returncode}"
+        message = stderr.strip() or stdout.strip() or f"Reins Office exited {returncode}"
         super().__init__(message)
 
 
@@ -108,12 +108,7 @@ def find_officecli_binary() -> str | None:
 
 
 def officecli_setup_hint() -> str:
-    return (
-        "OfficeCLI is not available. Install it or set OFFICECLI_BIN to the "
-        "vendored OfficeCLI binary path. From this repo, build it with "
-        "vendor/OfficeCLI/build.sh after installing the .NET SDK; Reins will "
-        "auto-detect the vendor/OfficeCLI/bin/release output."
-    )
+    return "Reins Office support is unavailable. Restart Reins or reinstall the desktop app."
 
 
 class OfficeCliClient:

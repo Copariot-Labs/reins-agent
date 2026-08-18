@@ -22,7 +22,6 @@ function officeDocument(id: string): OfficeDocument {
     revision_count: 0,
     prompt: 'create it',
     generator: 'reins',
-    officecli_bin: null,
     command_count: 1,
     metadata: {},
   }

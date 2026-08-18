@@ -206,7 +206,7 @@ describe('bridge run final context usage', () => {
     expect(bridge.contextEstimate).toHaveBeenCalledWith(
       'session-1',
       [],
-      expect.stringContaining('[Current Hermes profile: default]'),
+      expect.stringContaining('[Current Reins profile: default]'),
       'default',
       {
         model: 'gpt-test',

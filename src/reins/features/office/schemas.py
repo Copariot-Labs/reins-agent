@@ -256,7 +256,6 @@ class OfficeDocumentRecord:
     revision_count: int = 0
     prompt: str = ""
     generator: str = "reins"
-    officecli_bin: str | None = None
     command_count: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -269,7 +268,6 @@ class OfficeDocumentRecord:
         path: str | Path,
         prompt: str = "",
         generator: str = "reins",
-        officecli_bin: str | None = None,
         command_count: int = 0,
         metadata: dict[str, Any] | None = None,
     ) -> "OfficeDocumentRecord":
@@ -287,7 +285,6 @@ class OfficeDocumentRecord:
             revision_count=0,
             prompt=str(prompt or ""),
             generator=normalize_generator(generator),
-            officecli_bin=officecli_bin,
             command_count=int(command_count or 0),
             metadata=dict(metadata or {}),
         )
@@ -311,11 +308,6 @@ class OfficeDocumentRecord:
             revision_count=int(data.get("revision_count") or 0),
             prompt=str(data.get("prompt") or ""),
             generator=normalize_generator(data.get("generator")),
-            officecli_bin=(
-                str(data.get("officecli_bin"))
-                if data.get("officecli_bin") is not None
-                else None
-            ),
             command_count=int(data.get("command_count") or 0),
             metadata=dict(data.get("metadata") or {}),
         )
