@@ -142,7 +142,11 @@ fn start_backend(project_root: &Path) -> Result<Child, String> {
     println!("Server: {}", server_entry.display());
 
     Command::new("node")
-        .args(["-r", "ts-node/register", "packages/server/src/index.ts"])
+        .args([
+            "-r",
+            "ts-node/register/transpile-only",
+            "packages/server/src/index.ts",
+        ])
         .current_dir(&web_root)
         .env("NODE_ENV", "development")
         .env("PORT", "8647")

@@ -86,7 +86,17 @@ export function startVersionCheck(): void {
 export function readinessCheck(ctx: any) {
   ctx.body = {
     status: 'ok',
+    platform: 'reins',
     service: 'reins',
+    webui_version: LOCAL_VERSION,
+    webui_latest: isUpdateCheckDisabled() ? '' : cachedLatestVersion,
+    webui_update_available: isUpdateCheckDisabled()
+      ? false
+      : Boolean(LOCAL_VERSION && cachedLatestVersion && cachedLatestVersion !== LOCAL_VERSION),
+    reins_update_supported: Boolean(
+      process.env.REINS_UPDATE_SERVICE?.trim() || process.env.REINS_UPDATE_TASK_NAME?.trim(),
+    ),
+    node_version: process.versions.node,
   }
 }
 

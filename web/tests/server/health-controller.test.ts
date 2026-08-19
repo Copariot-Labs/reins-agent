@@ -63,7 +63,13 @@ describe('health controller version metadata', () => {
 
     readinessCheck(ctx)
 
-    expect(ctx.body).toEqual({ status: 'ok', service: 'reins' })
+    expect(ctx.body).toEqual(expect.objectContaining({
+      status: 'ok',
+      platform: 'reins',
+      service: 'reins',
+      webui_version: expect.any(String),
+      node_version: expect.any(String),
+    }))
   })
 
   it('uses the injected build version when available', async () => {

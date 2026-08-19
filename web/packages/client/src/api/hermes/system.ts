@@ -113,7 +113,7 @@ export interface CustomProvider {
 }
 
 export async function checkHealth(): Promise<HealthResponse> {
-  return request<HealthResponse>('/health')
+  return request<HealthResponse>('/health/ready')
 }
 
 export async function triggerUpdate(): Promise<{ success: boolean; message: string }> {

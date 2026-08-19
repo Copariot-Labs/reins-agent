@@ -11,6 +11,23 @@ from reins.features.office.chat import open_command_for_path
 
 
 class WindowsCompatTests(unittest.TestCase):
+    def test_desktop_development_uses_fast_transpile_only_typescript(self) -> None:
+        desktop_runtime = (
+            Path(__file__).resolve().parents[1]
+            / "desktop"
+            / "src-tauri"
+            / "src"
+            / "lib.rs"
+        ).read_text(encoding="utf-8")
+        nodemon_config = (
+            Path(__file__).resolve().parents[1]
+            / "web"
+            / "nodemon.json"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("ts-node/register/transpile-only", desktop_runtime)
+        self.assertIn("ts-node/register/transpile-only", nodemon_config)
+
     def test_tagged_windows_build_publishes_release_assets(self) -> None:
         workflow = (
             Path(__file__).resolve().parents[1]
