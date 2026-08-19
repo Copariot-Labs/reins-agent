@@ -201,11 +201,19 @@ fn start_backend(app: &tauri::App) -> Result<Option<Child>, String> {
     std::fs::create_dir_all(&logs_dir)
         .map_err(|error| format!("Failed to create Reins data directory: {error}"))?;
     let backend_log_path = logs_dir.join("desktop-backend.log");
-    let backend_stdout = OpenOptions::new()
+    let mut backend_stdout = OpenOptions::new()
         .create(true)
         .append(true)
         .open(&backend_log_path)
         .map_err(|error| format!("Failed to open {}: {error}", backend_log_path.display()))?;
+    writeln!(
+        backend_stdout,
+        "\n--- Reins desktop startup ---\nRuntime: {}\nNode: {}\nServer: {}",
+        runtime.display(),
+        node.display(),
+        server.display(),
+    )
+    .map_err(|error| format!("Failed to write the Reins startup log: {error}"))?;
     let backend_stderr = backend_stdout
         .try_clone()
         .map_err(|error| format!("Failed to prepare the Reins startup log: {error}"))?;
@@ -223,7 +231,9 @@ fn start_backend(app: &tauri::App) -> Result<Option<Child>, String> {
 
     let mut command = Command::new(&node);
     command
-        .arg(&server)
+        // The working directory is runtime/web, so use a relative entry path.
+        // This avoids Windows drive-letter and space parsing edge cases.
+        .arg(Path::new("server").join("index.js"))
         .current_dir(runtime.join("web"))
         .env("NODE_ENV", "production")
         .env("PORT", PORT.to_string())

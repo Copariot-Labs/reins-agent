@@ -209,22 +209,24 @@ export async function bootstrap() {
   })
   startVersionCheck()
 
-  void startAgentBridgeManager()
-    .then((manager) => {
-      agentBridgeManager = manager
-      console.log('[bootstrap] agent bridge started')
-    })
-    .catch((err) => {
-      logger.warn(err, '[bootstrap] agent bridge failed to start')
-      console.warn('[bootstrap] agent bridge failed to start:', err instanceof Error ? err.message : err)
-    })
+  if (process.env.REINS_SKIP_BACKGROUND_SERVICES !== '1') {
+    void startAgentBridgeManager()
+      .then((manager) => {
+        agentBridgeManager = manager
+        console.log('[bootstrap] agent bridge started')
+      })
+      .catch((err) => {
+        logger.warn(err, '[bootstrap] agent bridge failed to start')
+        console.warn('[bootstrap] agent bridge failed to start:', err instanceof Error ? err.message : err)
+      })
 
-  // These background services are essential to the product, but they should
-  // not keep the desktop window hidden while gateways or Task Scheduler start.
-  void initializeProductServices().catch((err) => {
-    logger.error(err, '[bootstrap] background product initialization failed')
-    console.error('[bootstrap] background product initialization failed:', err instanceof Error ? err.message : err)
-  })
+    // These background services are essential to the product, but they should
+    // not keep the desktop window hidden while gateways or Task Scheduler start.
+    void initializeProductServices().catch((err) => {
+      logger.error(err, '[bootstrap] background product initialization failed')
+      console.error('[bootstrap] background product initialization failed:', err instanceof Error ? err.message : err)
+    })
+  }
 }
 
 bootstrap().catch((error) => {

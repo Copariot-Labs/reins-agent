@@ -90,6 +90,7 @@ Invoke-Checked $RuntimeNode @(
     "-e",
     "require('node-pty'); require('socket.io'); console.log('Private Reins JavaScript runtime verified')"
 ) (Join-Path $Runtime "web")
+Invoke-Checked $RuntimeNode @("--check", "server\index.js") (Join-Path $Runtime "web")
 
 Write-Host "==> Installing the private Python runtime" -ForegroundColor Cyan
 if (Test-Path $PythonStore) { Remove-Item -Recurse -Force $PythonStore }
@@ -162,5 +163,70 @@ Copy-Item (Join-Path $ProjectRoot "vendor\hermes-agent\LICENSE") (Join-Path $Run
 Copy-Item (Join-Path $ProjectRoot "vendor\OfficeCLI\LICENSE") (Join-Path $Runtime "licenses\office-runtime.txt")
 Copy-Item (Join-Path $ProjectRoot "vendor\OfficeCLI\NOTICE") (Join-Path $Runtime "licenses\office-notice.txt")
 Copy-Item (Join-Path $ProjectRoot "vendor\OfficeCLI\THIRD-PARTY-NOTICES.txt") (Join-Path $Runtime "licenses\office-third-party-notices.txt")
+
+Write-Host "==> Smoke testing the staged Reins local service" -ForegroundColor Cyan
+$SmokeHome = Join-Path ([IO.Path]::GetTempPath()) "reins-runtime-smoke"
+$SmokeStdout = Join-Path $SmokeHome "stdout.log"
+$SmokeStderr = Join-Path $SmokeHome "stderr.log"
+New-Item -ItemType Directory -Force -Path $SmokeHome | Out-Null
+$SmokeEnvironment = @{
+    PORT = "18648"
+    BIND_HOST = "127.0.0.1"
+    REINS_DESKTOP = "1"
+    REINS_HOME = $SmokeHome
+    HERMES_HOME = $SmokeHome
+    HERMES_WEB_UI_HOME = (Join-Path $SmokeHome "web-ui")
+    HERMES_WEB_UI_DISABLE_UPDATE_CHECK = "true"
+    REINS_SKIP_BACKGROUND_SERVICES = "1"
+}
+$PreviousSmokeEnvironment = @{}
+foreach ($Name in $SmokeEnvironment.Keys) {
+    $PreviousSmokeEnvironment[$Name] = [Environment]::GetEnvironmentVariable($Name, "Process")
+    [Environment]::SetEnvironmentVariable($Name, $SmokeEnvironment[$Name], "Process")
+}
+$SmokeProcess = $null
+try {
+    $SmokeProcess = Start-Process -FilePath $RuntimeNode `
+        -ArgumentList @("server\index.js") `
+        -WorkingDirectory (Join-Path $Runtime "web") `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $SmokeStdout `
+        -RedirectStandardError $SmokeStderr `
+        -PassThru
+    $SmokeReady = $false
+    $SmokeDeadline = [DateTime]::UtcNow.AddSeconds(30)
+    while ([DateTime]::UtcNow -lt $SmokeDeadline -and -not $SmokeProcess.HasExited) {
+        try {
+            $Request = [Net.HttpWebRequest]::Create("http://127.0.0.1:18648/health/ready")
+            $Request.Proxy = $null
+            $Request.Timeout = 2000
+            $Response = $Request.GetResponse()
+            if ([int]$Response.StatusCode -eq 200) {
+                $SmokeReady = $true
+                $Response.Dispose()
+                break
+            }
+            $Response.Dispose()
+        }
+        catch {
+            Start-Sleep -Milliseconds 250
+        }
+    }
+    if (-not $SmokeReady) {
+        $Output = if (Test-Path $SmokeStdout) { Get-Content $SmokeStdout -Raw } else { "" }
+        $Errors = if (Test-Path $SmokeStderr) { Get-Content $SmokeStderr -Raw } else { "" }
+        throw "Staged Reins local service failed its readiness check.`n$Output`n$Errors"
+    }
+    Write-Host "Staged Reins local service verified" -ForegroundColor Green
+}
+finally {
+    if ($null -ne $SmokeProcess -and -not $SmokeProcess.HasExited) {
+        Stop-Process -Id $SmokeProcess.Id -Force -ErrorAction SilentlyContinue
+        $SmokeProcess.WaitForExit(5000) | Out-Null
+    }
+    foreach ($Name in $SmokeEnvironment.Keys) {
+        [Environment]::SetEnvironmentVariable($Name, $PreviousSmokeEnvironment[$Name], "Process")
+    }
+}
 
 Write-Host "Reins private Windows runtime staged at $Runtime" -ForegroundColor Green

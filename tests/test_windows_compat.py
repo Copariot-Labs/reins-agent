@@ -101,6 +101,27 @@ class WindowsCompatTests(unittest.TestCase):
         self.assertLess(listen_position, bridge_position)
         self.assertLess(listen_position, product_position)
 
+    def test_windows_desktop_uses_a_drive_letter_safe_node_entry(self) -> None:
+        desktop_runtime = (
+            Path(__file__).resolve().parents[1]
+            / "desktop"
+            / "src-tauri"
+            / "src"
+            / "lib.rs"
+        ).read_text(encoding="utf-8")
+        staging_script = (
+            Path(__file__).resolve().parents[1]
+            / "scripts"
+            / "stage-windows-runtime.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('.arg(Path::new("server").join("index.js"))', desktop_runtime)
+        self.assertNotIn(".arg(&server)", desktop_runtime)
+        self.assertIn('@("--check", "server\\index.js")', staging_script)
+        self.assertIn('Start-Process -FilePath $RuntimeNode', staging_script)
+        self.assertIn('/health/ready', staging_script)
+        self.assertIn('Staged Reins local service verified', staging_script)
+
     def test_windows_runtime_allows_install_into_private_managed_python(self) -> None:
         staging_script = (
             Path(__file__).resolve().parents[1]
