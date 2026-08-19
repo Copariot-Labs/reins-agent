@@ -75,6 +75,9 @@ $RuntimePackage = @{
     name = "reins-private-web-runtime"
     version = [string]$SourcePackage.version
     private = $true
+    pnpm = @{
+        onlyBuiltDependencies = @("node-pty")
+    }
     dependencies = @{
         "node-pty" = [string]$SourcePackage.dependencies."node-pty"
         "socket.io" = [string]$SourcePackage.dependencies."socket.io"
@@ -82,6 +85,11 @@ $RuntimePackage = @{
 }
 $RuntimePackage | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $Runtime "web\package.json") -Encoding UTF8
 Invoke-Checked $Pnpm @("install", "--prod", "--config.node-linker=hoisted") (Join-Path $Runtime "web")
+$RuntimeNode = Join-Path $Runtime "node\node.exe"
+Invoke-Checked $RuntimeNode @(
+    "-e",
+    "require('node-pty'); require('socket.io'); console.log('Private Reins JavaScript runtime verified')"
+) (Join-Path $Runtime "web")
 
 Write-Host "==> Installing the private Python runtime" -ForegroundColor Cyan
 if (Test-Path $PythonStore) { Remove-Item -Recurse -Force $PythonStore }

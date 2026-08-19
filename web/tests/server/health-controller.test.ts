@@ -57,6 +57,15 @@ describe('health controller version metadata', () => {
     expect(ctx.body.webui_version).not.toBe('0.0.0')
   })
 
+  it('provides a lightweight desktop readiness response', async () => {
+    const { readinessCheck } = await loadHealthControllerWithoutInjectedVersion()
+    const ctx = createMockCtx()
+
+    readinessCheck(ctx)
+
+    expect(ctx.body).toEqual({ status: 'ok', service: 'reins' })
+  })
+
   it('uses the injected build version when available', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
 

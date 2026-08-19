@@ -56,10 +56,10 @@ fn backend_is_ready(port: u16) -> bool {
     let Ok(mut stream) = TcpStream::connect_timeout(&address, Duration::from_millis(500)) else {
         return false;
     };
-    let _ = stream.set_read_timeout(Some(Duration::from_millis(700)));
-    let _ = stream.set_write_timeout(Some(Duration::from_millis(700)));
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
     if stream
-        .write_all(b"GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        .write_all(b"GET /health/ready HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
         .is_err()
     {
         return false;
@@ -72,15 +72,47 @@ fn backend_is_ready(port: u16) -> bool {
 }
 
 #[cfg(not(debug_assertions))]
-fn wait_for_backend(port: u16, timeout: Duration) -> bool {
+enum BackendWaitResult {
+    Ready,
+    Exited(String),
+    TimedOut,
+}
+
+#[cfg(not(debug_assertions))]
+fn backend_exit_detail(state: &BackendProcess) -> Option<String> {
+    let Ok(mut guard) = state.0.lock() else {
+        return Some("The local service state could not be checked.".to_owned());
+    };
+    let backend = guard.as_mut()?;
+    match backend.try_wait() {
+        Ok(Some(status)) => Some(match status.code() {
+            Some(code) => format!("The local service stopped with exit code {code}."),
+            None => "The local service stopped unexpectedly.".to_owned(),
+        }),
+        Ok(None) => None,
+        Err(error) => Some(format!("The local service could not be checked: {error}")),
+    }
+}
+
+#[cfg(not(debug_assertions))]
+fn wait_for_backend(state: &BackendProcess, port: u16, timeout: Duration) -> BackendWaitResult {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         if backend_is_ready(port) {
-            return true;
+            return BackendWaitResult::Ready;
+        }
+        if let Some(detail) = backend_exit_detail(state) {
+            return BackendWaitResult::Exited(detail);
         }
         thread::sleep(Duration::from_millis(250));
     }
-    backend_is_ready(port)
+    if backend_is_ready(port) {
+        BackendWaitResult::Ready
+    } else if let Some(detail) = backend_exit_detail(state) {
+        BackendWaitResult::Exited(detail)
+    } else {
+        BackendWaitResult::TimedOut
+    }
 }
 
 #[cfg(not(debug_assertions))]
@@ -289,13 +321,31 @@ pub fn run() {
                     .map(|path| path.join("logs").join("desktop-backend.log"))
                     .unwrap_or_else(|_| PathBuf::from("desktop-backend.log"));
                 thread::spawn(move || {
-                    if !wait_for_backend(8648, Duration::from_secs(90)) {
-                        show_startup_error(&format!(
-                            "The local Reins service did not become ready. Restart Reins and try again.\n\nStartup log:\n{}",
-                            startup_log.display()
-                        ));
-                        handle.exit(1);
-                        return;
+                    let wait_result = if let Some(state) = handle.try_state::<BackendProcess>() {
+                        wait_for_backend(&state, 8648, Duration::from_secs(30))
+                    } else {
+                        BackendWaitResult::Exited(
+                            "The local service process was not initialized.".to_owned(),
+                        )
+                    };
+                    match wait_result {
+                        BackendWaitResult::Ready => {}
+                        BackendWaitResult::Exited(detail) => {
+                            show_startup_error(&format!(
+                                "Reins could not start its local service. {detail}\n\nPlease reinstall the latest Reins release. If the problem continues, send this log file to support:\n{}",
+                                startup_log.display()
+                            ));
+                            handle.exit(1);
+                            return;
+                        }
+                        BackendWaitResult::TimedOut => {
+                            show_startup_error(&format!(
+                                "Reins is taking longer than expected to start. Restart Reins once. If the problem continues, send this log file to support:\n{}",
+                                startup_log.display()
+                            ));
+                            handle.exit(1);
+                            return;
+                        }
                     }
                     let Ok(url) = "http://127.0.0.1:8648".parse() else {
                         show_startup_error("Reins could not open its local application URL.");

@@ -82,6 +82,14 @@ export function startVersionCheck(): void {
   setInterval(checkLatestVersion, 30 * 60 * 1000)
 }
 
+/** Lightweight readiness check for the desktop launcher. */
+export function readinessCheck(ctx: any) {
+  ctx.body = {
+    status: 'ok',
+    service: 'reins',
+  }
+}
+
 export async function healthCheck(ctx: any) {
   const raw = await hermesCli.getVersion()
   const reinsVersion = raw.split('\n')[0].replace(/^(?:Reins|Hermes Agent)\s+/, '') || ''

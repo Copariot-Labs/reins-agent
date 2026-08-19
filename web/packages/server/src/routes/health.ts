@@ -3,6 +3,7 @@ import * as ctrl from '../controllers/health'
 
 export const healthRoutes = new Router()
 
+healthRoutes.get('/health/ready', ctrl.readinessCheck)
 healthRoutes.get('/health', ctrl.healthCheck)
 
 export { startVersionCheck } from '../controllers/health'

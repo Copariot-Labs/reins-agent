@@ -62,9 +62,27 @@ class WindowsCompatTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn('"visible": false', config)
-        self.assertIn("wait_for_backend(8648", desktop_runtime)
+        self.assertIn("wait_for_backend(&state, 8648", desktop_runtime)
+        self.assertIn("GET /health/ready", desktop_runtime)
+        self.assertIn("backend_exit_detail", desktop_runtime)
         self.assertIn("desktop-backend.log", desktop_runtime)
         self.assertIn("window.show()", desktop_runtime)
+
+    def test_windows_desktop_starts_slow_services_after_http_readiness(self) -> None:
+        server_entry = (
+            Path(__file__).resolve().parents[1]
+            / "web"
+            / "packages"
+            / "server"
+            / "src"
+            / "index.ts"
+        ).read_text(encoding="utf-8")
+
+        listen_position = server_entry.index("await listenWithFallback")
+        bridge_position = server_entry.index("void startAgentBridgeManager()")
+        product_position = server_entry.index("void initializeProductServices()")
+        self.assertLess(listen_position, bridge_position)
+        self.assertLess(listen_position, product_position)
 
     def test_windows_runtime_allows_install_into_private_managed_python(self) -> None:
         staging_script = (
@@ -75,6 +93,16 @@ class WindowsCompatTests(unittest.TestCase):
 
         self.assertIn('"--break-system-packages"', staging_script)
         self.assertIn("Private Reins Python runtime verified", staging_script)
+
+    def test_windows_runtime_builds_and_verifies_native_javascript_dependencies(self) -> None:
+        staging_script = (
+            Path(__file__).resolve().parents[1]
+            / "scripts"
+            / "stage-windows-runtime.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('onlyBuiltDependencies = @("node-pty")', staging_script)
+        self.assertIn("Private Reins JavaScript runtime verified", staging_script)
 
     def test_windows_installer_uses_slow_start_safe_health_check(self) -> None:
         installer = (

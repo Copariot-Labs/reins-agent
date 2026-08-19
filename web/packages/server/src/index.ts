@@ -55,6 +55,38 @@ interface ListenResult {
   servers: any[]
 }
 
+async function initializeProductServices(): Promise<void> {
+  await ensureReinsProductReady()
+
+  try {
+    const skillInjector = new HermesSkillInjector()
+    const injectionResult = await skillInjector.injectMissingSkills()
+    if (injectionResult.injected.length > 0) {
+      logger.info({
+        injected: [...new Set(injectionResult.injected)],
+        targetCount: injectionResult.targets.length,
+      }, '[bootstrap] bundled skills injected')
+    }
+    if (injectionResult.updated.length > 0) {
+      logger.info({
+        updated: [...new Set(injectionResult.updated)],
+        targetCount: injectionResult.targets.length,
+      }, '[bootstrap] bundled skills updated')
+    }
+  } catch (err) {
+    logger.warn(err, '[bootstrap] failed to inject bundled skills')
+    console.warn('[bootstrap] failed to inject bundled skills:', err instanceof Error ? err.message : err)
+  }
+
+  try {
+    await ensureProfileGatewaysRunning()
+    console.log('[bootstrap] profile gateways checked')
+  } catch (err) {
+    logger.warn(err, '[bootstrap] failed to ensure profile gateways')
+    console.warn('[bootstrap] failed to ensure profile gateways:', err instanceof Error ? err.message : err)
+  }
+}
+
 function listen(app: Koa, port: number, host: string): Promise<any> {
   return new Promise((resolve, reject) => {
     const s = app.listen(port, host)
@@ -87,52 +119,13 @@ export async function bootstrap() {
   await mkdir(config.uploadDir, { recursive: true })
   await mkdir(config.dataDir, { recursive: true })
 
-  await ensureReinsProductReady()
-
   await initLoginLimiter()
-  try {
-    const skillInjector = new HermesSkillInjector()
-    const injectionResult = await skillInjector.injectMissingSkills()
-    if (injectionResult.injected.length > 0) {
-      logger.info({
-        injected: [...new Set(injectionResult.injected)],
-        targetCount: injectionResult.targets.length,
-      }, '[bootstrap] bundled skills injected')
-    }
-    if (injectionResult.updated.length > 0) {
-      logger.info({
-        updated: [...new Set(injectionResult.updated)],
-        targetCount: injectionResult.targets.length,
-      }, '[bootstrap] bundled skills updated')
-    }
-  } catch (err) {
-    logger.warn(err, '[bootstrap] failed to inject bundled skills')
-    console.warn('[bootstrap] failed to inject bundled skills:', err instanceof Error ? err.message : err)
-  }
-
-  try {
-    await ensureProfileGatewaysRunning()
-    console.log('[bootstrap] profile gateways checked')
-  } catch (err) {
-    logger.warn(err, '[bootstrap] failed to ensure profile gateways')
-    console.warn('[bootstrap] failed to ensure profile gateways:', err instanceof Error ? err.message : err)
-  }
 
   const app = new Koa()
 
-  try {
-    agentBridgeManager = await startAgentBridgeManager()
-    console.log('[bootstrap] agent bridge started')
-  } catch (err) {
-    logger.warn(err, '[bootstrap] agent bridge failed to start')
-    console.warn('[bootstrap] agent bridge failed to start:', err instanceof Error ? err.message : err)
-  }
-  await new Promise(resolve => setTimeout(resolve, 1000))
   // Initialize all web-ui SQLite tables
   const { initAllStores } = await import('./db/hermes/init')
-  // Wait 1 second before initializing stores to ensure all resources are ready
   initAllStores()
-  await new Promise(resolve => setTimeout(resolve, 1000))
   console.log('[bootstrap] all stores initialized')
 
   app.use(cors({ origin: config.corsOrigins }))
@@ -209,8 +202,29 @@ export async function bootstrap() {
     })
   })
 
-  bindShutdown(servers, groupChatServer, chatRunServer, agentBridgeManager)
+  // The bridge starts in the background below. Use a lifecycle proxy so a
+  // bridge that finishes starting later is still stopped during shutdown.
+  bindShutdown(servers, groupChatServer, chatRunServer, {
+    stop: async () => agentBridgeManager?.stop(),
+  })
   startVersionCheck()
+
+  void startAgentBridgeManager()
+    .then((manager) => {
+      agentBridgeManager = manager
+      console.log('[bootstrap] agent bridge started')
+    })
+    .catch((err) => {
+      logger.warn(err, '[bootstrap] agent bridge failed to start')
+      console.warn('[bootstrap] agent bridge failed to start:', err instanceof Error ? err.message : err)
+    })
+
+  // These background services are essential to the product, but they should
+  // not keep the desktop window hidden while gateways or Task Scheduler start.
+  void initializeProductServices().catch((err) => {
+    logger.error(err, '[bootstrap] background product initialization failed')
+    console.error('[bootstrap] background product initialization failed:', err instanceof Error ? err.message : err)
+  })
 }
 
 bootstrap().catch((error) => {

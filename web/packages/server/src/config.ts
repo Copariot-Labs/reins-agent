@@ -41,6 +41,15 @@ export function getWebUiHome(env: Record<string, string | undefined> = process.e
   return appHome ? resolve(appHome) : join(homedir(), '.hermes-web-ui')
 }
 
+export function getDataDir(
+  env: Record<string, string | undefined> = process.env,
+  webUiHome = getWebUiHome(env),
+): string {
+  return env.REINS_DESKTOP === '1'
+    ? join(webUiHome, 'data')
+    : resolve(__dirname, '..', 'data')
+}
+
 const appHome = getWebUiHome()
 
 export const config = {
@@ -49,6 +58,8 @@ export const config = {
   host: getListenHost(),
   appHome,
   uploadDir: process.env.UPLOAD_DIR || join(appHome, 'upload'),
-  dataDir: resolve(__dirname, '..', 'data'),
+  // Installed resources may be read-only. Desktop databases belong in the
+  // current user's private application-data directory.
+  dataDir: getDataDir(process.env, appHome),
   corsOrigins: process.env.CORS_ORIGINS || '*',
 }

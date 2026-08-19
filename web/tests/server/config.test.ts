@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { homedir } from 'os'
 import { join, resolve } from 'path'
-import { getListenHost, getWebUiHome } from '../../packages/server/src/config'
+import { getDataDir, getListenHost, getWebUiHome } from '../../packages/server/src/config'
 
 describe('server config', () => {
   it('defaults to an IPv4 bind host', () => {
@@ -26,5 +26,10 @@ describe('server config', () => {
 
   it('uses HERMES_WEBUI_STATE_DIR as a compatibility alias', () => {
     expect(getWebUiHome({ HERMES_WEBUI_STATE_DIR: ' ./tmp/hermes-state ' })).toBe(resolve('./tmp/hermes-state'))
+  })
+
+  it('stores installed desktop data outside the application resources', () => {
+    const home = join('C:', 'Users', 'Tester', 'AppData', 'Local', 'Reins')
+    expect(getDataDir({ REINS_DESKTOP: '1' }, home)).toBe(join(home, 'data'))
   })
 })
