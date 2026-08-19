@@ -16,7 +16,7 @@ const showLockResetHint = ref(false);
 
 // If already has a key, try to go to main page
 if (hasApiKey()) {
-  router.replace("/hermes/chat");
+  router.replace("/reins/chat");
 }
 
 onMounted(async () => {

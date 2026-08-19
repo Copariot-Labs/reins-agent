@@ -1,10 +1,32 @@
 import router from '@/router';
 
 const DEFAULT_BASE_URL = '';
+const DESKTOP_BASE_URL = 'http://127.0.0.1:8648';
+
+function isTauriDesktop(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+export function resolveApiBaseUrl(options: {
+  preview: boolean;
+  desktop: boolean;
+  development: boolean;
+  configuredUrl?: string | null;
+}): string {
+  if (options.preview) return DEFAULT_BASE_URL;
+  if (options.desktop) {
+    return options.development ? DEFAULT_BASE_URL : DESKTOP_BASE_URL;
+  }
+  return options.configuredUrl || DEFAULT_BASE_URL;
+}
 
 function getBaseUrl(): string {
-  if (import.meta.env.VITE_HERMES_PREVIEW === '1') return DEFAULT_BASE_URL;
-  return localStorage.getItem('hermes_server_url') || DEFAULT_BASE_URL;
+  return resolveApiBaseUrl({
+    preview: import.meta.env.VITE_HERMES_PREVIEW === '1',
+    desktop: isTauriDesktop(),
+    development: import.meta.env.DEV,
+    configuredUrl: localStorage.getItem('hermes_server_url'),
+  });
 }
 
 export function getApiKey(): string {

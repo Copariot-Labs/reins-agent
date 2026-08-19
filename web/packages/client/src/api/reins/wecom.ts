@@ -3,7 +3,9 @@ import { request } from '@/api/client'
 export interface WeComSetupValues {
   ticket_api_url: string
   statuses: string
+  ticket_limit: string
   poll_interval: string
+  ticket_timeout: string
   reply_bot_name: string
   users_default: string
   users_property: string
@@ -12,8 +14,10 @@ export interface WeComSetupValues {
   users_hospital: string
   users_community: string
   users_human_review: string
+  export_dir: string
   routing_mode: string
   routing_confidence: string
+  routing_timeout: string
 }
 
 export interface WeComSetupStatus {

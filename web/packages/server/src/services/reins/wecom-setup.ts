@@ -23,6 +23,7 @@ const EDITABLE_KEYS = [
   'REINS_WECOM_NOTIFY_USERS_COMMUNITY',
   'REINS_WECOM_NOTIFY_USERS_HUMAN_REVIEW',
   'REINS_WECOM_NOTIFY_USERS_DEFAULT',
+  'REINS_WECOM_EXPORT_DIR',
   'REINS_WECOM_ROUTING_MODE',
   'REINS_WECOM_ROUTING_CONFIDENCE',
   'REINS_WECOM_ROUTING_TIMEOUT',
@@ -39,7 +40,9 @@ export interface WeComSetupInput {
   ticket_api_url?: string
   ticket_api_token?: string
   statuses?: string
+  ticket_limit?: string | number
   poll_interval?: string | number
+  ticket_timeout?: string | number
   group_webhook?: string
   reply_bot_name?: string
   users_default?: string
@@ -49,15 +52,19 @@ export interface WeComSetupInput {
   users_hospital?: string
   users_community?: string
   users_human_review?: string
+  export_dir?: string
   routing_mode?: string
   routing_confidence?: string | number
+  routing_timeout?: string | number
 }
 
 const INPUT_TO_ENV: Record<keyof WeComSetupInput, EditableKey> = {
   ticket_api_url: 'REINS_TICKET_API_URL',
   ticket_api_token: 'REINS_TICKET_API_TOKEN',
   statuses: 'REINS_TICKET_API_STATUSES',
+  ticket_limit: 'REINS_TICKET_API_LIMIT',
   poll_interval: 'REINS_TICKET_API_POLL_INTERVAL',
+  ticket_timeout: 'REINS_TICKET_API_TIMEOUT',
   group_webhook: 'REINS_WECOM_NOTIFY_GROUP_WEBHOOK',
   reply_bot_name: 'REINS_WECOM_REPLY_BOT_NAME',
   users_default: 'REINS_WECOM_NOTIFY_USERS_DEFAULT',
@@ -67,8 +74,10 @@ const INPUT_TO_ENV: Record<keyof WeComSetupInput, EditableKey> = {
   users_hospital: 'REINS_WECOM_NOTIFY_USERS_HOSPITAL',
   users_community: 'REINS_WECOM_NOTIFY_USERS_COMMUNITY',
   users_human_review: 'REINS_WECOM_NOTIFY_USERS_HUMAN_REVIEW',
+  export_dir: 'REINS_WECOM_EXPORT_DIR',
   routing_mode: 'REINS_WECOM_ROUTING_MODE',
   routing_confidence: 'REINS_WECOM_ROUTING_CONFIDENCE',
+  routing_timeout: 'REINS_WECOM_ROUTING_TIMEOUT',
 }
 
 function envPath(): string {
@@ -79,6 +88,21 @@ function cleanValue(value: unknown): string {
   const clean = String(value ?? '').trim()
   if (/\r|\n|\0/.test(clean)) throw new Error('Configuration values must use one line')
   return clean
+}
+
+function validateNumber(
+  value: unknown,
+  label: string,
+  minimum: number,
+  maximum: number,
+  integer = false,
+): void {
+  const clean = cleanValue(value)
+  if (!clean) return
+  const parsed = Number(clean)
+  if (!Number.isFinite(parsed) || parsed < minimum || parsed > maximum || (integer && !Number.isInteger(parsed))) {
+    throw new Error(`${label} must be ${integer ? 'a whole number' : 'a number'} between ${minimum} and ${maximum}`)
+  }
 }
 
 function decodeEnvValue(value: string): string {
@@ -179,7 +203,9 @@ export async function getWeComSetupStatus(): Promise<Record<string, unknown>> {
     values: {
       ticket_api_url: value('REINS_TICKET_API_URL', 'https://kf.lnluo.com/internal/tickets'),
       statuses: value('REINS_TICKET_API_STATUSES', 'pending_dispatch,dispatched,reopened,notification_failed'),
+      ticket_limit: value('REINS_TICKET_API_LIMIT', '20'),
       poll_interval: value('REINS_TICKET_API_POLL_INTERVAL', '30'),
+      ticket_timeout: value('REINS_TICKET_API_TIMEOUT', '15'),
       reply_bot_name: value('REINS_WECOM_REPLY_BOT_NAME', '社区美女'),
       users_default: value('REINS_WECOM_NOTIFY_USERS_DEFAULT'),
       users_property: value('REINS_WECOM_NOTIFY_USERS_PROPERTY'),
@@ -188,13 +214,21 @@ export async function getWeComSetupStatus(): Promise<Record<string, unknown>> {
       users_hospital: value('REINS_WECOM_NOTIFY_USERS_HOSPITAL'),
       users_community: value('REINS_WECOM_NOTIFY_USERS_COMMUNITY'),
       users_human_review: value('REINS_WECOM_NOTIFY_USERS_HUMAN_REVIEW'),
+      export_dir: value('REINS_WECOM_EXPORT_DIR'),
       routing_mode: value('REINS_WECOM_ROUTING_MODE', 'hybrid'),
       routing_confidence: value('REINS_WECOM_ROUTING_CONFIDENCE', '0.85'),
+      routing_timeout: value('REINS_WECOM_ROUTING_TIMEOUT', '15'),
     },
   }
 }
 
 export async function saveWeComSetup(input: WeComSetupInput): Promise<Record<string, unknown>> {
+  validateNumber(input.ticket_limit, 'Ticket limit', 1, 100, true)
+  validateNumber(input.poll_interval, 'Poll interval', 5, 86_400)
+  validateNumber(input.ticket_timeout, 'Ticket API timeout', 1, 300)
+  validateNumber(input.routing_confidence, 'Routing confidence', 0.5, 1)
+  validateNumber(input.routing_timeout, 'Routing timeout', 2, 60)
+
   const { values: existing } = await readEnv()
   const updates = new Map<EditableKey, string>()
   for (const [inputKey, envKey] of Object.entries(INPUT_TO_ENV) as Array<[keyof WeComSetupInput, EditableKey]>) {

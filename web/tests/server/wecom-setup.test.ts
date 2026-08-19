@@ -25,6 +25,10 @@ describe('WeCom settings setup', () => {
       'REINS_WECOM_NOTIFY_GROUP_WEBHOOK=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=private-key',
       'REINS_WECOM_NOTIFY_USERS_DEFAULT=community-manager',
       'REINS_WECOM_REPLY_BOT_NAME=Reins Assistant',
+      'REINS_TICKET_API_LIMIT=35',
+      'REINS_TICKET_API_TIMEOUT=22',
+      'REINS_WECOM_ROUTING_TIMEOUT=18',
+      'REINS_WECOM_EXPORT_DIR=C:\\Users\\Tester\\Documents\\Reins',
       '',
     ].join('\n'), 'utf8')
 
@@ -38,6 +42,10 @@ describe('WeCom settings setup', () => {
       ticket_api_url: 'https://tickets.example.test/internal/tickets',
       users_default: 'community-manager',
       reply_bot_name: 'Reins Assistant',
+      ticket_limit: '35',
+      ticket_timeout: '22',
+      routing_timeout: '18',
+      export_dir: 'C:\\Users\\Tester\\Documents\\Reins',
     })
     expect(serialized).not.toContain('private-ticket-token')
     expect(serialized).not.toContain('private-key')

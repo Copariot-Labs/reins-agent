@@ -1,29 +1,45 @@
-import { request } from './client'
+import { getBaseUrlValue, request } from './client'
 
 export interface AuthStatus {
   hasPasswordLogin: boolean
   hasUsers?: boolean
 }
 
+async function authJson<T>(res: Response): Promise<T> {
+  const text = await res.text()
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    if (/^\s*</.test(text)) {
+      throw new Error('The local Reins service is still starting. Please wait a moment and try again.')
+    }
+    throw new Error(`The local Reins service returned an invalid response (HTTP ${res.status}).`)
+  }
+}
+
+function authUrl(path: string): string {
+  return `${getBaseUrlValue()}${path}`
+}
+
 export async function fetchAuthStatus(): Promise<AuthStatus> {
-  const res = await fetch('/api/auth/status')
+  const res = await fetch(authUrl('/api/auth/status'))
   if (!res.ok) throw new Error('Failed to fetch auth status')
-  return res.json()
+  return authJson<AuthStatus>(res)
 }
 
 export async function loginWithPassword(username: string, password: string): Promise<string> {
-  const res = await fetch('/api/auth/login', {
+  const res = await fetch(authUrl('/api/auth/login'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
   })
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}))
+    const data: { error?: string } = await authJson<{ error?: string }>(res).catch(() => ({}))
     const err: any = new Error(data.error || 'Login failed')
     err.status = res.status
     throw err
   }
-  const data = await res.json()
+  const data = await authJson<{ token: string }>(res)
   return data.token
 }
 

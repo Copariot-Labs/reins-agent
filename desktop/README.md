@@ -22,6 +22,26 @@ and launch Reins.
    private application-data directory and starts the WeCom ticket poller in the
    background.
 
+## Configure credentials
+
+End users should configure credentials inside Reins instead of copying a
+project `.env` file into the installation directory:
+
+- Open **Models → Add provider** to enter an AI provider, API key, base URL,
+  and model. Reins stores these values for the selected profile.
+- Open **Settings → WeCom** to enter the work-order API and WeCom values. Reins
+  writes the supported values to its private user configuration and restarts
+  the background ticket service.
+
+For advanced support only, the desktop product environment file is stored at:
+
+```text
+%LOCALAPPDATA%\com.copariot.reins\.env
+```
+
+Close Reins before manually editing this file. Values saved through the UI are
+preferred because they are validated before the related service is restarted.
+
 Office and Finance are enabled automatically. PowerPoint files are created and
 previewed through Office; there is no separate Presentation feature.
 

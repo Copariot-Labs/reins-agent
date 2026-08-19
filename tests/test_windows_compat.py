@@ -46,6 +46,26 @@ class WindowsCompatTests(unittest.TestCase):
         self.assertIn("/inheritance:e /reset", hooks)
         self.assertIn("app_local_data_dir()", desktop_runtime)
 
+    def test_windows_desktop_waits_for_local_service_before_showing_login(self) -> None:
+        config = (
+            Path(__file__).resolve().parents[1]
+            / "desktop"
+            / "src-tauri"
+            / "tauri.conf.json"
+        ).read_text(encoding="utf-8")
+        desktop_runtime = (
+            Path(__file__).resolve().parents[1]
+            / "desktop"
+            / "src-tauri"
+            / "src"
+            / "lib.rs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('"visible": false', config)
+        self.assertIn("wait_for_backend(8648", desktop_runtime)
+        self.assertIn("desktop-backend.log", desktop_runtime)
+        self.assertIn("window.show()", desktop_runtime)
+
     def test_windows_runtime_allows_install_into_private_managed_python(self) -> None:
         staging_script = (
             Path(__file__).resolve().parents[1]

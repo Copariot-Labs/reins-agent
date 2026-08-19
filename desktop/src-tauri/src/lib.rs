@@ -1,14 +1,12 @@
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::Mutex,
 };
 
-#[cfg(debug_assertions)]
-use std::path::PathBuf;
-
 #[cfg(not(debug_assertions))]
 use std::{
+    fs::OpenOptions,
     io::{Read, Write},
     net::{SocketAddr, TcpStream},
     thread,
@@ -85,6 +83,15 @@ fn wait_for_backend(port: u16, timeout: Duration) -> bool {
     backend_is_ready(port)
 }
 
+#[cfg(not(debug_assertions))]
+fn show_startup_error(message: &str) {
+    let _ = rfd::MessageDialog::new()
+        .set_title("Reins could not start")
+        .set_description(message)
+        .set_level(rfd::MessageLevel::Error)
+        .show();
+}
+
 #[cfg(debug_assertions)]
 fn start_backend(project_root: &Path) -> Result<Child, String> {
     let web_root = project_root.join("web");
@@ -108,6 +115,7 @@ fn start_backend(project_root: &Path) -> Result<Child, String> {
         .env("NODE_ENV", "development")
         .env("PORT", "8647")
         .env("BIND_HOST", "127.0.0.1")
+        .env("TS_NODE_PROJECT", "packages/server/tsconfig.json")
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
@@ -153,8 +161,18 @@ fn start_backend(app: &tauri::App) -> Result<Option<Child>, String> {
         .path()
         .app_local_data_dir()
         .map_err(|error| format!("Failed to resolve Reins data directory: {error}"))?;
-    std::fs::create_dir_all(reins_home.join("logs"))
+    let logs_dir = reins_home.join("logs");
+    std::fs::create_dir_all(&logs_dir)
         .map_err(|error| format!("Failed to create Reins data directory: {error}"))?;
+    let backend_log_path = logs_dir.join("desktop-backend.log");
+    let backend_stdout = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&backend_log_path)
+        .map_err(|error| format!("Failed to open {}: {error}", backend_log_path.display()))?;
+    let backend_stderr = backend_stdout
+        .try_clone()
+        .map_err(|error| format!("Failed to prepare the Reins startup log: {error}"))?;
 
     let mut path_entries = vec![
         runtime.join("bin"),
@@ -194,8 +212,8 @@ fn start_backend(app: &tauri::App) -> Result<Option<Child>, String> {
         .env("HERMES_WEB_UI_DISABLE_UPDATE_CHECK", "true")
         .env("PATH", runtime_path)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stdout(Stdio::from(backend_stdout))
+        .stderr(Stdio::from(backend_stderr));
 
     #[cfg(target_os = "windows")]
     {
@@ -248,26 +266,51 @@ pub fn run() {
                 println!("Reins backend process started with PID {}", backend.id());
 
                 app.manage(BackendProcess(Mutex::new(Some(backend))));
+                if let Some(window) = app.get_webview_window("main") {
+                    window.show()?;
+                }
             }
 
             #[cfg(not(debug_assertions))]
             {
-                let backend = start_backend(app)
-                    .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
+                let backend = match start_backend(app) {
+                    Ok(backend) => backend,
+                    Err(error) => {
+                        show_startup_error(&error);
+                        return Err(error.into());
+                    }
+                };
                 app.manage(BackendProcess(Mutex::new(backend)));
 
                 let handle = app.handle().clone();
+                let startup_log = app
+                    .path()
+                    .app_local_data_dir()
+                    .map(|path| path.join("logs").join("desktop-backend.log"))
+                    .unwrap_or_else(|_| PathBuf::from("desktop-backend.log"));
                 thread::spawn(move || {
                     if !wait_for_backend(8648, Duration::from_secs(90)) {
-                        eprintln!("Reins runtime did not become ready within 90 seconds");
+                        show_startup_error(&format!(
+                            "The local Reins service did not become ready. Restart Reins and try again.\n\nStartup log:\n{}",
+                            startup_log.display()
+                        ));
+                        handle.exit(1);
                         return;
                     }
                     let Ok(url) = "http://127.0.0.1:8648".parse() else {
+                        show_startup_error("Reins could not open its local application URL.");
+                        handle.exit(1);
                         return;
                     };
                     if let Some(window) = handle.get_webview_window("main") {
                         if let Err(error) = window.navigate(url) {
-                            eprintln!("Failed to open the Reins interface: {error}");
+                            show_startup_error(&format!("Failed to open the Reins interface: {error}"));
+                            handle.exit(1);
+                            return;
+                        }
+                        if let Err(error) = window.show() {
+                            show_startup_error(&format!("Failed to show the Reins window: {error}"));
+                            handle.exit(1);
                         }
                     }
                 });

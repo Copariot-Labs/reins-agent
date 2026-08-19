@@ -60,6 +60,14 @@ describe('LoginView password login', () => {
     expect(wrapper.text()).toContain('login.defaultCredentialsHint')
   })
 
+  it('opens the Reins chat when a saved login already exists', () => {
+    mockHasApiKey.mockReturnValue(true)
+
+    mount(LoginView)
+
+    expect(mockReplace).toHaveBeenCalledWith('/reins/chat')
+  })
+
   it('shows an error when password login fails', async () => {
     mockLoginWithPassword.mockRejectedValue(new Error('Invalid username or password'))
     const wrapper = mount(LoginView)

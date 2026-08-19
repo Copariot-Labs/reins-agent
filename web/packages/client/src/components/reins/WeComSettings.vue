@@ -8,7 +8,6 @@ import {
   NForm,
   NFormItem,
   NInput,
-  NSelect,
   NSpin,
   useMessage,
 } from 'naive-ui'
@@ -38,9 +37,7 @@ const copy = computed(() => isChinese.value ? {
   webhook: '企业微信群机器人 Webhook',
   recipient: '默认接收人 UserID',
   botName: '群内机器人名称',
-  pollInterval: '检查间隔（秒）',
-  routing: '分派方式',
-  advanced: '角色接收人（可选）',
+  roleRecipients: '角色接收人（可选）',
   property: '物业',
   cleaning: '保洁',
   police: '公安',
@@ -61,9 +58,7 @@ const copy = computed(() => isChinese.value ? {
   webhook: 'WeCom group robot webhook',
   recipient: 'Default recipient UserID',
   botName: 'Group bot name',
-  pollInterval: 'Check interval (seconds)',
-  routing: 'Routing mode',
-  advanced: 'Role recipients (optional)',
+  roleRecipients: 'Role recipients (optional)',
   property: 'Property',
   cleaning: 'Cleaning',
   police: 'Police',
@@ -76,15 +71,18 @@ const copy = computed(() => isChinese.value ? {
   failed: 'Could not save WeCom settings',
 })
 
-const routingOptions = [
-  { label: 'Hybrid', value: 'hybrid' },
-  { label: 'Rules', value: 'rules' },
-  { label: 'Shadow', value: 'shadow' },
-]
-
 function applyStatus(next: WeComSetupStatus) {
   status.value = next
-  Object.assign(form, next.values, {
+  Object.assign(form, {
+    ticket_api_url: next.values.ticket_api_url,
+    reply_bot_name: next.values.reply_bot_name,
+    users_default: next.values.users_default,
+    users_property: next.values.users_property,
+    users_cleaning: next.values.users_cleaning,
+    users_police: next.values.users_police,
+    users_hospital: next.values.users_hospital,
+    users_community: next.values.users_community,
+    users_human_review: next.values.users_human_review,
     ticket_api_token: '',
     group_webhook: '',
   })
@@ -104,7 +102,19 @@ async function load() {
 async function save() {
   saving.value = true
   try {
-    const next = await saveWeComSetup(form)
+    const next = await saveWeComSetup({
+      ticket_api_url: form.ticket_api_url,
+      ticket_api_token: form.ticket_api_token,
+      group_webhook: form.group_webhook,
+      reply_bot_name: form.reply_bot_name,
+      users_default: form.users_default,
+      users_property: form.users_property,
+      users_cleaning: form.users_cleaning,
+      users_police: form.users_police,
+      users_hospital: form.users_hospital,
+      users_community: form.users_community,
+      users_human_review: form.users_human_review,
+    })
     applyStatus(next)
     message.success(copy.value.saved)
     emit('saved', next)
@@ -130,14 +140,9 @@ onMounted(load)
       </NAlert>
 
       <NForm label-placement="top" class="setup-form">
-        <div class="form-grid">
-          <NFormItem :label="copy.ticketUrl">
-            <NInput v-model:value="form.ticket_api_url" placeholder="https://example.com/internal/tickets" />
-          </NFormItem>
-          <NFormItem :label="copy.pollInterval">
-            <NInput v-model:value="form.poll_interval" inputmode="numeric" placeholder="30" />
-          </NFormItem>
-        </div>
+        <NFormItem :label="copy.ticketUrl">
+          <NInput v-model:value="form.ticket_api_url" placeholder="https://example.com/internal/tickets" />
+        </NFormItem>
         <NFormItem :label="copy.ticketToken">
           <NInput
             v-model:value="form.ticket_api_token"
@@ -161,13 +166,10 @@ onMounted(load)
           <NFormItem :label="copy.botName">
             <NInput v-model:value="form.reply_bot_name" />
           </NFormItem>
-          <NFormItem :label="copy.routing">
-            <NSelect v-model:value="form.routing_mode" :options="routingOptions" />
-          </NFormItem>
         </div>
 
         <NCollapse>
-          <NCollapseItem name="roles" :title="copy.advanced">
+          <NCollapseItem name="roles" :title="copy.roleRecipients">
             <div class="form-grid">
               <NFormItem :label="copy.property"><NInput v-model:value="form.users_property" /></NFormItem>
               <NFormItem :label="copy.cleaning"><NInput v-model:value="form.users_cleaning" /></NFormItem>
