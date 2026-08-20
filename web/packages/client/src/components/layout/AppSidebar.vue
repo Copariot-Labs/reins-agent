@@ -232,7 +232,7 @@ onMounted(async () => {
         <ThemeSwitch />
       </div>
       <div class="footer-actions">
-        <button type="button" :disabled="appStore.updating" @click="handleUpdate">{{ appStore.updating ? t('sidebar.updating') : t('common.update') }}</button>
+        <!--<button type="button" :disabled="appStore.updating" @click="handleUpdate">{{ appStore.updating ? t('sidebar.updating') : t('common.update') }}</button> -->
         <button type="button" @click="handleLogout">{{ t('sidebar.logout') }}</button>
       </div>
     </div>
