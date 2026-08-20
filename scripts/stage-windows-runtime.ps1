@@ -122,7 +122,7 @@ Invoke-Checked $Uv @(
     (Join-Path $ProjectRoot "vendor\hermes-agent"),
     $ProjectRoot
 )
-$RuntimeProbe = "import importlib.util; names=('hermes_cli','playwright','reins','run_agent'); missing=[name for name in names if importlib.util.find_spec(name) is None]; assert not missing, f'Missing runtime modules: {missing}'; print('Private Reins Python runtime verified')"
+$RuntimeProbe = "import importlib.util; from reins.features.finance.db import get_migrations_dir; names=('hermes_cli','playwright','reins','run_agent'); missing=[name for name in names if importlib.util.find_spec(name) is None]; migrations=get_migrations_dir(); required=migrations/'001_init.sql'; assert not missing, f'Missing runtime modules: {missing}'; assert migrations.is_dir(), f'Missing Finance migrations directory: {migrations}'; assert required.is_file(), f'Missing Finance migration: {required}'; print('Private Reins Python runtime verified; Finance migrations verified')"
 Invoke-Checked $RuntimePython @("-c", $RuntimeProbe)
 
 $PlaywrightBrowsers = Join-Path $Runtime "playwright"

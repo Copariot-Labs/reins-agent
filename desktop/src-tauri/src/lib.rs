@@ -361,14 +361,15 @@ pub fn run() {
                             return;
                         }
                     }
-                    let Ok(url) = "http://127.0.0.1:8648".parse() else {
-                        show_startup_error("Reins could not open its local application URL.");
-                        handle.exit(1);
-                        return;
-                    };
                     if let Some(window) = handle.get_webview_window("main") {
-                        if let Err(error) = window.navigate(url) {
-                            show_startup_error(&format!("Failed to open the Reins interface: {error}"));
+                        // Keep the packaged frontend on Tauri's trusted local origin.
+                        // It already sends API requests to the private service on port
+                        // 8648. Navigating the webview to that HTTP origin removes the
+                        // Tauri IPC bridge, which is required by save_download.
+                        if let Err(error) = window.eval("window.location.reload()") {
+                            show_startup_error(&format!(
+                                "Failed to initialize the Reins interface: {error}"
+                            ));
                             handle.exit(1);
                             return;
                         }

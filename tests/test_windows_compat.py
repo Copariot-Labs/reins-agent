@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -85,6 +86,30 @@ class WindowsCompatTests(unittest.TestCase):
         self.assertIn("desktop-backend.log", desktop_runtime)
         self.assertIn("window.show()", desktop_runtime)
 
+    def test_windows_desktop_keeps_tauri_download_bridge_after_startup(self) -> None:
+        desktop_runtime = (
+            Path(__file__).resolve().parents[1]
+            / "desktop"
+            / "src-tauri"
+            / "src"
+            / "lib.rs"
+        ).read_text(encoding="utf-8")
+        download_helper = (
+            Path(__file__).resolve().parents[1]
+            / "web"
+            / "packages"
+            / "client"
+            / "src"
+            / "api"
+            / "hermes"
+            / "download.ts"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn("window.navigate(", desktop_runtime)
+        self.assertIn('window.eval("window.location.reload()")', desktop_runtime)
+        self.assertIn("generate_handler![save_download]", desktop_runtime)
+        self.assertIn("invoke<boolean>('save_download'", download_helper)
+
     def test_windows_desktop_starts_slow_services_after_http_readiness(self) -> None:
         server_entry = (
             Path(__file__).resolve().parents[1]
@@ -141,6 +166,21 @@ class WindowsCompatTests(unittest.TestCase):
 
         self.assertIn('onlyBuiltDependencies = @("node-pty")', staging_script)
         self.assertIn("Private Reins JavaScript runtime verified", staging_script)
+
+    def test_finance_migrations_are_packaged_and_verified_in_windows_runtime(self) -> None:
+        project_root = Path(__file__).resolve().parents[1]
+        packaging = tomllib.loads(
+            (project_root / "pyproject.toml").read_text(encoding="utf-8")
+        )
+        staging_script = (project_root / "scripts" / "stage-windows-runtime.ps1").read_text(
+            encoding="utf-8"
+        )
+
+        package_data = packaging["tool"]["setuptools"]["package-data"]
+        self.assertIn("migrations/*.sql", package_data["reins.features.finance"])
+        self.assertIn("get_migrations_dir", staging_script)
+        self.assertIn("required=migrations/'001_init.sql'", staging_script)
+        self.assertIn("Finance migrations verified", staging_script)
 
     def test_windows_installer_uses_slow_start_safe_health_check(self) -> None:
         installer = (
