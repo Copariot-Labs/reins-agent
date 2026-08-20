@@ -2,7 +2,7 @@
 import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useMessage } from 'naive-ui'
+// import { useMessage } from 'naive-ui'
 import { useAppStore } from '@/stores/hermes/app'
 import { useChatStore } from '@/stores/hermes/chat'
 import { useProfilesStore } from '@/stores/hermes/profiles'
@@ -15,7 +15,7 @@ import { isStoredSuperAdmin } from '@/api/client'
 import { formatTimestampMs } from '@/shared/session-display'
 
 const { t, locale } = useI18n()
-const message = useMessage()
+// const message = useMessage()
 const route = useRoute()
 const router = useRouter()
 const appStore = useAppStore()
@@ -69,11 +69,11 @@ async function openSession(sessionId: string) {
   await router.push({ name: 'hermes.session', params: { sessionId } })
 }
 
-async function handleUpdate() {
-  message.success(t('sidebar.updateSuccess'), { duration: 5000 })
-  const ok = await appStore.doUpdate()
-  if (!ok) message.error(appStore.updateError || t('sidebar.updateFailed'), { duration: 8000 })
-}
+//async function handleUpdate() {
+// message.success(t('sidebar.updateSuccess'), { duration: 5000 })
+//  const ok = await appStore.doUpdate()
+//  if (!ok) message.error(appStore.updateError || t('sidebar.updateFailed'), { duration: 8000 })
+//}
 
 function handleLogout() {
   localStorage.clear()
