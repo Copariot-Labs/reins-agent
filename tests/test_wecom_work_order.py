@@ -489,6 +489,7 @@ class WeComWorkOrderTests(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
+                "REINS_WECOM_NOTIFY_ENABLED": "true",
                 "REINS_WECOM_CORP_ID": "legacy-corp",
                 "REINS_WECOM_APP_SECRET": "legacy-secret",
                 "REINS_WECOM_APP_AGENT_ID": "1000002",
@@ -504,6 +505,32 @@ class WeComWorkOrderTests(unittest.TestCase):
         self.assertEqual(result["channel"], "group_webhook_mention")
         self.assertIn("REINS_WECOM_NOTIFY_GROUP_WEBHOOK", result["error"])
         send.assert_not_called()
+
+    def test_disabled_notifications_do_not_require_a_group_webhook(self):
+        record = {
+            "id": 1,
+            "message": "3栋404停电",
+            "metadata": {
+                "external_id": "t_fetch_only",
+                "assigned_role": "property",
+            },
+        }
+
+        for enabled in (None, "false"):
+            environment = {}
+            if enabled is not None:
+                environment["REINS_WECOM_NOTIFY_ENABLED"] = enabled
+
+            with self.subTest(enabled=enabled):
+                with patch.dict(os.environ, environment, clear=True):
+                    with patch("reins.features.wecom.notifier.send_wecom_text") as send:
+                        result = notifier.notify_staff(record)
+
+                self.assertTrue(result["ok"])
+                self.assertEqual(result["status"], "disabled")
+                self.assertEqual(result["channel"], "disabled")
+                self.assertEqual(result["error"], "")
+                send.assert_not_called()
 
     def test_exports_ticket_before_attempting_notification(self):
         with tempfile.TemporaryDirectory() as directory:

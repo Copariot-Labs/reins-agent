@@ -4,12 +4,17 @@
  */
 
 export interface ProviderPreset {
-  label: string
-  value: string
-  base_url: string
-  models: string[]
-  builtin: boolean
-  api_mode?: 'chat_completions' | 'codex_responses' | 'anthropic_messages' | 'bedrock_converse' | 'codex_app_server'
+  label: string;
+  value: string;
+  base_url: string;
+  models: string[];
+  builtin: boolean;
+  api_mode?:
+    | 'chat_completions'
+    | 'codex_responses'
+    | 'anthropic_messages'
+    | 'bedrock_converse'
+    | 'codex_app_server';
 }
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
@@ -32,12 +37,12 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     value: 'fun-claude',
     builtin: true,
     base_url: 'https://api.apikey.fun',
-    api_mode: "anthropic_messages",
+    api_mode: 'anthropic_messages',
     models: [
       'claude-opus-4-7',
       'claude-opus-4-6',
       'claude-sonnet-4-6',
-      'claude-haiku-4-5'
+      'claude-haiku-4-5',
     ],
   },
   {
@@ -81,7 +86,12 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     value: 'deepseek',
     builtin: true,
     base_url: 'https://api.deepseek.com',
-    models: ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-chat', 'deepseek-reasoner'],
+    models: [
+      'deepseek-v4-pro',
+      'deepseek-v4-flash',
+      'deepseek-chat',
+      'deepseek-reasoner',
+    ],
   },
   {
     label: 'Z.AI / GLM',
@@ -172,14 +182,32 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     value: 'minimax',
     builtin: true,
     base_url: 'https://api.minimax.io/anthropic/v1',
-    models: ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed', 'MiniMax-M2.1', 'MiniMax-M2.1-highspeed', 'MiniMax-M2', 'MiniMax-M2-highspeed'],
+    models: [
+      'MiniMax-M2.7',
+      'MiniMax-M2.7-highspeed',
+      'MiniMax-M2.5',
+      'MiniMax-M2.5-highspeed',
+      'MiniMax-M2.1',
+      'MiniMax-M2.1-highspeed',
+      'MiniMax-M2',
+      'MiniMax-M2-highspeed',
+    ],
   },
   {
     label: 'MiniMax (China)',
     value: 'minimax-cn',
     builtin: true,
     base_url: 'https://api.minimaxi.com/v1',
-    models: ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed', 'MiniMax-M2.1', 'MiniMax-M2.1-highspeed', 'MiniMax-M2', 'MiniMax-M2-highspeed'],
+    models: [
+      'MiniMax-M2.7',
+      'MiniMax-M2.7-highspeed',
+      'MiniMax-M2.5',
+      'MiniMax-M2.5-highspeed',
+      'MiniMax-M2.1',
+      'MiniMax-M2.1-highspeed',
+      'MiniMax-M2',
+      'MiniMax-M2-highspeed',
+    ],
   },
   {
     label: 'Alibaba Cloud',
@@ -363,18 +391,18 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     builtin: true,
     base_url: 'https://opencode.ai/zen/go/v1',
     models: [
-      'glm-5.1',
-      'glm-5',
-      'kimi-k2.5',
-      'kimi-k2.6',
-      'deepseek-v4-pro',
+      // 'glm-5.1',
+      // 'glm-5',
+      // 'kimi-k2.5',
+      // 'kimi-k2.6',
+      // 'deepseek-v4-pro',
       'deepseek-v4-flash',
-      'mimo-v2.5-pro',
+      // 'mimo-v2.5-pro',
       'mimo-v2.5',
-      'minimax-m2.7',
-      'minimax-m2.5',
-      'qwen3.6-plus',
-      'qwen3.5-plus'
+      // 'minimax-m2.7',
+      // 'minimax-m2.5',
+      // 'qwen3.6-plus',
+      // 'qwen3.5-plus'
     ],
   },
   {
@@ -389,7 +417,15 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     value: 'openai-codex',
     builtin: true,
     base_url: 'https://chatgpt.com/backend-api/codex',
-    models: ['gpt-5.5', 'gpt-5.4-mini', 'gpt-5.4', 'gpt-5.3-codex', 'gpt-5.2-codex', 'gpt-5.1-codex-max', 'gpt-5.1-codex-mini'],
+    models: [
+      'gpt-5.5',
+      'gpt-5.4-mini',
+      'gpt-5.4',
+      'gpt-5.3-codex',
+      'gpt-5.2-codex',
+      'gpt-5.1-codex-max',
+      'gpt-5.1-codex-mini',
+    ],
   },
   {
     label: 'Arcee AI',
@@ -481,15 +517,15 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'grok-code-fast-1',
     ],
   },
-]
+];
 
 /** Build a Record<providerKey, models[]> for backend lookup */
 export function buildProviderModelMap(): Record<string, string[]> {
-  const map: Record<string, string[]> = {}
+  const map: Record<string, string[]> = {};
   for (const p of PROVIDER_PRESETS) {
     if (p.models.length > 0) {
-      map[p.value] = p.models
+      map[p.value] = p.models;
     }
   }
-  return map
+  return map;
 }

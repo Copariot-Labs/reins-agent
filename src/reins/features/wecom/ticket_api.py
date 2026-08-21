@@ -469,7 +469,7 @@ def poll_once(
             summary = _ticket_summary(ticket, result)
             summaries.append(summary)
             status = summary["notification_status"]
-            if status not in {"sent", "skipped_duplicate", "dry_run"}:
+            if status not in {"sent", "skipped_duplicate", "dry_run", "disabled"}:
                 notification_failures += 1
         except Exception as exc:
             errors.append(
@@ -493,7 +493,9 @@ def poll_once(
         "duplicates": sum(1 for item in summaries if item["duplicate"]),
         "notifications_sent": sum(1 for item in summaries if item["notification_status"] == "sent"),
         "notifications_skipped": sum(
-            1 for item in summaries if item["notification_status"] == "skipped_duplicate"
+            1
+            for item in summaries
+            if item["notification_status"] in {"skipped_duplicate", "disabled"}
         ),
         "notification_failures": notification_failures,
         "since": effective_since,

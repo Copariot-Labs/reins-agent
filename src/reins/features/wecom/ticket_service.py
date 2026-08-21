@@ -462,6 +462,7 @@ def _register_windows_task(script_path: Path) -> subprocess.CompletedProcess[str
     action_arguments = _windows_task_arguments(script_path)
     command = (
         "$user = [Security.Principal.WindowsIdentity]::GetCurrent().Name; "
+        f"Stop-ScheduledTask -TaskName {_powershell_quote(WINDOWS_TASK_NAME)} -ErrorAction SilentlyContinue; "
         "$powershell = Join-Path $env:SystemRoot "
         "'System32\\WindowsPowerShell\\v1.0\\powershell.exe'; "
         "$action = New-ScheduledTaskAction "
