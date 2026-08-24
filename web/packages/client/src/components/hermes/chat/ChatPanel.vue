@@ -167,7 +167,12 @@ const activeSessionTitle = computed(
 );
 const activeOfficeDocument = computed(() => chatStore.activeOfficeDocument);
 const activeOfficePreviewKey = computed(
-  () => `${chatStore.activeSessionId || ''}:${activeOfficeDocument.value?.id || ''}`,
+  () => [
+    chatStore.activeSessionId || '',
+    activeOfficeDocument.value?.id || '',
+    activeOfficeDocument.value?.updated_at || '',
+    activeOfficeDocument.value?.revision_count || 0,
+  ].join(':'),
 );
 
 watch(

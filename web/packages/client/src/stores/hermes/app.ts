@@ -1,5 +1,5 @@
-import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { defineStore } from 'pinia';
+import { ref } from 'vue';
 import {
   checkHealth,
   fetchUpdateStatus,
@@ -15,333 +15,401 @@ import {
   type ProfileAvailableModels,
   type ModelVisibility,
   type ModelVisibilityRule,
-} from '@/api/hermes/system'
-import { hasApiKey } from '@/api/client'
+} from '@/api/hermes/system';
+import { hasApiKey, isTauriDesktop } from '@/api/client';
 
-const WEB_UI_VERSION = __APP_VERSION__
+const WEB_UI_VERSION = __APP_VERSION__;
 
-const SIDEBAR_COLLAPSED_KEY = 'hermes_sidebar_collapsed'
-const ACTIVE_PROFILE_STORAGE_KEY = 'hermes_active_profile_name'
-const MODELS_CACHE_TTL_MS = 30000
+const SIDEBAR_COLLAPSED_KEY = 'hermes_sidebar_collapsed';
+const ACTIVE_PROFILE_STORAGE_KEY = 'hermes_active_profile_name';
+const MODELS_CACHE_TTL_MS = 30000;
 
 export const useAppStore = defineStore('app', () => {
-  const sidebarOpen = ref(false)
+  const sidebarOpen = ref(false);
   // Desktop-only collapsed state (icon-rail mode). Persisted to localStorage.
-  const sidebarCollapsed = ref(localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1')
+  const sidebarCollapsed = ref(
+    localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1',
+  );
 
-  const connected = ref(false)
-  const serverVersion = ref(WEB_UI_VERSION)
-  const latestVersion = ref('')
-  const updateAvailable = ref(false)
-  const updateSupported = ref(false)
-  const clientOutdated = ref(false)
-  const updating = ref(false)
-  const updateError = ref('')
-  const modelGroups = ref<AvailableModelGroup[]>([])
-  const profileModelGroups = ref<ProfileAvailableModels[]>([])
-  const selectedModel = ref('')
-  const selectedProvider = ref('')
-  const customModels = ref<Record<string, string[]>>({})
-  const modelAliases = ref<Record<string, Record<string, string>>>({})
-  const modelVisibility = ref<ModelVisibility>({})
-  const healthPollTimer = ref<ReturnType<typeof setInterval>>()
-  const nodeVersion = ref('')
+  const connected = ref(false);
+  const serverVersion = ref(WEB_UI_VERSION);
+  const latestVersion = ref('');
+  const updateAvailable = ref(false);
+  const updateSupported = ref(false);
+  const clientOutdated = ref(false);
+  const updating = ref(false);
+  const updateError = ref('');
+  const modelGroups = ref<AvailableModelGroup[]>([]);
+  const profileModelGroups = ref<ProfileAvailableModels[]>([]);
+  const selectedModel = ref('');
+  const selectedProvider = ref('');
+  const customModels = ref<Record<string, string[]>>({});
+  const modelAliases = ref<Record<string, Record<string, string>>>({});
+  const modelVisibility = ref<ModelVisibility>({});
+  const healthPollTimer = ref<ReturnType<typeof setInterval>>();
+  const nodeVersion = ref('');
 
   // Settings
-  const streamEnabled = ref(true)
-  const sessionPersistence = ref(true)
-  const maxTokens = ref(4096)
-  let modelsLoadPromise: Promise<void> | null = null
-  let modelsLastRequestedAt = 0
+  const streamEnabled = ref(true);
+  const sessionPersistence = ref(true);
+  const maxTokens = ref(4096);
+  let modelsLoadPromise: Promise<void> | null = null;
+  let modelsLastRequestedAt = 0;
 
   async function doUpdate(): Promise<boolean> {
-    updating.value = true
-    updateError.value = ''
+    updating.value = true;
+    updateError.value = '';
     try {
-      const res = await triggerUpdate()
+      const res = await triggerUpdate();
       if (!res.success) {
-        updateError.value = res.message
-        return false
+        updateError.value = res.message;
+        return false;
       }
 
-      updateAvailable.value = false
+      updateAvailable.value = false;
       for (let attempt = 0; attempt < 600; attempt++) {
-        await new Promise(resolve => setTimeout(resolve, 2000))
+        await new Promise((resolve) => setTimeout(resolve, 2000));
         try {
-          const status = await fetchUpdateStatus()
+          const status = await fetchUpdateStatus();
           if (status.status === 'failed') {
-            updateError.value = status.message || 'Reins update failed'
-            return false
+            updateError.value = status.message || 'Reins update failed';
+            return false;
           }
           if (status.status === 'success') {
-            reloadClient()
-            return true
+            reloadClient();
+            return true;
           }
         } catch {
           // The server is expected to be unavailable while it is rebuilt.
         }
       }
 
-      updateError.value = 'Timed out waiting for Reins to restart'
-      return false
+      updateError.value = 'Timed out waiting for Reins to restart';
+      return false;
     } catch (err) {
-      updateError.value = err instanceof Error ? err.message : String(err)
-      console.error('Failed to update Reins:', err)
-      return false
+      updateError.value = err instanceof Error ? err.message : String(err);
+      console.error('Failed to update Reins:', err);
+      return false;
     } finally {
-      updating.value = false
+      updating.value = false;
     }
   }
 
   async function checkConnection() {
     try {
-      const res = await checkHealth()
-      connected.value = res.status === 'ok'
-      if (res.webui_version) serverVersion.value = res.webui_version
-      clientOutdated.value = !!res.webui_version && res.webui_version !== WEB_UI_VERSION
-      if (res.webui_latest) latestVersion.value = res.webui_latest
-      updateAvailable.value = !!res.webui_update_available
-      updateSupported.value = !!res.reins_update_supported
-      if (res.node_version) nodeVersion.value = res.node_version
+      const res = await checkHealth();
+      connected.value = res.status === 'ok';
+      if (res.webui_version) serverVersion.value = res.webui_version;
+      clientOutdated.value =
+        !!res.webui_version && res.webui_version !== WEB_UI_VERSION;
+      if (res.webui_latest) latestVersion.value = res.webui_latest;
+      updateAvailable.value = !!res.webui_update_available;
+      updateSupported.value = !!res.reins_update_supported;
+      if (res.node_version) nodeVersion.value = res.node_version;
     } catch {
-      connected.value = false
-      clientOutdated.value = false
+      connected.value = false;
+      clientOutdated.value = false;
     }
   }
 
   function applyAvailableModelsResponse(res: AvailableModelsResponse) {
-    modelGroups.value = res.groups
-    profileModelGroups.value = res.profiles || []
-    modelAliases.value = res.model_aliases || {}
-    modelVisibility.value = res.model_visibility || {}
-    customModels.value = res.custom_models || {}
+    modelGroups.value = res.groups;
+    profileModelGroups.value = res.profiles || [];
+    modelAliases.value = res.model_aliases || {};
+    modelVisibility.value = res.model_visibility || {};
+    customModels.value = res.custom_models || {};
 
-    const activeProfileName = localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY) || ''
+    const activeProfileName =
+      localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY) || '';
     const activeProfileModels = activeProfileName
-      ? profileModelGroups.value.find(entry => entry.profile === activeProfileName)
-      : undefined
-    const defaultSource = activeProfileModels || res
-    const defaultGroups = defaultSource.groups || []
-    const defaultModel = defaultSource.default || ''
-    const defaultProvider = defaultSource.default_provider || ''
-    const explicitGroup = defaultGroups.find(g => g.provider === defaultProvider && g.models.includes(defaultModel))
-    const inferredGroup = defaultGroups.find(g => g.models.includes(defaultModel))
-    const fallbackGroup = defaultGroups.find(g => g.models.length > 0)
+      ? profileModelGroups.value.find(
+          (entry) => entry.profile === activeProfileName,
+        )
+      : undefined;
+    const defaultSource = activeProfileModels || res;
+    const defaultGroups = defaultSource.groups || [];
+    const defaultModel = defaultSource.default || '';
+    const defaultProvider = defaultSource.default_provider || '';
+    const explicitGroup = defaultGroups.find(
+      (g) => g.provider === defaultProvider && g.models.includes(defaultModel),
+    );
+    const inferredGroup = defaultGroups.find((g) =>
+      g.models.includes(defaultModel),
+    );
+    const fallbackGroup = defaultGroups.find((g) => g.models.length > 0);
 
-    const providerGroup = defaultProvider ? defaultGroups.find(g => g.provider === defaultProvider) : undefined
-    const allProvider = defaultProvider ? res.allProviders.find(g => g.provider === defaultProvider) : undefined
+    const providerGroup = defaultProvider
+      ? defaultGroups.find((g) => g.provider === defaultProvider)
+      : undefined;
+    const allProvider = defaultProvider
+      ? res.allProviders.find((g) => g.provider === defaultProvider)
+      : undefined;
     const providerCatalog = providerGroup?.available_models?.length
       ? providerGroup.available_models
       : allProvider?.available_models?.length
         ? allProvider.available_models
-        : allProvider?.models || []
-    const visibilityRule = defaultProvider ? modelVisibility.value[defaultProvider] : undefined
+        : allProvider?.models || [];
+    const visibilityRule = defaultProvider
+      ? modelVisibility.value[defaultProvider]
+      : undefined;
     const hiddenByVisibility = !!(
       defaultModel &&
       visibilityRule?.mode === 'include' &&
       !visibilityRule.models.includes(defaultModel) &&
       (providerCatalog.length === 0 || providerCatalog.includes(defaultModel))
-    )
+    );
     const unlistedDefault = !!(
       defaultModel &&
       defaultProvider &&
       providerGroup &&
       !providerGroup.models.includes(defaultModel) &&
       !hiddenByVisibility
-    )
+    );
 
     if (explicitGroup || inferredGroup) {
-      const selectedGroup = explicitGroup || inferredGroup!
-      selectedModel.value = defaultModel
-      selectedProvider.value = selectedGroup.provider
+      const selectedGroup = explicitGroup || inferredGroup!;
+      selectedModel.value = defaultModel;
+      selectedProvider.value = selectedGroup.provider;
     } else if (unlistedDefault) {
-      selectedModel.value = defaultModel
-      selectedProvider.value = defaultProvider
+      selectedModel.value = defaultModel;
+      selectedProvider.value = defaultProvider;
       customModels.value = {
         ...customModels.value,
-        [defaultProvider]: Array.from(new Set([...(customModels.value[defaultProvider] || []), defaultModel])),
-      }
+        [defaultProvider]: Array.from(
+          new Set([
+            ...(customModels.value[defaultProvider] || []),
+            defaultModel,
+          ]),
+        ),
+      };
     } else if (fallbackGroup) {
-      selectedModel.value = fallbackGroup.models[0]
-      selectedProvider.value = fallbackGroup.provider
+      selectedModel.value = fallbackGroup.models[0];
+      selectedProvider.value = fallbackGroup.provider;
     } else {
-      selectedModel.value = ''
-      selectedProvider.value = ''
+      selectedModel.value = '';
+      selectedProvider.value = '';
     }
   }
 
   async function loadModels(force = false) {
-    if (!hasApiKey()) return
-    if (!force && modelsLoadPromise) return modelsLoadPromise
-    if (!force && modelsLastRequestedAt > 0 && Date.now() - modelsLastRequestedAt < MODELS_CACHE_TTL_MS) return
-    modelsLastRequestedAt = Date.now()
+    if (!hasApiKey() && !isTauriDesktop()) return;
+    if (!force && modelsLoadPromise) return modelsLoadPromise;
+    if (
+      !force &&
+      modelsLastRequestedAt > 0 &&
+      Date.now() - modelsLastRequestedAt < MODELS_CACHE_TTL_MS
+    )
+      return;
+    modelsLastRequestedAt = Date.now();
     modelsLoadPromise = (async () => {
       try {
-        const res = await fetchAvailableModels()
-        applyAvailableModelsResponse(res)
+        const res = await fetchAvailableModels();
+        applyAvailableModelsResponse(res);
       } catch {
         // ignore
       } finally {
-        modelsLoadPromise = null
+        modelsLoadPromise = null;
       }
-    })()
-    return modelsLoadPromise
+    })();
+    return modelsLoadPromise;
   }
 
   async function waitForModelsForRun(timeoutMs = 15000) {
-    if (!hasApiKey()) return
-    const pending = modelsLoadPromise || (modelsLastRequestedAt === 0 ? loadModels() : null)
-    if (!pending) return
+    if (!hasApiKey() && !isTauriDesktop()) {
+      return;
+    }
+    const pending =
+      modelsLoadPromise || (modelsLastRequestedAt === 0 ? loadModels() : null);
+    if (!pending) return;
     await Promise.race([
       pending,
-      new Promise<void>(resolve => setTimeout(resolve, timeoutMs)),
-    ])
+      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+    ]);
   }
 
   async function reloadModels() {
-    return loadModels(true)
+    return loadModels(true);
   }
 
   function getModelAlias(modelId: string, provider?: string): string {
-    if (provider) return modelAliases.value[provider]?.[modelId] || ''
+    if (provider) return modelAliases.value[provider]?.[modelId] || '';
     for (const aliases of Object.values(modelAliases.value)) {
-      if (aliases[modelId]) return aliases[modelId]
+      if (aliases[modelId]) return aliases[modelId];
     }
-    return ''
+    return '';
   }
 
   function displayModelName(modelId: string, provider?: string): string {
-    return getModelAlias(modelId, provider) || modelId
+    return getModelAlias(modelId, provider) || modelId;
   }
 
-  function removeModelFromGroupList(groups: AvailableModelGroup[], provider: string, modelId: string): AvailableModelGroup[] {
-    return groups.map(group => {
-      if (group.provider !== provider) return group
+  function removeModelFromGroupList(
+    groups: AvailableModelGroup[],
+    provider: string,
+    modelId: string,
+  ): AvailableModelGroup[] {
+    return groups.map((group) => {
+      if (group.provider !== provider) return group;
       return {
         ...group,
-        models: group.models.filter(model => model !== modelId),
-        available_models: group.available_models?.filter(model => model !== modelId),
-      }
-    })
+        models: group.models.filter((model) => model !== modelId),
+        available_models: group.available_models?.filter(
+          (model) => model !== modelId,
+        ),
+      };
+    });
   }
 
   function removeModelFromLoadedGroups(provider: string, modelId: string) {
-    modelGroups.value = removeModelFromGroupList(modelGroups.value, provider, modelId)
-    profileModelGroups.value = profileModelGroups.value.map(profileEntry => ({
+    modelGroups.value = removeModelFromGroupList(
+      modelGroups.value,
+      provider,
+      modelId,
+    );
+    profileModelGroups.value = profileModelGroups.value.map((profileEntry) => ({
       ...profileEntry,
       groups: removeModelFromGroupList(profileEntry.groups, provider, modelId),
-    }))
+    }));
   }
 
-  async function setModelAlias(modelId: string, provider: string, alias: string) {
-    const cleanAlias = alias.trim()
-    await updateModelAlias({ provider, model: modelId, alias: cleanAlias })
-    const next = { ...modelAliases.value }
-    const providerAliases = { ...(next[provider] || {}) }
+  async function setModelAlias(
+    modelId: string,
+    provider: string,
+    alias: string,
+  ) {
+    const cleanAlias = alias.trim();
+    await updateModelAlias({ provider, model: modelId, alias: cleanAlias });
+    const next = { ...modelAliases.value };
+    const providerAliases = { ...(next[provider] || {}) };
     if (cleanAlias) {
-      providerAliases[modelId] = cleanAlias
-      next[provider] = providerAliases
+      providerAliases[modelId] = cleanAlias;
+      next[provider] = providerAliases;
     } else {
-      delete providerAliases[modelId]
-      if (Object.keys(providerAliases).length > 0) next[provider] = providerAliases
-      else delete next[provider]
+      delete providerAliases[modelId];
+      if (Object.keys(providerAliases).length > 0)
+        next[provider] = providerAliases;
+      else delete next[provider];
     }
-    modelAliases.value = next
+    modelAliases.value = next;
   }
 
   async function switchModel(modelId: string, providerOverride?: string) {
     try {
       // Find the group containing this model to get provider info
-      const group = modelGroups.value.find(g => g.models.includes(modelId))
-      const provider = providerOverride || group?.provider || ''
-      await updateDefaultModel({ default: modelId, provider })
-      selectedModel.value = modelId
-      selectedProvider.value = provider || ''
+      const group = modelGroups.value.find((g) => g.models.includes(modelId));
+      const provider = providerOverride || group?.provider || '';
+      await updateDefaultModel({ default: modelId, provider });
+      selectedModel.value = modelId;
+      selectedProvider.value = provider || '';
       // Track as custom if not already in the server-fetched list
-      if (provider && !modelGroups.value.find(g => g.provider === provider)?.models.includes(modelId)) {
-        const res = await persistCustomModel({ provider, model: modelId })
-        customModels.value = res.custom_models || {}
+      if (
+        provider &&
+        !modelGroups.value
+          .find((g) => g.provider === provider)
+          ?.models.includes(modelId)
+      ) {
+        const res = await persistCustomModel({ provider, model: modelId });
+        customModels.value = res.custom_models || {};
       }
     } catch (err: any) {
-      console.error('Failed to switch model:', err)
+      console.error('Failed to switch model:', err);
     }
   }
 
   async function removeCustomModel(modelId: string, provider: string) {
-    const providerModels = customModels.value[provider] || []
-    if (!providerModels.includes(modelId)) return
+    const providerModels = customModels.value[provider] || [];
+    if (!providerModels.includes(modelId)) return;
 
-    const nextCustomModels = { ...customModels.value }
-    const remaining = providerModels.filter(m => m !== modelId)
-    if (remaining.length > 0) nextCustomModels[provider] = remaining
-    else delete nextCustomModels[provider]
+    const nextCustomModels = { ...customModels.value };
+    const remaining = providerModels.filter((m) => m !== modelId);
+    if (remaining.length > 0) nextCustomModels[provider] = remaining;
+    else delete nextCustomModels[provider];
     try {
-      const res = await deletePersistedCustomModel({ provider, model: modelId })
-      customModels.value = res.custom_models || nextCustomModels
+      const res = await deletePersistedCustomModel({
+        provider,
+        model: modelId,
+      });
+      customModels.value = res.custom_models || nextCustomModels;
     } catch (err) {
-      console.error('Failed to remove custom model:', err)
-      customModels.value = nextCustomModels
+      console.error('Failed to remove custom model:', err);
+      customModels.value = nextCustomModels;
     }
-    removeModelFromLoadedGroups(provider, modelId)
+    removeModelFromLoadedGroups(provider, modelId);
 
-    if (selectedModel.value === modelId && selectedProvider.value === provider) {
-      const providerGroup = modelGroups.value.find(g => g.provider === provider && g.models.length > 0)
-      const fallbackGroup = providerGroup || modelGroups.value.find(g => g.models.length > 0)
+    if (
+      selectedModel.value === modelId &&
+      selectedProvider.value === provider
+    ) {
+      const providerGroup = modelGroups.value.find(
+        (g) => g.provider === provider && g.models.length > 0,
+      );
+      const fallbackGroup =
+        providerGroup || modelGroups.value.find((g) => g.models.length > 0);
       if (fallbackGroup) {
-        await switchModel(fallbackGroup.models[0], fallbackGroup.provider)
+        await switchModel(fallbackGroup.models[0], fallbackGroup.provider);
       } else {
-        selectedModel.value = ''
-        selectedProvider.value = ''
+        selectedModel.value = '';
+        selectedProvider.value = '';
       }
     }
   }
 
   function getProviderVisibility(provider: string): ModelVisibilityRule {
-    return modelVisibility.value[provider] || { mode: 'all', models: [] }
+    return modelVisibility.value[provider] || { mode: 'all', models: [] };
   }
 
   function isModelVisible(provider: string, model: string): boolean {
-    const rule = getProviderVisibility(provider)
-    return rule.mode !== 'include' || rule.models.includes(model)
+    const rule = getProviderVisibility(provider);
+    return rule.mode !== 'include' || rule.models.includes(model);
   }
 
-  async function setModelVisibility(provider: string, rule: ModelVisibilityRule) {
-    const res = await updateModelVisibility({ provider, mode: rule.mode, models: rule.models })
-    modelVisibility.value = res.model_visibility || {}
-    await reloadModels()
+  async function setModelVisibility(
+    provider: string,
+    rule: ModelVisibilityRule,
+  ) {
+    const res = await updateModelVisibility({
+      provider,
+      mode: rule.mode,
+      models: rule.models,
+    });
+    modelVisibility.value = res.model_visibility || {};
+    await reloadModels();
   }
 
   function startHealthPolling(interval = 30000) {
-    stopHealthPolling()
-    checkConnection()
-    healthPollTimer.value = setInterval(checkConnection, interval)
+    stopHealthPolling();
+    checkConnection();
+    healthPollTimer.value = setInterval(checkConnection, interval);
   }
 
   function stopHealthPolling() {
     if (healthPollTimer.value) {
-      clearInterval(healthPollTimer.value)
-      healthPollTimer.value = undefined
+      clearInterval(healthPollTimer.value);
+      healthPollTimer.value = undefined;
     }
   }
 
   function reloadClient() {
-    const url = new URL(window.location.href)
-    url.searchParams.set('__hwui_reload', Date.now().toString())
-    window.location.replace(url.toString())
+    const url = new URL(window.location.href);
+    url.searchParams.set('__hwui_reload', Date.now().toString());
+    window.location.replace(url.toString());
   }
 
   function toggleSidebar() {
-    sidebarOpen.value = !sidebarOpen.value
+    sidebarOpen.value = !sidebarOpen.value;
   }
 
   function closeSidebar() {
-    sidebarOpen.value = false
+    sidebarOpen.value = false;
   }
 
   function toggleSidebarCollapsed() {
-    sidebarCollapsed.value = !sidebarCollapsed.value
+    sidebarCollapsed.value = !sidebarCollapsed.value;
     try {
-      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, sidebarCollapsed.value ? '1' : '0')
+      localStorage.setItem(
+        SIDEBAR_COLLAPSED_KEY,
+        sidebarCollapsed.value ? '1' : '0',
+      );
     } catch {
       // ignore quota errors — fallback to in-memory only
     }
@@ -389,5 +457,5 @@ export const useAppStore = defineStore('app', () => {
     setModelVisibility,
     startHealthPolling,
     stopHealthPolling,
-  }
-})
+  };
+});

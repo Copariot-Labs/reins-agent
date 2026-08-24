@@ -91,4 +91,37 @@ describe('chat Office preview linkage', () => {
     expect(assistant.officeDocument).toEqual(document)
     expect(officeDocumentFromMessages(messages)).toEqual(document)
   })
+
+  it('updates the existing card when the same Office document is revised', () => {
+    const created = officeDocument('persisted-office')
+    const revised = {
+      ...created,
+      updated_at: '2026-08-12T00:05:00Z',
+      revision_count: 1,
+    }
+    const createdAssistant: Message = {
+      id: 'assistant-created',
+      role: 'assistant',
+      content: 'Office document created successfully.',
+      timestamp: Date.now(),
+    }
+    const revisedAssistant: Message = {
+      id: 'assistant-revised',
+      role: 'assistant',
+      content: 'Office document updated successfully.',
+      timestamp: Date.now(),
+    }
+    const messages = [
+      toolMessage('tool-create', 'reins_office_create', { office_document: created }),
+      createdAssistant,
+      toolMessage('tool-revise', 'reins_office_revise', { office_document: revised }),
+      revisedAssistant,
+    ]
+
+    linkOfficeDocumentsToAssistantMessages(messages)
+
+    expect(createdAssistant.officeDocument).toEqual(revised)
+    expect(revisedAssistant.officeDocument).toBeUndefined()
+    expect(officeDocumentFromMessages(messages)).toEqual(revised)
+  })
 })

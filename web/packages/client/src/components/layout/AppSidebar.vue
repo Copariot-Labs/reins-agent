@@ -8,10 +8,8 @@ import { useChatStore } from '@/stores/hermes/chat'
 import { useProfilesStore } from '@/stores/hermes/profiles'
 import { useSessionSearch } from '@/composables/useSessionSearch'
 import RouteLinkItem from '@/components/common/RouteLinkItem.vue'
-import ProfileSelector from './ProfileSelector.vue'
 import LanguageSwitch from './LanguageSwitch.vue'
 import ThemeSwitch from './ThemeSwitch.vue'
-import { isStoredSuperAdmin } from '@/api/client'
 import { formatTimestampMs } from '@/shared/session-display'
 
 const { t, locale } = useI18n()
@@ -23,7 +21,6 @@ const chatStore = useChatStore()
 const profilesStore = useProfilesStore()
 const { openSessionSearch } = useSessionSearch()
 
-const isSuperAdmin = computed(() => isStoredSuperAdmin())
 const selectedKey = computed(() => {
   if (route.name === 'hermes.session') return 'hermes.chat'
   return String(route.name || '')
@@ -75,10 +72,6 @@ async function openSession(sessionId: string) {
 //  if (!ok) message.error(appStore.updateError || t('sidebar.updateFailed'), { duration: 8000 })
 //}
 
-function handleLogout() {
-  localStorage.clear()
-  router.replace({ name: 'login' })
-}
 
 onMounted(async () => {
   if (profilesStore.profiles.length === 0) await profilesStore.fetchProfiles()
@@ -191,7 +184,11 @@ onMounted(async () => {
 
       <section class="utility-section">
         <div class="section-label">{{ copy.system }}</div>
-        <RouteLinkItem v-if="isSuperAdmin" class="nav-item compact" :to="{ name: 'hermes.profiles' }" :active="selectedKey === 'hermes.profiles'">
+        <RouteLinkItem
+          class="nav-item compact"
+          :to="{ name: 'hermes.profiles' }"
+          :active="selectedKey === 'hermes.profiles'"
+        >
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
             <circle cx="12" cy="7" r="4" /><path d="M4 21a8 8 0 0 1 16 0" />
           </svg>
@@ -222,7 +219,6 @@ onMounted(async () => {
       </section>
     </div>
 
-    <ProfileSelector />
 
     <div class="sidebar-footer">
       <div class="status-row">
@@ -233,7 +229,7 @@ onMounted(async () => {
       </div>
       <div class="footer-actions">
         <!--<button type="button" :disabled="appStore.updating" @click="handleUpdate">{{ appStore.updating ? t('sidebar.updating') : t('common.update') }}</button> -->
-        <button type="button" @click="handleLogout">{{ t('sidebar.logout') }}</button>
+        <!-- <button type="button" @click="handleLogout">{{ t('sidebar.logout') }}</button> -->
       </div>
     </div>
   </aside>

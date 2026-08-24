@@ -112,7 +112,7 @@ watch(
         </div>
         <iframe
           v-if="previewHtml"
-          :key="`${document.id}-${previewVersion}`"
+          :key="`${document.id}-${document.updated_at}-${previewVersion}`"
           :srcdoc="previewHtml"
           :title="document.file_name"
           sandbox="allow-scripts"

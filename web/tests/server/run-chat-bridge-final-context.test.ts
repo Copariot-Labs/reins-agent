@@ -6,6 +6,7 @@ const createSessionMock = vi.fn()
 const addMessageMock = vi.fn()
 const updateSessionMock = vi.fn()
 const updateSessionStatsMock = vi.fn()
+const getLatestToolMessageMock = vi.fn()
 const updateUsageMock = vi.fn()
 const buildCompressedHistoryMock = vi.fn()
 const buildDbHistoryMock = vi.fn()
@@ -35,8 +36,9 @@ const syncBridgeReasoningToMessageMock = vi.fn()
 const recordBridgeToolStartedMock = vi.fn()
 const recordBridgeToolCompletedMock = vi.fn()
 const resolveBridgeRunModelConfigMock = vi.fn()
-const mayNeedOfficeChatMock = vi.fn()
-const createOfficeChatDocumentMock = vi.fn()
+const resolveOfficeChatRequestMock = vi.fn()
+const runOfficeChatRequestMock = vi.fn()
+const hasOfficeRevisionIntentMock = vi.fn()
 const prepareBrowserForRunMock = vi.fn()
 
 vi.mock('../../packages/server/src/lib/llm-prompt', () => ({
@@ -49,6 +51,7 @@ vi.mock('../../packages/server/src/db/hermes/session-store', () => ({
   addMessage: addMessageMock,
   updateSession: updateSessionMock,
   updateSessionStats: updateSessionStatsMock,
+  getLatestToolMessage: getLatestToolMessageMock,
 }))
 
 vi.mock('../../packages/server/src/db/hermes/usage-store', () => ({
@@ -91,8 +94,17 @@ vi.mock('../../packages/server/src/services/hermes/run-chat/model-config', () =>
 }))
 
 vi.mock('../../packages/server/src/services/reins/office-chat', () => ({
-  mayNeedOfficeChat: mayNeedOfficeChatMock,
-  createOfficeChatDocument: createOfficeChatDocumentMock,
+  resolveOfficeChatRequest: resolveOfficeChatRequestMock,
+  runOfficeChatRequest: runOfficeChatRequestMock,
+  hasOfficeRevisionIntent: hasOfficeRevisionIntentMock,
+  OFFICE_CHAT_TOOL_NAMES: [
+    'reins_office_create',
+    'reins_office_revise',
+    'create_office_document',
+    'revise_office_document',
+  ],
+  REINS_OFFICE_CREATE_TOOL: 'reins_office_create',
+  REINS_OFFICE_REVISE_TOOL: 'reins_office_revise',
 }))
 
 vi.mock('../../packages/server/src/services/hermes/browser-connection', () => ({
@@ -131,12 +143,14 @@ describe('bridge run final context usage', () => {
     getSystemPromptMock.mockReturnValue('system prompt')
     getSessionMock.mockReturnValue({ id: 'session-1', profile: 'default', model: '', provider: '' })
     resolveBridgeRunModelConfigMock.mockResolvedValue({ model: 'gpt-test', provider: 'openai' })
-    mayNeedOfficeChatMock.mockReturnValue(false)
-    createOfficeChatDocumentMock.mockResolvedValue({ handled: false, message: '', exit_code: 0, document: null })
+    resolveOfficeChatRequestMock.mockReturnValue(null)
+    runOfficeChatRequestMock.mockResolvedValue({ handled: false, message: '', exit_code: 0, document: null })
+    hasOfficeRevisionIntentMock.mockReturnValue(false)
+    getLatestToolMessageMock.mockReturnValue(null)
     prepareBrowserForRunMock.mockResolvedValue(null)
     recordBridgeToolStartedMock.mockReturnValue({
       id: 'office-tool-1',
-      name: 'create_office_document',
+      name: 'reins_office_create',
       arguments: '{"prompt":"create a maintenance report document"}',
     })
     recordBridgeToolCompletedMock.mockReturnValue({
@@ -432,12 +446,14 @@ describe('bridge run final context usage', () => {
       path: '/tmp/maintenance-report.docx',
       file_name: 'maintenance-report.docx',
     }
-    mayNeedOfficeChatMock.mockReturnValueOnce(true)
-    createOfficeChatDocumentMock.mockResolvedValueOnce({
+    const officeRequest = { operation: 'create', format: 'docx' }
+    resolveOfficeChatRequestMock.mockReturnValueOnce(officeRequest)
+    runOfficeChatRequestMock.mockResolvedValueOnce({
       handled: true,
       message: 'Office document created successfully.',
       exit_code: 0,
       document,
+      operation: 'create',
     })
     addMessageMock.mockReturnValue(42)
     const bridge = {
@@ -463,34 +479,41 @@ describe('bridge run final context usage', () => {
       vi.fn(),
     )
 
-    expect(mayNeedOfficeChatMock).toHaveBeenCalledWith('create a maintenance report document', 'document')
-    expect(createOfficeChatDocumentMock).toHaveBeenCalledWith('create a maintenance report document', 'document')
+    expect(resolveOfficeChatRequestMock).toHaveBeenCalledWith(
+      'create a maintenance report document',
+      'document',
+      state.messages,
+    )
+    expect(runOfficeChatRequestMock).toHaveBeenCalledWith(
+      'create a maintenance report document',
+      officeRequest,
+    )
     expect(bridge.chat).not.toHaveBeenCalled()
     expect(buildCompressedHistoryMock).not.toHaveBeenCalled()
     expect(recordBridgeToolStartedMock).toHaveBeenCalledWith(
       state,
       'session-1',
       expect.stringMatching(/^cli_run_/),
-      'create_office_document',
-      { prompt: 'create a maintenance report document', format: 'document' },
+      'reins_office_create',
+      { prompt: 'create a maintenance report document', format: 'docx' },
       expect.stringMatching(/^office_tool_/),
     )
     expect(recordBridgeToolCompletedMock).toHaveBeenCalledWith(
       state,
       'session-1',
       expect.stringMatching(/^cli_run_/),
-      'create_office_document',
+      'reins_office_create',
       expect.objectContaining({
         tool_call_id: 'office-tool-1',
         is_error: false,
       }),
     )
     expect(emit).toHaveBeenCalledWith('tool.started', expect.objectContaining({
-      tool: 'create_office_document',
+      tool: 'reins_office_create',
       preview: expect.stringContaining('Reins Office'),
     }))
     expect(emit).toHaveBeenCalledWith('tool.completed', expect.objectContaining({
-      tool: 'create_office_document',
+      tool: 'reins_office_create',
       output: '{"ok":true}',
       office_document: document,
     }))
@@ -509,6 +532,97 @@ describe('bridge run final context usage', () => {
       output: expect.not.stringContaining('/tmp/maintenance-report.docx'),
     }))
     expect(state.isWorking).toBe(false)
+  })
+
+  it('revises the existing chat document without starting the general agent bridge', async () => {
+    const emit = vi.fn()
+    const nsp = makeNamespace(emit)
+    const socket = makeSocket()
+    const document = {
+      id: 'office-1',
+      title: 'Maintenance Report',
+      kind: 'docx',
+      path: '/tmp/maintenance-report.docx',
+      file_name: 'maintenance-report.docx',
+    }
+    const state = makeState()
+    const persistedOfficeMessage = {
+      role: 'tool',
+      tool_name: 'create_office_document',
+      content: JSON.stringify({ ok: true, office_document: document }),
+    }
+    const sessionMap = new Map([['session-1', state]])
+    const officeRequest = { operation: 'revise', document }
+    hasOfficeRevisionIntentMock.mockReturnValueOnce(true)
+    getLatestToolMessageMock.mockReturnValueOnce(persistedOfficeMessage)
+    resolveOfficeChatRequestMock
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce(officeRequest)
+    runOfficeChatRequestMock.mockResolvedValueOnce({
+      handled: true,
+      message: 'Office document updated successfully.',
+      exit_code: 0,
+      document: { ...document, revision_count: 1 },
+      operation: 'revise',
+    })
+    recordBridgeToolStartedMock.mockReturnValueOnce({
+      id: 'office-tool-revise-1',
+      name: 'reins_office_revise',
+      arguments: JSON.stringify({ document_id: document.id }),
+    })
+    recordBridgeToolCompletedMock.mockReturnValueOnce({
+      id: 'office-tool-revise-1',
+      output: JSON.stringify({ ok: true }),
+      duration: 0.2,
+    })
+    addMessageMock.mockReturnValue(43)
+    const bridge = {
+      chat: vi.fn(),
+      contextEstimate: vi.fn(),
+      streamOutput: vi.fn(),
+    } as any
+
+    const { handleBridgeRun } = await import('../../packages/server/src/services/hermes/run-chat/handle-bridge-run')
+    await handleBridgeRun(
+      nsp,
+      socket,
+      {
+        input: 'make the title bolder and use a modern color palette',
+        session_id: 'session-1',
+      },
+      'default',
+      sessionMap,
+      bridge,
+      false,
+      vi.fn(),
+      vi.fn(),
+    )
+
+    expect(runOfficeChatRequestMock).toHaveBeenCalledWith(
+      'make the title bolder and use a modern color palette',
+      officeRequest,
+    )
+    expect(getLatestToolMessageMock).toHaveBeenCalledWith(
+      'session-1',
+      expect.arrayContaining(['reins_office_create', 'create_office_document']),
+    )
+    expect(bridge.chat).not.toHaveBeenCalled()
+    expect(recordBridgeToolStartedMock).toHaveBeenCalledWith(
+      state,
+      'session-1',
+      expect.stringMatching(/^cli_run_/),
+      'reins_office_revise',
+      {
+        document_id: 'office-1',
+        file_name: 'maintenance-report.docx',
+        instruction: 'make the title bolder and use a modern color palette',
+      },
+      expect.stringMatching(/^office_tool_/),
+    )
+    expect(emit).toHaveBeenCalledWith('tool.started', expect.objectContaining({
+      tool: 'reins_office_revise',
+      preview: expect.stringContaining('existing document'),
+    }))
   })
 
   it('evaluates active goals after a successful bridge run and queues continuation prompts', async () => {

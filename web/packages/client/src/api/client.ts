@@ -3,7 +3,7 @@ import router from '@/router';
 const DEFAULT_BASE_URL = '';
 const DESKTOP_BASE_URL = 'http://127.0.0.1:8648';
 
-function isTauriDesktop(): boolean {
+export function isTauriDesktop(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
 
@@ -153,7 +153,7 @@ export async function request<T>(
   const isLocalBff =
     !path.startsWith('/api/hermes/v1/') && !path.startsWith('/v1/');
 
-  if (res.status === 401 && isLocalBff) {
+  if (res.status === 401 && isLocalBff && !isTauriDesktop()) {
     clearApiKey();
     emitAuthNotice('expired');
     if (router.currentRoute.value.name !== 'login') {

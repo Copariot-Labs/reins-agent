@@ -377,11 +377,36 @@ export function officeDocumentFromEvent(event: unknown): OfficeDocument | null {
   return document?.id ? document : null;
 }
 
+function isOfficeDocumentTool(toolName?: string): boolean {
+  return (
+    toolName === 'reins_office_create' ||
+    toolName === 'reins_office_revise' ||
+    toolName === 'create_office_document' ||
+    toolName === 'revise_office_document'
+  );
+}
+
 export function linkOfficeDocumentsToAssistantMessages(messages: Message[]): Message[] {
   let pendingDocument: OfficeDocument | null = null;
   for (const message of messages) {
-    if (message.role === 'tool' && message.toolName === 'create_office_document') {
-      pendingDocument = officeDocumentFromToolResult(message.toolResult) || pendingDocument;
+    if (message.role === 'tool' && isOfficeDocumentTool(message.toolName)) {
+      const document = officeDocumentFromToolResult(message.toolResult);
+      const existing = document && (
+        message.toolName === 'reins_office_revise' ||
+        message.toolName === 'revise_office_document'
+      )
+        ? messages.find(
+            (candidate) =>
+              candidate.role === 'assistant' &&
+              candidate.officeDocument?.id === document.id,
+          )
+        : null;
+      if (existing && document) {
+        existing.officeDocument = document;
+        pendingDocument = null;
+      } else {
+        pendingDocument = document || pendingDocument;
+      }
       continue;
     }
     if (message.role === 'assistant' && pendingDocument) {
@@ -398,7 +423,7 @@ export function officeDocumentFromMessages(messages: Message[]): OfficeDocument 
     if (message.officeDocument?.id) return message.officeDocument;
     if (
       message.role !== 'tool' ||
-      message.toolName !== 'create_office_document' ||
+      !isOfficeDocumentTool(message.toolName) ||
       !message.toolResult
     ) {
       continue;
@@ -1064,6 +1089,17 @@ export const useChatStore = defineStore('chat', () => {
     preferredMessageId?: string | null,
   ) {
     const msgs = getSessionMsgs(sessionId);
+    const existing = [...msgs]
+      .reverse()
+      .find(
+        (message) =>
+          message.role === 'assistant' &&
+          message.officeDocument?.id === document.id,
+      );
+    if (existing) {
+      updateMessage(sessionId, existing.id, { officeDocument: document });
+      return;
+    }
     const assistant = preferredMessageId
       ? msgs.find((message) => message.id === preferredMessageId && message.role === 'assistant')
       : [...msgs].reverse().find((message) => message.role === 'assistant');

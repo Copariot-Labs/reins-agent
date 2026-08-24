@@ -1,6 +1,6 @@
-import type { Context, Next } from 'koa'
-import { createHmac, timingSafeEqual } from 'crypto'
-import { getToken } from '../services/auth'
+import type { Context, Next } from 'koa';
+import { createHmac, timingSafeEqual } from 'crypto';
+import { getToken } from '../services/auth';
 import {
   findUserById,
   listUserProfiles,
@@ -8,238 +8,483 @@ import {
   userCanAccessProfile,
   type UserRecord,
   type UserRole,
-} from '../db/hermes/users-store'
+} from '../db/hermes/users-store';
 
 export interface AuthenticatedUser {
-  id: number
-  username: string
-  role: UserRole
-  profiles?: string[]
+  id: number;
+  username: string;
+  role: UserRole;
+  profiles?: string[];
+
+  /*
+   * True only for the private Reins desktop runtime.
+   *
+   * This is NOT the administrator-password unlock state.
+   *
+   * It only means this request comes from the local
+   * desktop application and therefore does not require
+   * the old web login/JWT flow.
+   */
+  desktopLocal?: boolean;
 }
 
 export interface RequestProfile {
-  name: string
+  name: string;
 }
 
 interface JwtPayload {
-  sub: string
-  username: string
-  role: UserRole
-  type: 'access'
-  aud: 'hermes-web-ui'
-  iat: number
-  exp: number
+  sub: string;
+  username: string;
+  role: UserRole;
+  type: 'access';
+  aud: 'hermes-web-ui';
+  iat: number;
+  exp: number;
 }
 
 declare module 'koa' {
   interface DefaultState {
-    user?: AuthenticatedUser
-    profile?: RequestProfile
-    serverTokenAuth?: boolean
+    user?: AuthenticatedUser;
+    profile?: RequestProfile;
+    serverTokenAuth?: boolean;
   }
 }
 
-const JWT_AUDIENCE = 'hermes-web-ui'
-const DEFAULT_EXPIRES_SECONDS = 60 * 60 * 24 * 30
+const JWT_AUDIENCE = 'hermes-web-ui';
+
+const DEFAULT_EXPIRES_SECONDS = 60 * 60 * 24 * 30;
+
+/*
+ * Desktop requests need a synthetic application user so
+ * the existing controllers can continue working without
+ * needing a real login/account.
+ *
+ * IMPORTANT:
+ *
+ * This does NOT grant access to our new local administrator
+ * password system.
+ *
+ * Profile / Settings / Models will be protected separately
+ * by REINS_ADMIN_PASSWORD_HASH + an administrator session.
+ */
+const DESKTOP_LOCAL_USER: AuthenticatedUser = {
+  id: 0,
+  username: 'reins-desktop',
+  role: 'super_admin',
+  desktopLocal: true,
+};
+
+export function isReinsDesktopMode(): boolean {
+  return process.env.REINS_DESKTOP?.trim() === '1';
+}
 
 function base64UrlJson(value: unknown): string {
-  return Buffer.from(JSON.stringify(value)).toString('base64url')
+  return Buffer.from(JSON.stringify(value)).toString('base64url');
 }
 
 function sign(input: string, secret: string): string {
-  return createHmac('sha256', secret).update(input).digest('base64url')
+  return createHmac('sha256', secret).update(input).digest('base64url');
 }
 
 function safeEqual(a: string, b: string): boolean {
   try {
-    const left = Buffer.from(a)
-    const right = Buffer.from(b)
-    return left.length === right.length && timingSafeEqual(left, right)
+    const left = Buffer.from(a);
+
+    const right = Buffer.from(b);
+
+    return left.length === right.length && timingSafeEqual(left, right);
   } catch {
-    return false
+    return false;
   }
 }
 
 async function getJwtSecret(): Promise<string> {
-  return process.env.AUTH_JWT_SECRET || await getToken()
+  return process.env.AUTH_JWT_SECRET || (await getToken());
 }
 
 function requestToken(ctx: Context): string {
-  const auth = ctx.headers.authorization || ''
-  if (typeof auth === 'string' && auth.startsWith('Bearer ')) return auth.slice(7).trim()
-  return typeof ctx.query.token === 'string' ? ctx.query.token.trim() : ''
+  const auth = ctx.headers.authorization || '';
+
+  if (typeof auth === 'string' && auth.startsWith('Bearer ')) {
+    return auth.slice(7).trim();
+  }
+
+  return typeof ctx.query.token === 'string' ? ctx.query.token.trim() : '';
 }
 
 const SERVER_TOKEN_MEDIA_PATHS = new Set([
   '/api/hermes/media/apikey-image-generate',
   '/api/hermes/media/grok-image-to-video',
-])
+]);
 
-async function allowServerTokenForMedia(ctx: Context, token: string): Promise<boolean> {
-  if (!token || !SERVER_TOKEN_MEDIA_PATHS.has(ctx.path)) return false
-  const serverToken = await getToken()
-  if (token !== serverToken) return false
-  ctx.state.serverTokenAuth = true
-  return true
+async function allowServerTokenForMedia(
+  ctx: Context,
+  token: string,
+): Promise<boolean> {
+  if (!token || !SERVER_TOKEN_MEDIA_PATHS.has(ctx.path)) {
+    return false;
+  }
+
+  const serverToken = await getToken();
+
+  if (token !== serverToken) {
+    return false;
+  }
+
+  ctx.state.serverTokenAuth = true;
+
+  return true;
 }
 
 function isProtectedHttpPath(path: string): boolean {
-  const lowerPath = path.toLowerCase()
-  return lowerPath.startsWith('/api') ||
+  const lowerPath = path.toLowerCase();
+
+  return (
+    lowerPath.startsWith('/api') ||
     lowerPath.startsWith('/v1') ||
     lowerPath.startsWith('/upload')
+  );
 }
 
-export function signUserJwt(user: Pick<UserRecord, 'id' | 'username' | 'role'>, secret: string, now = Date.now()): string {
-  const iat = Math.floor(now / 1000)
+export function signUserJwt(
+  user: Pick<UserRecord, 'id' | 'username' | 'role'>,
+  secret: string,
+  now = Date.now(),
+): string {
+  const iat = Math.floor(now / 1000);
+
   const payload: JwtPayload = {
     sub: String(user.id),
+
     username: user.username,
+
     role: user.role,
+
     type: 'access',
+
     aud: JWT_AUDIENCE,
+
     iat,
+
     exp: iat + DEFAULT_EXPIRES_SECONDS,
-  }
-  const header = base64UrlJson({ alg: 'HS256', typ: 'JWT' })
-  const body = base64UrlJson(payload)
-  const unsigned = `${header}.${body}`
-  return `${unsigned}.${sign(unsigned, secret)}`
+  };
+
+  const header = base64UrlJson({
+    alg: 'HS256',
+    typ: 'JWT',
+  });
+
+  const body = base64UrlJson(payload);
+
+  const unsigned = `${header}.${body}`;
+
+  return `${unsigned}.` + sign(unsigned, secret);
 }
 
-export function verifyUserJwt(token: string, secret: string, now = Date.now()): JwtPayload | null {
-  const parts = token.split('.')
-  if (parts.length !== 3) return null
+export function verifyUserJwt(
+  token: string,
+  secret: string,
+  now = Date.now(),
+): JwtPayload | null {
+  const parts = token.split('.');
 
-  const [header, body, signature] = parts
-  const expected = sign(`${header}.${body}`, secret)
-  if (!safeEqual(signature, expected)) return null
+  if (parts.length !== 3) {
+    return null;
+  }
+
+  const [header, body, signature] = parts;
+
+  const expected = sign(`${header}.${body}`, secret);
+
+  if (!safeEqual(signature, expected)) {
+    return null;
+  }
 
   try {
-    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf-8')) as Partial<JwtPayload>
-    if (payload.type !== 'access' || payload.aud !== JWT_AUDIENCE) return null
-    if (!payload.sub || !payload.username || !payload.role || !payload.exp) return null
-    if (Math.floor(now / 1000) >= payload.exp) return null
-    return payload as JwtPayload
+    const payload = JSON.parse(
+      Buffer.from(body, 'base64url').toString('utf-8'),
+    ) as Partial<JwtPayload>;
+
+    if (payload.type !== 'access' || payload.aud !== JWT_AUDIENCE) {
+      return null;
+    }
+
+    if (!payload.sub || !payload.username || !payload.role || !payload.exp) {
+      return null;
+    }
+
+    if (Math.floor(now / 1000) >= payload.exp) {
+      return null;
+    }
+
+    return payload as JwtPayload;
   } catch {
-    return null
+    return null;
   }
 }
 
-export async function issueUserJwt(user: Pick<UserRecord, 'id' | 'username' | 'role'>): Promise<string> {
-  const secret = await getJwtSecret()
-  return signUserJwt(user, secret)
+export async function issueUserJwt(
+  user: Pick<UserRecord, 'id' | 'username' | 'role'>,
+): Promise<string> {
+  const secret = await getJwtSecret();
+
+  return signUserJwt(user, secret);
 }
 
-export function toAuthenticatedUser(user: Pick<UserRecord, 'id' | 'username' | 'role'>): AuthenticatedUser {
+export function toAuthenticatedUser(
+  user: Pick<UserRecord, 'id' | 'username' | 'role'>,
+): AuthenticatedUser {
   const authenticated: AuthenticatedUser = {
     id: user.id,
+
     username: user.username,
+
     role: user.role,
-  }
+  };
+
   if (user.role !== 'super_admin') {
-    authenticated.profiles = listUserProfiles(user.id).map(profile => profile.profile_name)
+    authenticated.profiles = listUserProfiles(user.id).map(
+      (profile) => profile.profile_name,
+    );
   }
-  return authenticated
+
+  return authenticated;
 }
 
-export async function authenticateUserToken(token: string): Promise<AuthenticatedUser | null> {
-  const secret = await getJwtSecret()
+export async function authenticateUserToken(
+  token: string,
+): Promise<AuthenticatedUser | null> {
+  const secret = await getJwtSecret();
 
-  const payload = token ? verifyUserJwt(token, secret) : null
-  if (!payload) return null
+  const payload = token ? verifyUserJwt(token, secret) : null;
 
-  const user = findUserById(payload.sub)
-  if (!user || user.status !== 'active') return null
-  return toAuthenticatedUser(user)
+  if (!payload) {
+    return null;
+  }
+
+  const user = findUserById(payload.sub);
+
+  if (!user || user.status !== 'active') {
+    return null;
+  }
+
+  return toAuthenticatedUser(user);
 }
 
+/*
+ * Normal web deployment:
+ *   authentication remains enabled.
+ *
+ * Reins Tauri desktop:
+ *   normal user login is disabled.
+ */
 export async function isAuthEnabled(): Promise<boolean> {
-  await getJwtSecret()
-  return true
+  if (isReinsDesktopMode()) {
+    return false;
+  }
+
+  await getJwtSecret();
+
+  return true;
 }
 
+/*
+ * Main authentication middleware.
+ *
+ * Desktop behavior:
+ *
+ * REINS_DESKTOP=1
+ *       ↓
+ * no user JWT required
+ *       ↓
+ * create local application context
+ *       ↓
+ * normal Reins APIs work immediately
+ *
+ * Web behavior remains unchanged.
+ */
 export async function requireUserJwt(ctx: Context, next: Next): Promise<void> {
   if (!isProtectedHttpPath(ctx.path)) {
-    await next()
-    return
+    await next();
+    return;
   }
 
-  const secret = await getJwtSecret()
-  const token = requestToken(ctx)
-  const payload = token ? verifyUserJwt(token, secret) : null
+  /*
+   * Reins desktop is a private local application.
+   *
+   * The backend is bound to 127.0.0.1 and started by
+   * the Tauri application.
+   *
+   * Normal users therefore do not need an account,
+   * login page or JWT.
+   */
+  if (isReinsDesktopMode()) {
+    ctx.state.user = {
+      ...DESKTOP_LOCAL_USER,
+    };
+
+    await next();
+    return;
+  }
+
+  /*
+   * Existing web authentication.
+   */
+  const secret = await getJwtSecret();
+
+  const token = requestToken(ctx);
+
+  const payload = token ? verifyUserJwt(token, secret) : null;
+
   if (!payload) {
     if (await allowServerTokenForMedia(ctx, token)) {
-      await next()
-      return
+      await next();
+      return;
     }
-    ctx.status = 401
-    ctx.body = { error: 'Unauthorized' }
-    return
+
+    ctx.status = 401;
+
+    ctx.body = {
+      error: 'Unauthorized',
+    };
+
+    return;
   }
 
-  const user = findUserById(payload.sub)
+  const user = findUserById(payload.sub);
+
   if (!user || user.status !== 'active') {
-    ctx.status = 403
-    ctx.body = { error: 'User is disabled or does not exist' }
-    return
+    ctx.status = 403;
+
+    ctx.body = {
+      error: 'User is disabled or does not exist',
+    };
+
+    return;
   }
 
-  ctx.state.user = toAuthenticatedUser(user)
-  touchUserLogin(user.id)
-  await next()
+  ctx.state.user = toAuthenticatedUser(user);
+
+  touchUserLogin(user.id);
+
+  await next();
 }
 
-export async function requireSuperAdmin(ctx: Context, next: Next): Promise<void> {
+/*
+ * Keep existing web super-admin behavior.
+ *
+ * Later, Profile / Settings / Models will additionally
+ * require our local administrator-password session
+ * when running in desktop mode.
+ */
+export async function requireSuperAdmin(
+  ctx: Context,
+  next: Next,
+): Promise<void> {
   if (ctx.state.user?.role !== 'super_admin') {
-    ctx.status = 403
-    ctx.body = { error: 'Super administrator privileges are required' }
-    return
+    ctx.status = 403;
+
+    ctx.body = {
+      error: 'Super administrator privileges are required',
+    };
+
+    return;
   }
-  await next()
+
+  await next();
 }
 
 export function resolveRequestedProfile(ctx: Context): string {
-  if (ctx.path === '/api/hermes/available-models' && typeof ctx.query.profile !== 'string') {
-    return ''
+  if (
+    ctx.path === '/api/hermes/available-models' &&
+    typeof ctx.query.profile !== 'string'
+  ) {
+    return '';
   }
-  const headerProfile = ctx.get('x-hermes-profile')
-  const queryProfile = typeof ctx.query.profile === 'string' ? ctx.query.profile : ''
-  const body = ctx.request.body as { profile?: unknown } | undefined
-  const bodyProfile = typeof body?.profile === 'string' ? body.profile : ''
-  return (headerProfile || queryProfile || bodyProfile || '').trim()
+
+  const headerProfile = ctx.get('x-hermes-profile');
+
+  const queryProfile =
+    typeof ctx.query.profile === 'string' ? ctx.query.profile : '';
+
+  const body = ctx.request.body as
+    | {
+        profile?: unknown;
+      }
+    | undefined;
+
+  const bodyProfile = typeof body?.profile === 'string' ? body.profile : '';
+
+  return (headerProfile || queryProfile || bodyProfile || '').trim();
 }
 
-export async function resolveUserProfile(ctx: Context, next: Next): Promise<void> {
-  const user = ctx.state.user
+export async function resolveUserProfile(
+  ctx: Context,
+  next: Next,
+): Promise<void> {
+  const user = ctx.state.user;
+
   if (!user) {
-    await next()
-    return
+    await next();
+    return;
   }
 
-  const profileName = resolveRequestedProfile(ctx)
+  const profileName = resolveRequestedProfile(ctx);
+
   if (!profileName) {
-    await next()
-    return
+    await next();
+    return;
   }
 
-  if (user.role !== 'super_admin' && !userCanAccessProfile(user.id, profileName)) {
-    ctx.status = 403
-    ctx.body = { error: `Profile "${profileName}" is not available for this user` }
-    return
+  /*
+   * Desktop local application context can access
+   * the configured runtime profile without requiring
+   * a user/profile assignment database record.
+   */
+  if (user.desktopLocal) {
+    ctx.state.profile = {
+      name: profileName,
+    };
+
+    await next();
+    return;
   }
 
-  ctx.state.profile = { name: profileName }
-  await next()
+  if (
+    user.role !== 'super_admin' &&
+    !userCanAccessProfile(user.id, profileName)
+  ) {
+    ctx.status = 403;
+
+    ctx.body = {
+      error: `Profile "${profileName}" is not available for this user`,
+    };
+
+    return;
+  }
+
+  ctx.state.profile = {
+    name: profileName,
+  };
+
+  await next();
 }
 
-export async function requireUserProfile(ctx: Context, next: Next): Promise<void> {
+export async function requireUserProfile(
+  ctx: Context,
+  next: Next,
+): Promise<void> {
   if (!ctx.state.profile?.name) {
-    ctx.status = 400
-    ctx.body = { error: 'Profile is required' }
-    return
+    ctx.status = 400;
+
+    ctx.body = {
+      error: 'Profile is required',
+    };
+
+    return;
   }
-  await next()
+
+  await next();
 }
 
-export const userAuthMiddleware = [requireUserJwt, resolveUserProfile]
+export const userAuthMiddleware = [requireUserJwt, resolveUserProfile];

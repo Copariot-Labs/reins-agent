@@ -5,7 +5,7 @@
 
 import type { Server, Socket } from 'socket.io'
 import { getSystemPrompt } from '../../../lib/llm-prompt'
-import { getSession, createSession, addMessage, updateSession, updateSessionStats } from '../../../db/hermes/session-store'
+import { getSession, createSession, addMessage, updateSession, updateSessionStats, getLatestToolMessage } from '../../../db/hermes/session-store'
 import { updateUsage } from '../../../db/hermes/usage-store'
 import { logger, bridgeLogger } from '../../logger'
 import { AgentBridgeClient, type AgentBridgeContextEstimate, type AgentBridgeMessage, type AgentBridgeOutput } from '../agent-bridge'
@@ -31,9 +31,14 @@ import type { ChatMessage } from '../../../lib/context-compressor'
 import { resolveBridgeRunModelConfig, type RunModelGroup } from './model-config'
 import { filterBridgeToolCallMarkupDelta, flushPendingToolCallMarkup } from './bridge-delta'
 import {
-  createOfficeChatDocument,
-  mayNeedOfficeChat,
+  resolveOfficeChatRequest,
+  runOfficeChatRequest,
+  hasOfficeRevisionIntent,
+  OFFICE_CHAT_TOOL_NAMES,
+  REINS_OFFICE_CREATE_TOOL,
+  REINS_OFFICE_REVISE_TOOL,
   type OfficeChatResult,
+  type OfficeChatRequest,
   type OfficeChatWorkTool,
 } from '../../reins/office-chat'
 import { chatCapabilitiesInstructions, chatCapabilitiesKey, normalizeChatCapabilities, toBridgeCapabilities } from './capabilities'
@@ -664,10 +669,24 @@ async function maybeHandleOfficeChatRun(args: {
   socket: Socket
   dequeueNextQueuedRun: (socket: Socket, sessionId: string, fallbackProfile?: string) => void
 }): Promise<boolean> {
-  if (!mayNeedOfficeChat(args.input, args.workTool)) return false
+  let request = resolveOfficeChatRequest(args.input, args.workTool, args.state.messages)
+  if (request?.operation !== 'revise' && hasOfficeRevisionIntent(args.input)) {
+    const persistedOfficeMessage = getLatestToolMessage(args.sessionId, OFFICE_CHAT_TOOL_NAMES)
+    if (persistedOfficeMessage) {
+      request = resolveOfficeChatRequest(
+        args.input,
+        args.workTool,
+        [...args.state.messages, persistedOfficeMessage],
+      )
+    }
+  }
+  if (!request) return false
 
   const runId = `office_run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
   const toolCallId = `office_tool_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+  const toolName = request.operation === 'revise'
+    ? REINS_OFFICE_REVISE_TOOL
+    : REINS_OFFICE_CREATE_TOOL
   args.state.runId = runId
 
   pushState(args.sessionMap, args.sessionId, 'run.started', {
@@ -685,8 +704,8 @@ async function maybeHandleOfficeChatRun(args: {
     args.state,
     args.sessionId,
     args.runMarker,
-    'create_office_document',
-    { prompt: args.input, format: args.workTool || 'auto' },
+    toolName,
+    officeToolArguments(args.input, request),
     toolCallId,
   )
   const startedPayload = {
@@ -696,14 +715,16 @@ async function maybeHandleOfficeChatRun(args: {
     tool: startedTool.name,
     name: startedTool.name,
     arguments: startedTool.arguments,
-    preview: 'Creating the document with Reins Office',
+    preview: request.operation === 'revise'
+      ? 'Updating the existing document with Reins Office'
+      : 'Creating the document with Reins Office',
   }
   pushState(args.sessionMap, args.sessionId, 'tool.started', startedPayload)
   args.emit('tool.started', startedPayload)
 
   let result: OfficeChatResult
   try {
-    result = await createOfficeChatDocument(args.input, args.workTool)
+    result = await runOfficeChatRequest(args.input, request)
   } catch (err) {
     result = {
       handled: true,
@@ -766,8 +787,9 @@ async function finishOfficeChatRun(args: {
       const document = result.document
       const title = document?.title || 'Office Document'
       const kind = document?.kind || 'document'
+      const action = result.operation === 'revise' ? 'updated' : 'created'
       output = [
-        'Office document created successfully.',
+        `Office document ${action} successfully.`,
         `Title: ${title}`,
         `Type: ${kind}`,
       ].filter(Boolean).join('\n')
@@ -817,7 +839,7 @@ async function finishOfficeChatRun(args: {
     args.emit('run.failed', {
       event: 'run.failed',
       run_id: runInfo.runId,
-      error: output || 'Office document creation failed',
+      error: output || 'Office document request failed',
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
       queue_remaining: queueRemaining,
@@ -853,14 +875,29 @@ function formatOfficeAssistantMessage(result: OfficeChatResult): string {
   const title = document?.title.trim() || 'Office Document'
   const kind = document?.kind.toUpperCase() || 'OFFICE'
 
-  if (!document) return result.message || 'Office document created successfully.'
+  const action = result.operation === 'revise' ? 'updated' : 'created'
+  if (!document) return result.message || `Office document ${action} successfully.`
 
   return [
-    'Office document created successfully.',
+    `Office document ${action} successfully.`,
     '',
     `- Title: ${title}`,
     `- Type: ${kind}`,
   ].join('\n')
+}
+
+function officeToolArguments(
+  input: string,
+  request: OfficeChatRequest,
+): Record<string, unknown> {
+  if (request.operation === 'revise') {
+    return {
+      document_id: request.document.id,
+      file_name: request.document.file_name,
+      instruction: input,
+    }
+  }
+  return { prompt: input, format: request.format }
 }
 
 function officeToolResult(result: OfficeChatResult, failed: boolean): string {
@@ -879,7 +916,7 @@ function workToolInstruction(workTool?: OfficeChatWorkTool): string {
     return '[Selected work tool: Browser. Use the connected visible browser to complete the task.]'
   }
   if (workTool === 'document' || workTool === 'spreadsheet' || workTool === 'slides') {
-    return `[Selected work tool: ${workTool}. Use Reins Office for Office-file creation.]`
+    return `[Selected work tool: ${workTool}. Use Reins Office and its bundled OfficeCLI for Office-file creation or revision. Do not install or use alternative document-generation packages.]`
   }
   return ''
 }

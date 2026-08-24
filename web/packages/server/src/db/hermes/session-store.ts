@@ -168,6 +168,21 @@ export function getSession(id: string): HermesSessionRow | null {
   return row ? mapSessionRow(row) : null
 }
 
+export function getLatestToolMessage(
+  sessionId: string,
+  toolNames: readonly string[],
+): HermesMessageRow | null {
+  if (!isSqliteAvailable() || toolNames.length === 0) return null
+  const db = getDb()!
+  const placeholders = toolNames.map(() => '?').join(', ')
+  const row = db.prepare(
+    `SELECT * FROM ${MESSAGES_TABLE}
+     WHERE session_id = ? AND role = 'tool' AND tool_name IN (${placeholders})
+     ORDER BY id DESC LIMIT 1`,
+  ).get(sessionId, ...toolNames) as Record<string, unknown> | undefined
+  return row ? mapMessageRow(row) : null
+}
+
 export function updateSession(id: string, data: Partial<Omit<HermesSessionRow, 'id' | 'profile'>>): void {
   if (!isSqliteAvailable()) return
   const db = getDb()!
