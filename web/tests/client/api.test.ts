@@ -16,7 +16,7 @@ import { getApiKey, setApiKey, clearApiKey, hasApiKey, getStoredUserRole, isStor
 import { getDownloadUrl } from '../../packages/client/src/api/hermes/download'
 import { uploadFiles } from '../../packages/client/src/api/hermes/files'
 import { batchDeleteSessions, importHermesSession } from '../../packages/client/src/api/hermes/sessions'
-import { fetchOfficePreviewHtml } from '../../packages/client/src/api/reins/office'
+import { fetchOfficePreviewHtml, fetchOfficeSkills } from '../../packages/client/src/api/reins/office'
 import router from '@/router'
 
 function fakeJwt(payload: Record<string, unknown>) {
@@ -184,6 +184,18 @@ describe('API Client', () => {
   })
 
   describe('Office preview', () => {
+    it('loads fixed workflows for one Office format', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ skills: [] }),
+      })
+
+      await fetchOfficeSkills('pptx')
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/reins/office/skills?format=pptx')
+    })
+
     it('fetches preview HTML through the authenticated client flow', async () => {
       setApiKey('office-jwt')
       localStorage.setItem('hermes_active_profile_name', 'research')

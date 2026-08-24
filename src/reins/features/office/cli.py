@@ -14,6 +14,7 @@ from reins.features.office.service import (
     revise_office_document,
 )
 from reins.features.office.schemas import normalize_office_format
+from reins.features.office.workflows import list_office_workflows
 
 
 def _add_presentation_arguments(parser: argparse.ArgumentParser) -> None:
@@ -55,7 +56,8 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--format", default="docx", choices=["docx", "xlsx", "pptx", "word", "excel", "ppt"])
     create.add_argument("--prompt", required=True)
     create.add_argument("--title", default="")
-    create.add_argument("--language", default="en")
+    create.add_argument("--language", default="zh")
+    create.add_argument("--skill", default="", dest="skill_id")
     create.add_argument("--timeout", type=int, default=180)
     create.add_argument("--no-reins", action="store_true", help="Use deterministic fallback content.")
     create.add_argument("--no-hermes", action="store_true", dest="no_reins", help=argparse.SUPPRESS)
@@ -75,12 +77,17 @@ def build_parser() -> argparse.ArgumentParser:
     content.add_argument("--format", default="docx", choices=["docx", "xlsx", "pptx", "word", "excel", "ppt"])
     content.add_argument("--prompt", required=True)
     content.add_argument("--title", default="")
-    content.add_argument("--language", default="en")
+    content.add_argument("--language", default="zh")
+    content.add_argument("--skill", default="", dest="skill_id")
     content.add_argument("--timeout", type=int, default=180)
     content.add_argument("--no-reins", action="store_true")
     content.add_argument("--no-hermes", action="store_true", dest="no_reins", help=argparse.SUPPRESS)
     content.add_argument("--json", action="store_true", dest="json_output")
     _add_presentation_arguments(content)
+
+    skills = subparsers.add_parser("skills", help="List fixed Reins Office workflows.")
+    skills.add_argument("--format", default="")
+    skills.add_argument("--json", action="store_true", dest="json_output")
 
     revise = subparsers.add_parser("revise", help="Revise an Office file with Reins.")
     revise.add_argument("--id", required=True, dest="document_id")
@@ -131,6 +138,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"Setup: {status['setup_hint']}")
         return 0 if status.get("available") else 1
 
+    if args.command == "skills":
+        workflows = list_office_workflows(office_format=args.format or None)
+        if args.json_output:
+            _print_json({"skills": workflows})
+        else:
+            for workflow in workflows:
+                print(f"{workflow['format'].upper()}  {workflow['id']}  {workflow['label_zh']}")
+        return 0
+
     if args.command == "content":
         try:
             content = generate_office_content(
@@ -141,6 +157,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 timeout=args.timeout,
                 use_reins=not args.no_reins,
                 presentation_options=_presentation_options(args),
+                skill_id=args.skill_id or None,
             )
         except Exception as exc:
             if args.json_output:
@@ -221,6 +238,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     timeout=args.timeout,
                     use_reins=not args.no_reins,
                     presentation_options=_presentation_options(args),
+                    skill_id=args.skill_id or None,
                 )
                 print("Office content:")
                 _print_json(content)
@@ -234,6 +252,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 timeout=args.timeout,
                 use_reins=not args.no_reins,
                 presentation_options=_presentation_options(args),
+                skill_id=args.skill_id or None,
                 content=content,
             )
         except (OfficeServiceError, Exception) as exc:

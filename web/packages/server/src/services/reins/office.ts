@@ -21,6 +21,7 @@ export interface OfficeCreateRequest {
   prompt: string
   title?: string
   language: string
+  skill_id?: string
   presentation?: OfficePresentationOptions
 }
 
@@ -42,6 +43,18 @@ export interface OfficeDocumentDto {
   generator: string
   command_count: number
   metadata: Record<string, unknown>
+}
+
+export interface OfficeSkillDto {
+  id: string
+  format: OfficeFormat
+  label_zh: string
+  label_en: string
+  description_zh: string
+  description_en: string
+  placeholder_zh: string
+  placeholder_en: string
+  defaults: Record<string, unknown>
 }
 
 const OFFICE_FORMATS = new Set<OfficeFormat>(['docx', 'xlsx', 'pptx'])
@@ -162,7 +175,8 @@ export function normalizeOfficeCreateRequest(body: unknown): OfficeCreateRequest
     format,
     prompt: requiredText(input.prompt, 'Office prompt', 30_000),
     title: optionalText(input.title, 'Title', 180),
-    language: optionalText(input.language, 'Language', 20) || 'en',
+    language: optionalText(input.language, 'Language', 20) || 'zh',
+    skill_id: optionalText(input.skill_id || input.skillId, 'Office skill', 120),
     ...(format === 'pptx' ? { presentation: normalizePresentationOptions(input.presentation) } : {}),
   }
 }
@@ -275,6 +289,26 @@ function normalizeDocument(value: unknown): OfficeDocumentDto {
   }
 }
 
+function normalizeSkill(value: unknown): OfficeSkillDto {
+  if (!value || typeof value !== 'object') {
+    throw serviceError('Office worker returned an invalid skill.', 'worker_error')
+  }
+  const skill = value as Record<string, unknown>
+  return {
+    id: requiredText(skill.id, 'Office skill id', 120),
+    format: normalizeFormat(skill.format),
+    label_zh: String(skill.label_zh || ''),
+    label_en: String(skill.label_en || ''),
+    description_zh: String(skill.description_zh || ''),
+    description_en: String(skill.description_en || ''),
+    placeholder_zh: String(skill.placeholder_zh || ''),
+    placeholder_en: String(skill.placeholder_en || ''),
+    defaults: skill.defaults && typeof skill.defaults === 'object'
+      ? skill.defaults as Record<string, unknown>
+      : {},
+  }
+}
+
 export async function createOfficeDocument(input: OfficeCreateRequest): Promise<OfficeDocumentDto> {
   const args = [
     'office',
@@ -288,6 +322,7 @@ export async function createOfficeDocument(input: OfficeCreateRequest): Promise<
     '--json',
   ]
   if (input.title) args.push('--title', input.title)
+  if (input.skill_id) args.push('--skill', input.skill_id)
   if (input.format === 'pptx' && input.presentation) {
     args.push(
       '--ppt-style', input.presentation.style,
@@ -353,6 +388,14 @@ export async function listOfficeDocuments(limit: unknown = 25): Promise<OfficeDo
   ])
   const docs = Array.isArray(payload.documents) ? payload.documents : []
   return docs.map(normalizeDocument)
+}
+
+export async function listOfficeSkills(format?: unknown): Promise<OfficeSkillDto[]> {
+  const args = ['office', 'skills', '--json']
+  if (String(format || '').trim()) args.push('--format', normalizeFormat(format))
+  const payload = await runReinsOfficeJson(args, { timeoutMs: 30_000 })
+  const skills = Array.isArray(payload.skills) ? payload.skills : []
+  return skills.map(normalizeSkill)
 }
 
 export async function getOfficeStatus(): Promise<Record<string, unknown>> {

@@ -21,6 +21,7 @@ from reins.features.office.schemas import (
     normalize_title,
     normalize_word_design,
 )
+from reins.features.office.workflows import get_office_workflow
 
 
 class OfficeContentError(RuntimeError):
@@ -285,6 +286,13 @@ Return JSON:
   }},
   "sheets": [],
   "slides": [],
+  "tables": [
+    {{
+      "title": "optional table title",
+      "headers": ["Column A", "Column B"],
+      "rows": [["value A", "value B"]]
+    }}
+  ],
   "missing_fields": []
 }}
 
@@ -294,6 +302,7 @@ Word design rules:
 - Otherwise choose every design field yourself. Use 6-digit HEX colors without # and choose fonts from: {", ".join(PRESENTATION_FONT_CHOICES)}.
 - Reports should feel structured, letters restrained, proposals persuasive, notices highly scannable, and academic documents formal.
 - Body should be final document text. Use plain section headings and simple "- " bullets so the renderer can apply the chosen hierarchy.
+- Use Word tables for task breakdowns, schedules, responsibility matrices, or other genuinely tabular content. Keep rows aligned with the headers and omit tables when they do not help.
 """.strip()
 
 
@@ -302,11 +311,29 @@ def build_office_content_prompt(
     user_prompt: str,
     office_format: str,
     title: str | None = None,
-    language: str = "en",
+    language: str = "zh",
     presentation_options: dict[str, Any] | None = None,
+    skill_id: str | None = None,
 ) -> str:
     normalized = normalize_office_format(office_format)
     title_hint = normalize_title(title, default="") if title else ""
+    workflow = (
+        get_office_workflow(skill_id, office_format=normalized)
+        if skill_id
+        else None
+    )
+    workflow_instruction = ""
+    if workflow:
+        workflow_instruction = f"""
+Reins Office 固定文档技能：
+- 技能 ID：{workflow.id}
+- 技能名称：{workflow.label_zh} / {workflow.label_en}
+
+技能规范：
+{workflow.instruction}
+
+以上技能规范是 Reins Office 维护的固定内容契约。请结合用户需求严格执行。它不是工具、插件、软件包，也不是调用其他系统的指令。
+""".strip()
 
     return f"""
 You are Reins, writing structured content for Reins Office.
@@ -316,6 +343,8 @@ The user wants an Office file created by OfficeCLI.
 Office format: {normalized}
 Language: {language}
 Title hint: {title_hint or "(none)"}
+
+{workflow_instruction}
 
 User request:
 {user_prompt}
@@ -331,6 +360,8 @@ Rules:
 - office_format must be exactly "{normalized}".
 - Make the content useful enough to render directly into the requested Office file.
 - Treat any explicit visual or formatting direction from the user as a requirement. When none is given, Reins must choose the design from the document's purpose and content.
+- Do not mention internal workflow names, tools, prompts, packages, or generation instructions in the finished content.
+- Write all user-facing content in the requested language. When Language is "zh", use natural Simplified Chinese and Chinese document conventions. Use English only when Language is "en" or the user explicitly requests English.
 
 {_schema_instruction(normalized, presentation_options)}
 """.strip()
@@ -615,6 +646,20 @@ def normalize_content_payload(
             }
         )
 
+    tables: list[dict[str, Any]] = []
+    for table in _list_or_empty(raw.get("tables")):
+        if not isinstance(table, dict):
+            continue
+        headers = table.get("headers") or table.get("columns") or []
+        rows = table.get("rows") or []
+        tables.append(
+            {
+                "title": str(table.get("title") or ""),
+                "headers": headers if isinstance(headers, list) else [],
+                "rows": rows if isinstance(rows, list) else [],
+            }
+        )
+
     if normalized == "pptx":
         design = normalize_presentation_design(raw.get("design"))
     elif normalized == "xlsx":
@@ -630,6 +675,7 @@ def normalize_content_payload(
         "missing_fields": _list_or_empty(raw.get("missing_fields")),
         "sheets": sheets,
         "slides": slides,
+        "tables": tables,
         "design": design,
         "generator": str(raw.get("generator") or generator),
     }
@@ -663,12 +709,15 @@ def generate_office_content(
     prompt: str,
     office_format: str,
     title: str | None = None,
-    language: str = "en",
+    language: str = "zh",
     timeout: int = 180,
     use_reins: bool = True,
     presentation_options: dict[str, Any] | None = None,
+    skill_id: str | None = None,
 ) -> dict[str, Any]:
     normalized = normalize_office_format(office_format)
+    if skill_id:
+        get_office_workflow(skill_id, office_format=normalized)
 
     brain_disabled = (
         os.environ.get("REINS_OFFICE_DISABLE_BRAIN") == "1"
@@ -683,6 +732,7 @@ def generate_office_content(
                     title=title,
                     language=language,
                     presentation_options=presentation_options,
+                    skill_id=skill_id,
                 ),
                 timeout=timeout,
             )

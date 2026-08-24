@@ -28,11 +28,24 @@ export interface OfficeDocument {
   metadata: Record<string, unknown>
 }
 
+export interface OfficeSkill {
+  id: string
+  format: OfficeFormat
+  label_zh: string
+  label_en: string
+  description_zh: string
+  description_en: string
+  placeholder_zh: string
+  placeholder_en: string
+  defaults: Record<string, unknown>
+}
+
 export interface OfficeCreateInput {
   format: OfficeFormat
   prompt: string
   title?: string
   language?: string
+  skill_id?: string
   presentation?: OfficePresentationOptions
 }
 
@@ -50,6 +63,11 @@ export async function fetchOfficeStatus(): Promise<OfficeStatus> {
 
 export async function fetchOfficeDocuments(limit = 25): Promise<{ documents: OfficeDocument[] }> {
   return request<{ documents: OfficeDocument[] }>(`/api/reins/office/documents?limit=${limit}`)
+}
+
+export async function fetchOfficeSkills(format?: OfficeFormat): Promise<{ skills: OfficeSkill[] }> {
+  const query = format ? `?format=${encodeURIComponent(format)}` : ''
+  return request<{ skills: OfficeSkill[] }>(`/api/reins/office/skills${query}`)
 }
 
 export async function createOfficeDocument(input: OfficeCreateInput): Promise<{ document: OfficeDocument }> {

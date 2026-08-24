@@ -5,6 +5,7 @@ import {
   getOfficePreviewPath,
   getOfficeStatus,
   listOfficeDocuments,
+  listOfficeSkills,
   normalizeOfficeCreateRequest,
   normalizeOfficeRevisionRequest,
   reviseOfficeDocument,
@@ -31,6 +32,14 @@ function handleError(ctx: any, err: any) {
 officeRoutes.get('/api/reins/office/status', async ctx => {
   try {
     ctx.body = await getOfficeStatus()
+  } catch (err) {
+    handleError(ctx, err)
+  }
+})
+
+officeRoutes.get('/api/reins/office/skills', async ctx => {
+  try {
+    ctx.body = { skills: await listOfficeSkills(ctx.query.format) }
   } catch (err) {
     handleError(ctx, err)
   }

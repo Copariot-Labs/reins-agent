@@ -32,6 +32,7 @@ from reins.features.office.schemas import (
     normalize_title,
     utc_now_iso,
 )
+from reins.features.office.workflows import get_office_workflow
 
 
 class OfficeServiceError(RuntimeError):
@@ -88,10 +89,11 @@ def create_office_document(
     prompt: str,
     office_format: str = "docx",
     title: str | None = None,
-    language: str = "en",
+    language: str = "zh",
     timeout: int = 180,
     use_reins: bool = True,
     presentation_options: dict[str, Any] | None = None,
+    skill_id: str | None = None,
     content: dict[str, Any] | None = None,
     client: OfficeCliClient | None = None,
 ) -> OfficeDocumentRecord:
@@ -100,6 +102,11 @@ def create_office_document(
         raise OfficeServiceError("Office prompt is required.")
 
     normalized = normalize_office_format(office_format)
+    workflow = (
+        get_office_workflow(skill_id, office_format=normalized)
+        if skill_id
+        else None
+    )
     normalized_presentation_options = normalize_presentation_options(presentation_options)
     content_payload = content or generate_office_content(
         prompt=cleaned_prompt,
@@ -109,6 +116,7 @@ def create_office_document(
         timeout=timeout,
         use_reins=use_reins,
         presentation_options=normalized_presentation_options,
+        skill_id=skill_id,
     )
 
     document_title = normalize_title(content_payload.get("title") or title)
@@ -135,6 +143,7 @@ def create_office_document(
                 "document_kind": content_payload.get("document_kind"),
                 "missing_fields": content_payload.get("missing_fields", []),
                 "generator_error": content_payload.get("generator_error"),
+                "workflow_id": workflow.id if workflow else None,
                 "presentation_options": (
                     normalized_presentation_options if normalized == "pptx" else None
                 ),

@@ -198,6 +198,61 @@ def _render_docx(content: dict[str, Any], path: Path, client: OfficeCliClient) -
         _run_mutation(client, ["add", path, "/body", "--type", "paragraph", *_prop_args(*props)])
         previous_blank = False
 
+    tables = content.get("tables") if isinstance(content.get("tables"), list) else []
+    rendered_table_count = 0
+    for raw_table in tables:
+        table = raw_table if isinstance(raw_table, dict) else {}
+        headers = table.get("headers") or table.get("columns") or []
+        rows = table.get("rows") or []
+        headers = headers[:12] if isinstance(headers, list) else []
+        rows = rows[:100] if isinstance(rows, list) else []
+        if not headers:
+            continue
+        rendered_table_count += 1
+
+        table_title = _text(table.get("title"))
+        if table_title:
+            _run_mutation(client, ["add", path, "/body", "--type", "paragraph", *_prop_args(
+                f"text={table_title}", "style=Heading2", f"font={theme.heading_font}",
+                "size=13pt", "bold=true", f"color={theme.primary}", "spaceBefore=12pt",
+                "spaceAfter=6pt", "keepNext=true",
+            )])
+
+        normalized_rows: list[list[Any]] = []
+        for row in rows:
+            if isinstance(row, dict):
+                normalized_rows.append([row.get(header, "") for header in headers])
+            elif isinstance(row, (list, tuple)):
+                normalized_rows.append(list(row))
+            else:
+                normalized_rows.append([row])
+
+        _run_mutation(client, ["add", path, "/body", "--type", "table", *_prop_args(
+            f"rows={len(normalized_rows) + 1}", f"cols={len(headers)}",
+            f"border.all=single;6;{theme.muted}", "layout=autofit", "padding=80",
+        )])
+        table_path = f"/body/tbl[{rendered_table_count}]"
+        _run_mutation(client, ["set", path, f"{table_path}/tr[1]", *_prop_args("header=true")])
+        for column_index, header in enumerate(headers, start=1):
+            _run_mutation(client, ["set", path, f"{table_path}/tr[1]/tc[{column_index}]", *_prop_args(
+                f"text={_text(header)}", "bold=true", f"font={theme.body_font}",
+                f"shd={theme.primary}", "color=FFFFFF", "align=center", "valign=center",
+            )])
+
+        for row_offset, values in enumerate(normalized_rows, start=2):
+            for column_index in range(1, len(headers) + 1):
+                value = values[column_index - 1] if column_index <= len(values) else ""
+                props = [
+                    f"text={_text(value)}", f"font={theme.body_font}", f"color={theme.text}",
+                    "valign=center",
+                ]
+                if row_offset % 2:
+                    props.append(f"shd={theme.secondary}")
+                _run_mutation(
+                    client,
+                    ["set", path, f"{table_path}/tr[{row_offset}]/tc[{column_index}]", *_prop_args(*props)],
+                )
+
 
 @dataclass(frozen=True, slots=True)
 class SpreadsheetTheme:

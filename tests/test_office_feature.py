@@ -23,6 +23,11 @@ from reins.features.office.service import (
     preview_office_document,
     revise_office_document,
 )
+from reins.features.office.workflows import (
+    OfficeWorkflowError,
+    get_office_workflow,
+    list_office_workflows,
+)
 
 
 class FakeOfficeCliClient:
@@ -63,6 +68,37 @@ def test_office_format_aliases():
     assert normalize_office_format("excel") == "xlsx"
     assert normalize_office_format("ppt") == "pptx"
     assert normalize_office_format("unknown") == "docx"
+
+
+def test_fixed_office_workflows_are_grouped_and_format_checked():
+    workflows = list_office_workflows()
+
+    assert len(workflows) == 10
+    assert len(list_office_workflows(office_format="docx")) == 5
+    assert len(list_office_workflows(office_format="xlsx")) == 2
+    assert len(list_office_workflows(office_format="pptx")) == 3
+    assert get_office_workflow("community-work-plan", office_format="docx").label_zh == "社区工作计划"
+
+    try:
+        get_office_workflow("community-work-plan", office_format="pptx")
+    except OfficeWorkflowError as exc:
+        assert "creates docx" in str(exc)
+    else:
+        raise AssertionError("A workflow must not be used with another Office format.")
+
+
+def test_fixed_workflow_is_injected_as_a_content_contract():
+    prompt = build_office_content_prompt(
+        user_prompt="Create Sunshine Community's Q3 plan",
+        office_format="docx",
+        skill_id="community-work-plan",
+    )
+
+    assert "Reins Office 固定文档技能" in prompt
+    assert "community-work-plan" in prompt
+    assert "Word 任务分解表" in prompt
+    assert "不是工具、插件、软件包" in prompt
+    assert 'When Language is "zh", use natural Simplified Chinese' in prompt
 
 
 def test_main_chat_routes_document_requests_to_office():
@@ -290,6 +326,13 @@ def test_renderer_applies_reins_word_design(tmp_path):
         content={
             "title": "Annual Review",
             "body": "Executive Summary:\nA concise review of the year.\n\nPriorities:\n- Protect service quality",
+            "tables": [
+                {
+                    "title": "Task breakdown",
+                    "headers": ["Task", "Owner", "Deadline"],
+                    "rows": [["Review services", "Operations", "Q3"]],
+                }
+            ],
             "design": {
                 "style": "formal",
                 "primary": "172554",
@@ -318,6 +361,11 @@ def test_renderer_applies_reins_word_design(tmp_path):
     assert "shading.fill=172554" in serialized
     assert "shading.fill=E8EEF6" in serialized
     assert "lineSpacing=1.3x" in serialized
+    assert "--type table" in serialized
+    assert "rows=2" in serialized
+    assert "cols=3" in serialized
+    assert "/body/tbl[1]/tr[1]/tc[1]" in serialized
+    assert "text=Review services" in serialized
 
 
 def test_renderer_emits_designed_officecli_xlsx_commands(tmp_path):

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 // import { useMessage } from 'naive-ui'
@@ -24,6 +24,11 @@ const { openSessionSearch } = useSessionSearch()
 const selectedKey = computed(() => {
   if (route.name === 'hermes.session') return 'hermes.chat'
   return String(route.name || '')
+})
+const officeMenuOpen = ref(selectedKey.value === 'hermes.office')
+const selectedOfficeType = computed(() => {
+  const value = Array.isArray(route.query.type) ? route.query.type[0] : route.query.type
+  return ['docx', 'xlsx', 'pptx'].includes(String(value)) ? String(value) : 'docx'
 })
 const isChinese = computed(() => locale.value.toLowerCase().startsWith('zh'))
 const copy = computed(() => isChinese.value
@@ -65,6 +70,19 @@ async function openSession(sessionId: string) {
   if (chatStore.activeSessionId === sessionId && route.name === 'hermes.session') return
   await router.push({ name: 'hermes.session', params: { sessionId } })
 }
+
+function toggleOfficeMenu() {
+  if (appStore.sidebarCollapsed) {
+    appStore.toggleSidebarCollapsed()
+    officeMenuOpen.value = true
+    return
+  }
+  officeMenuOpen.value = !officeMenuOpen.value
+}
+
+watch(() => route.name, name => {
+  if (name === 'hermes.office') officeMenuOpen.value = true
+})
 
 //async function handleUpdate() {
 // message.success(t('sidebar.updateSuccess'), { duration: 5000 })
@@ -123,13 +141,50 @@ onMounted(async () => {
         <span>{{ copy.newTask }}</span>
       </RouteLinkItem> -->
 
-      <RouteLinkItem class="nav-item compact" :to="{ name: 'hermes.office' }" :active="selectedKey === 'hermes.office'">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M6 3h8l4 4v14H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
-          <path d="M14 3v5h5M8 13h6M8 17h6" />
-        </svg>
-        <span>{{ copy.office }}</span>
-      </RouteLinkItem>
+      <div class="office-nav-group">
+        <button
+          type="button"
+          class="nav-item compact office-parent"
+          :class="{ active: selectedKey === 'hermes.office' }"
+          :aria-expanded="officeMenuOpen"
+          @click="toggleOfficeMenu"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 3h8l4 4v14H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
+            <path d="M14 3v5h5M8 13h6M8 17h6" />
+          </svg>
+          <span>{{ copy.office }}</span>
+          <svg class="office-chevron" :class="{ open: officeMenuOpen }" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m9 18 6-6-6-6" />
+          </svg>
+        </button>
+        <div v-show="officeMenuOpen" class="office-subnav">
+          <RouteLinkItem
+            class="office-subitem"
+            :active="selectedKey === 'hermes.office' && selectedOfficeType === 'docx'"
+            :to="{ name: 'hermes.office', query: { type: 'docx' } }"
+          >
+            <span class="office-type-mark word">W</span>
+            <span>Word 文档</span>
+          </RouteLinkItem>
+          <RouteLinkItem
+            class="office-subitem"
+            :active="selectedKey === 'hermes.office' && selectedOfficeType === 'xlsx'"
+            :to="{ name: 'hermes.office', query: { type: 'xlsx' } }"
+          >
+            <span class="office-type-mark excel">X</span>
+            <span>Excel 表格</span>
+          </RouteLinkItem>
+          <RouteLinkItem
+            class="office-subitem"
+            :active="selectedKey === 'hermes.office' && selectedOfficeType === 'pptx'"
+            :to="{ name: 'hermes.office', query: { type: 'pptx' } }"
+          >
+            <span class="office-type-mark ppt">P</span>
+            <span>PPT 演示</span>
+          </RouteLinkItem>
+        </div>
+      </div>
 
       <button class="nav-item" type="button" @click="openSessionSearch">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
@@ -375,6 +430,68 @@ onMounted(async () => {
   font-size: 12px;
 }
 
+.office-nav-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.office-parent .office-chevron {
+  margin-left: auto;
+  color: $text-muted;
+  transition: transform .16s ease;
+}
+
+.office-parent .office-chevron.open {
+  transform: rotate(90deg);
+}
+
+.office-subnav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 4px 29px;
+  padding-left: 9px;
+  border-left: 1px solid $border-color;
+}
+
+.office-subitem {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 8px;
+  border-radius: 7px;
+  color: $text-secondary;
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.office-subitem:hover,
+.office-subitem.active {
+  color: $text-primary;
+  background: rgba(var(--accent-primary-rgb), .075);
+}
+
+.office-subitem.active {
+  font-weight: 600;
+}
+
+.office-type-mark {
+  width: 19px;
+  height: 19px;
+  display: grid;
+  flex: 0 0 19px;
+  place-items: center;
+  border-radius: 4px;
+  color: #fff;
+  background: #2563eb;
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.office-type-mark.excel { background: #15803d; }
+.office-type-mark.ppt { background: #c2410c; }
+
 .task-section {
   flex: 1 1 180px;
   display: flex;
@@ -514,6 +631,7 @@ onMounted(async () => {
 .sidebar.collapsed .version-text,
 .sidebar.collapsed .new-task-button span,
 .sidebar.collapsed .nav-item span,
+.sidebar.collapsed .office-subnav,
 .sidebar.collapsed .task-section,
 .sidebar.collapsed .utility-sections,
 .sidebar.collapsed .sidebar-footer {
@@ -544,6 +662,7 @@ onMounted(async () => {
   .sidebar.collapsed .version-text,
   .sidebar.collapsed .new-task-button span,
   .sidebar.collapsed .nav-item span { display: inline; }
+  .sidebar.collapsed .office-subnav { display: flex; }
   .sidebar.collapsed .task-section { display: flex; }
   .sidebar.collapsed .utility-sections,
   .sidebar.collapsed .sidebar-footer { display: block; }
