@@ -41,6 +41,10 @@ import {
   type OfficeChatRequest,
   type OfficeChatWorkTool,
 } from '../../reins/office-chat'
+import {
+  friendlyOfficeOperationError,
+  type OfficeWorkerProgress,
+} from '../../reins/office'
 import { chatCapabilitiesInstructions, chatCapabilitiesKey, normalizeChatCapabilities, toBridgeCapabilities } from './capabilities'
 import { prepareBrowserForRun } from '../browser-connection'
 import {
@@ -222,7 +226,7 @@ async function ensureBridgeFixedContext(args: {
 export async function handleBridgeRun(
   nsp: ReturnType<Server['of']>,
   socket: Socket,
-  data: { input: string | ContentBlock[]; display_input?: string | ContentBlock[] | null; display_role?: 'user' | 'command'; storage_message?: string; work_tool?: 'document' | 'spreadsheet' | 'slides' | 'research' | 'browser'; session_id?: string; model?: string; provider?: string; model_groups?: RunModelGroup[]; instructions?: string; capabilities?: ChatCapabilities; source?: string; queue_id?: string; peerExcludeSocketId?: string },
+  data: { input: string | ContentBlock[]; display_input?: string | ContentBlock[] | null; display_role?: 'user' | 'command'; storage_message?: string; work_tool?: 'document' | 'spreadsheet' | 'slides' | 'research' | 'browser'; office_skill_id?: string; session_id?: string; model?: string; provider?: string; model_groups?: RunModelGroup[]; instructions?: string; capabilities?: ChatCapabilities; source?: string; queue_id?: string; peerExcludeSocketId?: string },
   profile: string,
   sessionMap: Map<string, SessionState>,
   bridge: AgentBridgeClient,
@@ -288,6 +292,7 @@ export async function handleBridgeRun(
   state.activeRunMarker = runMarker
   state.runId = undefined
   state.abortController = undefined
+  state.abortCompletion = undefined
   state.bridgeOutput = ''
   state.bridgePendingAssistantContent = ''
   state.bridgePendingReasoningContent = ''
@@ -360,6 +365,7 @@ export async function handleBridgeRun(
     const officeHandled = await maybeHandleOfficeChatRun({
       input: officePromptFromInput(input),
       workTool: data.work_tool,
+      officeSkillId: data.office_skill_id,
       sessionId: session_id,
       profile,
       state,
@@ -660,6 +666,7 @@ function emitWeComWorkflowToolCompleted(args: {
 async function maybeHandleOfficeChatRun(args: {
   input: string
   workTool?: OfficeChatWorkTool
+  officeSkillId?: string
   sessionId: string
   profile: string
   state: SessionState
@@ -687,7 +694,14 @@ async function maybeHandleOfficeChatRun(args: {
   const toolName = request.operation === 'revise'
     ? REINS_OFFICE_REVISE_TOOL
     : REINS_OFFICE_CREATE_TOOL
+  const abortController = new AbortController()
+  let resolveAbortCompletion: () => void = () => {}
+  const abortCompletion = new Promise<void>((resolve) => {
+    resolveAbortCompletion = resolve
+  })
   args.state.runId = runId
+  args.state.abortController = abortController
+  args.state.abortCompletion = abortCompletion
 
   pushState(args.sessionMap, args.sessionId, 'run.started', {
     event: 'run.started',
@@ -705,7 +719,7 @@ async function maybeHandleOfficeChatRun(args: {
     args.sessionId,
     args.runMarker,
     toolName,
-    officeToolArguments(args.input, request),
+    officeToolArguments(args.input, request, args.officeSkillId),
     toolCallId,
   )
   const startedPayload = {
@@ -723,15 +737,75 @@ async function maybeHandleOfficeChatRun(args: {
   args.emit('tool.started', startedPayload)
 
   let result: OfficeChatResult
+  let lastProgressStage = ''
+  const useChineseProgress = /[\u3400-\u9fff]/.test(args.input)
+  const reportProgress = (progress: OfficeWorkerProgress) => {
+    if (abortController.signal.aborted || args.state.isAborting) return
+    lastProgressStage = progress.stage
+    const message = useChineseProgress ? progress.message_zh : progress.message_en
+    const preview = `${message} · ${progress.percent}%`
+    const toolProgressPayload = {
+      ...startedPayload,
+      preview,
+      progress_stage: progress.stage,
+      progress_percent: progress.percent,
+    }
+    replaceState(args.sessionMap, args.sessionId, 'tool.started', toolProgressPayload)
+    args.emit('tool.started', toolProgressPayload)
+
+    const activityPayload = {
+      event: 'agent.event',
+      kind: 'workflow',
+      text: preview,
+      stage: progress.stage,
+      percent: progress.percent,
+    }
+    replaceState(args.sessionMap, args.sessionId, 'agent.event', activityPayload)
+    args.emit('agent.event', activityPayload)
+  }
   try {
-    result = await runOfficeChatRequest(args.input, request)
+    result = await runOfficeChatRequest(
+      args.input,
+      request,
+      args.officeSkillId,
+      reportProgress,
+      abortController.signal,
+    )
+    if (abortController.signal.aborted) {
+      finishCancelledOfficeChatTool(args, {
+        runId,
+        toolCallId: startedTool.id,
+        toolName: startedTool.name,
+      })
+      return true
+    }
   } catch (err) {
+    const errorCode = String((err as { code?: string })?.code || '')
+    if (abortController.signal.aborted || errorCode === 'worker_cancelled') {
+      finishCancelledOfficeChatTool(args, {
+        runId,
+        toolCallId: startedTool.id,
+        toolName: startedTool.name,
+      })
+      return true
+    }
+    const friendly = friendlyOfficeOperationError(
+      err,
+      request.operation === 'revise' ? 'revise' : 'create',
+      lastProgressStage,
+    )
     result = {
       handled: true,
-      message: err instanceof Error ? err.message : String(err),
+      message: useChineseProgress
+        ? `${friendly.title_zh}。${friendly.message_zh} ${friendly.suggestion_zh}`
+        : `${friendly.title_en}. ${friendly.message_en} ${friendly.suggestion_en}`,
       exit_code: 1,
       document: null,
     }
+  } finally {
+    resolveAbortCompletion()
+    if (args.state.abortController === abortController) args.state.abortController = undefined
+    if (args.state.abortCompletion === abortCompletion) args.state.abortCompletion = undefined
   }
 
   await finishOfficeChatRun(args, result.handled ? result : {
@@ -741,6 +815,43 @@ async function maybeHandleOfficeChatRun(args: {
     document: null,
   }, { runId, toolCallId: startedTool.id, toolName: startedTool.name })
   return true
+}
+
+function finishCancelledOfficeChatTool(args: {
+  sessionId: string
+  state: SessionState
+  runMarker: string
+  emit: (event: string, payload: any) => void
+  sessionMap: Map<string, SessionState>
+}, runInfo: { runId: string; toolCallId: string; toolName: string }) {
+  const completedTool = recordBridgeToolCompleted(
+    args.state,
+    args.sessionId,
+    args.runMarker,
+    runInfo.toolName,
+    {
+      tool_call_id: runInfo.toolCallId,
+      result: {
+        ok: false,
+        cancelled: true,
+        error: 'Office operation cancelled by user.',
+      },
+      is_error: true,
+    },
+  )
+  const payload = {
+    event: 'tool.completed',
+    run_id: runInfo.runId,
+    tool_call_id: completedTool.id,
+    tool: runInfo.toolName,
+    name: runInfo.toolName,
+    output: completedTool.output,
+    duration: completedTool.duration,
+    error: true,
+    cancelled: true,
+  }
+  pushState(args.sessionMap, args.sessionId, 'tool.completed', payload)
+  args.emit('tool.completed', payload)
 }
 
 async function finishOfficeChatRun(args: {
@@ -889,6 +1000,7 @@ function formatOfficeAssistantMessage(result: OfficeChatResult): string {
 function officeToolArguments(
   input: string,
   request: OfficeChatRequest,
+  officeSkillId?: string,
 ): Record<string, unknown> {
   if (request.operation === 'revise') {
     return {
@@ -897,7 +1009,11 @@ function officeToolArguments(
       instruction: input,
     }
   }
-  return { prompt: input, format: request.format }
+  return {
+    prompt: input,
+    format: request.format,
+    ...(officeSkillId ? { skill_id: officeSkillId } : {}),
+  }
 }
 
 function officeToolResult(result: OfficeChatResult, failed: boolean): string {

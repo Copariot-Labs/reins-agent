@@ -4,6 +4,7 @@ from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
 
+import reins.features.office.service as office_service
 from reins.features.office.editor import (
     OfficeRevisionError,
     build_presentation_revision_prompt,
@@ -18,6 +19,7 @@ from reins.features.office.schemas import (
     normalize_presentation_options,
 )
 from reins.features.office.service import (
+    OfficeServiceError,
     create_office_document,
     list_office_documents,
     preview_office_document,
@@ -474,6 +476,31 @@ def test_revision_plan_rejects_non_officecli_mutations():
         raise AssertionError("unsafe revision verb was accepted")
 
 
+def test_revision_plan_rejects_find_and_replace_as_cell_properties():
+    try:
+        normalize_revision_plan(
+            {
+                "summary": "Replace a cell label",
+                "commands": [
+                    {
+                        "verb": "set",
+                        "arguments": [
+                            "/筛选说明/B11",
+                            "--prop",
+                            "find=旧说明",
+                            "--prop",
+                            "replace=新说明",
+                        ],
+                    }
+                ],
+            }
+        )
+    except OfficeRevisionError as exc:
+        assert "find as a property" in str(exc)
+    else:
+        raise AssertionError("unsupported Excel find/replace properties were accepted")
+
+
 def test_revise_document_keeps_one_record_and_tracks_validation(tmp_path, monkeypatch):
     monkeypatch.setenv("REINS_HOME", str(tmp_path))
     created = create_office_document(
@@ -504,6 +531,165 @@ def test_revise_document_keeps_one_record_and_tracks_validation(tmp_path, monkey
     assert revised.metadata["last_revision"]["summary"] == "Changed task status to Complete"
     assert revised.metadata["last_revision"]["validation"] == "no errors found"
     assert len(list_office_documents(limit=10)) == 1
+
+
+def test_revision_timeout_stops_without_retry_and_preserves_original(tmp_path, monkeypatch):
+    monkeypatch.setenv("REINS_HOME", str(tmp_path))
+    created = create_office_document(
+        prompt="create a task list",
+        office_format="docx",
+        use_reins=False,
+        client=FakeOfficeCliClient(),
+    )
+    original = Path(created.path).read_bytes()
+    planner_calls = 0
+
+    def timed_out_planner(_prompt, _timeout):
+        nonlocal planner_calls
+        planner_calls += 1
+        raise TimeoutError("model request timed out")
+
+    try:
+        revise_office_document(
+            document_id=created.id,
+            instruction="extend the plan through November",
+            timeout=7,
+            client=FakeOfficeCliClient(),
+            planner=timed_out_planner,
+        )
+    except OfficeServiceError as exc:
+        assert str(exc) == "Reins revision planning timed out after 7 seconds."
+    else:
+        raise AssertionError("revision timeout was accepted")
+
+    assert planner_calls == 1
+    assert Path(created.path).read_bytes() == original
+    assert list_office_documents(limit=10)[0].revision_count == 0
+
+
+def test_reins_word_revision_uses_saved_structure_and_rebuilds_same_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("REINS_HOME", str(tmp_path))
+    created = create_office_document(
+        prompt="create a June to September safety plan",
+        office_format="docx",
+        use_reins=False,
+        client=FakeOfficeCliClient(),
+    )
+    reins_record = OfficeDocumentRecord(
+        id=created.id,
+        title=created.title,
+        kind=created.kind,
+        path=created.path,
+        file_name=created.file_name,
+        mime_type=created.mime_type,
+        created_at=created.created_at,
+        updated_at=created.updated_at,
+        revision_count=created.revision_count,
+        prompt=created.prompt,
+        generator="reins",
+        command_count=created.command_count,
+        metadata=created.metadata,
+    )
+    revised_content = deepcopy(created.metadata["content"])
+    revised_content["title"] = "June to November Safety Plan"
+    revised_content["generator"] = "reins"
+    prompts = []
+    monkeypatch.setattr(office_service, "get_office_document", lambda _document_id: reins_record)
+    monkeypatch.setattr(
+        office_service,
+        "generate_office_content",
+        lambda **kwargs: (prompts.append(kwargs["prompt"]), revised_content)[1],
+    )
+    revision_client = FakeOfficeCliClient()
+
+    revised = revise_office_document(
+        document_id=created.id,
+        instruction="extend the plan through November",
+        client=revision_client,
+    )
+
+    assert revised.id == created.id
+    assert revised.path == created.path
+    assert revised.title == "June to November Safety Plan"
+    assert revised.revision_count == 1
+    assert "Current structured document content" in prompts[0]
+    assert not any("annotated" in command for command in revision_client.commands)
+    assert any(command[:1] == ["create"] for command in revision_client.commands)
+
+
+def test_reins_excel_revision_uses_saved_workbook_and_rebuilds_same_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("REINS_HOME", str(tmp_path))
+    created = create_office_document(
+        prompt="create a resident screening workbook",
+        office_format="xlsx",
+        use_reins=False,
+        client=FakeOfficeCliClient(),
+    )
+    reins_record = OfficeDocumentRecord(
+        id=created.id,
+        title=created.title,
+        kind=created.kind,
+        path=created.path,
+        file_name=created.file_name,
+        mime_type=created.mime_type,
+        created_at=created.created_at,
+        updated_at=created.updated_at,
+        revision_count=created.revision_count,
+        prompt=created.prompt,
+        generator="reins",
+        command_count=created.command_count,
+        metadata=created.metadata,
+    )
+    revised_content = deepcopy(created.metadata["content"])
+    revised_content["sheets"][0]["rows"].append(["November", "Complete"])
+    revised_content["generator"] = "reins"
+    prompts = []
+    monkeypatch.setattr(office_service, "get_office_document", lambda _document_id: reins_record)
+    monkeypatch.setattr(
+        office_service,
+        "generate_office_content",
+        lambda **kwargs: (prompts.append(kwargs["prompt"]), revised_content)[1],
+    )
+    revision_client = FakeOfficeCliClient()
+
+    revised = revise_office_document(
+        document_id=created.id,
+        instruction="extend the workbook through November",
+        client=revision_client,
+    )
+
+    assert revised.id == created.id
+    assert revised.path == created.path
+    assert revised.revision_count == 1
+    assert revised.metadata["content"]["sheets"][0]["rows"][-1][0] == "November"
+    assert "Current structured workbook content" in prompts[0]
+    assert not any("annotated" in command for command in revision_client.commands)
+    assert any(command[:1] == ["create"] for command in revision_client.commands)
+
+
+def test_excel_renderer_leaves_long_wrapped_rows_available_for_auto_fit(tmp_path):
+    client = FakeOfficeCliClient()
+    output = tmp_path / "long-notes.xlsx"
+    render_office_content(
+        office_format="xlsx",
+        content={
+            "title": "Screening Notes",
+            "design": {"row_density": "compact"},
+            "sheets": [{
+                "name": "筛选说明",
+                "headers": ["项目", "说明"],
+                "rows": [["范围", "这是一段需要自动换行并根据内容自动调整高度的较长筛选说明文字。"]],
+            }],
+        },
+        output_path=output,
+        client=client,
+    )
+
+    assert not any(
+        command[:3] == ["set", str(output), "/筛选说明/row[4]"]
+        and "height=18" in command
+        for command in client.commands
+    )
 
 
 def test_ppt_revision_updates_structured_content_without_dom_inspection(tmp_path, monkeypatch):

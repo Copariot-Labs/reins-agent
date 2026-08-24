@@ -48,6 +48,7 @@ export interface QueuedRun {
   instructions?: string
   capabilities?: ChatCapabilities
   workTool?: 'document' | 'spreadsheet' | 'slides' | 'research' | 'browser'
+  officeSkillId?: string
   profile: string
   source?: ChatRunSource
   originSocketId?: string
@@ -63,6 +64,7 @@ export interface SessionState {
   isWorking: boolean
   events: Array<{ event: string; data: any }>
   abortController?: AbortController
+  abortCompletion?: Promise<void>
   runId?: string
   activeRunMarker?: string
   profile?: string

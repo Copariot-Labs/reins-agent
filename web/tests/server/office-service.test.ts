@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  cancelOfficeOperation,
   friendlyOfficeOperationError,
   normalizeOfficeCreateRequest,
+  startOfficeCreateOperation,
 } from '../../packages/server/src/services/reins/office'
 
 describe('Reins Office service', () => {
@@ -63,5 +65,21 @@ describe('Reins Office service', () => {
 
     expect(error.code).toBe('timeout')
     expect(error.suggestion_zh).toContain('原文件不会因超时而丢失')
+  })
+
+  it('cancels a queued Office page operation before its worker starts', async () => {
+    const started = startOfficeCreateOperation(normalizeOfficeCreateRequest({
+      format: 'xlsx',
+      prompt: '创建社区筛选工作簿',
+      skill_id: 'community-excel-filter',
+    }))
+
+    const cancelled = cancelOfficeOperation(started.id)
+    expect(cancelled.status).toBe('cancelled')
+    expect(cancelled.events.at(-1)).toEqual(expect.objectContaining({
+      stage: 'cancelled',
+      message_zh: expect.stringContaining('用户取消'),
+    }))
+    await Promise.resolve()
   })
 })

@@ -57,7 +57,7 @@ export interface OfficeStatus {
   documents: number
 }
 
-export type OfficeOperationStatus = 'queued' | 'running' | 'completed' | 'failed'
+export type OfficeOperationStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
 
 export interface OfficeProgressEvent {
   stage: string
@@ -149,6 +149,13 @@ export async function startOfficeRevisionOperation(
 export async function fetchOfficeOperation(operationId: string): Promise<{ operation: OfficeOperation }> {
   return request<{ operation: OfficeOperation }>(
     `/api/reins/office/operations/${encodeURIComponent(operationId)}`,
+  )
+}
+
+export async function cancelOfficeOperation(operationId: string): Promise<{ operation: OfficeOperation }> {
+  return request<{ operation: OfficeOperation }>(
+    `/api/reins/office/operations/${encodeURIComponent(operationId)}/cancel`,
+    { method: 'POST' },
   )
 }
 

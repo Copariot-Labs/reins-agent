@@ -3,6 +3,7 @@ import {
   reviseOfficeDocument,
   type OfficeDocumentDto,
   type OfficeFormat,
+  type OfficeWorkerProgress,
 } from './office'
 
 export type OfficeChatWorkTool =
@@ -29,6 +30,8 @@ export interface OfficeChatHistoryMessage {
   content?: string
   tool_name?: string | null
 }
+
+export type OfficeChatProgressReporter = (progress: OfficeWorkerProgress) => void
 
 export const REINS_OFFICE_CREATE_TOOL = 'reins_office_create'
 export const REINS_OFFICE_REVISE_TOOL = 'reins_office_revise'
@@ -157,12 +160,18 @@ export function resolveOfficeChatRequest(
 export async function runOfficeChatRequest(
   message: string,
   request: OfficeChatRequest,
+  officeSkillId?: string,
+  onProgress?: OfficeChatProgressReporter,
+  signal?: AbortSignal,
 ): Promise<OfficeChatResult> {
   const prompt = String(message || '').trim()
   if (request.operation === 'revise') {
-    const document = await reviseOfficeDocument(request.document.id, {
+    const revisionInput = {
       instruction: prompt,
-    })
+    }
+    const document = onProgress || signal
+      ? await reviseOfficeDocument(request.document.id, revisionInput, onProgress, signal)
+      : await reviseOfficeDocument(request.document.id, revisionInput)
     return {
       handled: true,
       message: 'Office document updated successfully.',
@@ -172,11 +181,15 @@ export async function runOfficeChatRequest(
     }
   }
 
-  const document = await createOfficeDocument({
+  const createInput = {
     format: request.format,
     prompt,
     language: /[\u3400-\u9fff]/.test(prompt) ? 'zh' : 'en',
-  })
+    ...(officeSkillId ? { skill_id: officeSkillId } : {}),
+  }
+  const document = onProgress || signal
+    ? await createOfficeDocument(createInput, onProgress, signal)
+    : await createOfficeDocument(createInput)
   return {
     handled: true,
     message: 'Office document created successfully.',
@@ -189,6 +202,9 @@ export async function runOfficeChatRequest(
 export async function createOfficeChatDocument(
   message: string,
   workTool?: OfficeChatWorkTool,
+  officeSkillId?: string,
+  onProgress?: OfficeChatProgressReporter,
+  signal?: AbortSignal,
 ): Promise<OfficeChatResult> {
   const prompt = String(message || '').trim()
   if (!mayNeedOfficeChat(prompt, workTool)) {
@@ -205,5 +221,11 @@ export async function createOfficeChatDocument(
     }
   }
 
-  return runOfficeChatRequest(prompt, { operation: 'create', format })
+  return runOfficeChatRequest(
+    prompt,
+    { operation: 'create', format },
+    officeSkillId,
+    onProgress,
+    signal,
+  )
 }

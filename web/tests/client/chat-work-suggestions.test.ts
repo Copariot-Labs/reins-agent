@@ -1,18 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import {
   getWorkSuggestions,
+  getOfficeFormatOptions,
   getWorkToolOptions,
   shouldShowNewChatSuggestions,
 } from '@/components/hermes/chat/work-suggestions'
 
 describe('chat work suggestions', () => {
-  it('offers the five work categories for a new chat', () => {
+  it('groups all Office formats under the document category', () => {
     expect(getWorkToolOptions(false).map(option => option.id)).toEqual([
+      'document',
+      'research',
+      'browser',
+    ])
+    expect(getOfficeFormatOptions(false).map(option => option.id)).toEqual([
       'document',
       'spreadsheet',
       'slides',
-      'research',
-      'browser',
     ])
   })
 
@@ -57,5 +61,14 @@ describe('chat work suggestions', () => {
       visibleMessageCount: 0,
       isLoadingMessages: true,
     })).toBe(false)
+  })
+
+  it('shows suggestions for an empty titled chat after loading finishes', () => {
+    expect(shouldShowNewChatSuggestions({
+      hasSession: true,
+      title: 'New Office task',
+      visibleMessageCount: 0,
+      isLoadingMessages: false,
+    })).toBe(true)
   })
 })

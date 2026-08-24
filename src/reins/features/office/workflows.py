@@ -145,8 +145,8 @@ OFFICE_WORKFLOWS = (
         label_en="Filter and clean data",
         description_zh="按条件筛选居民或工作台账，并生成筛选说明。",
         description_en="Filter and clean resident or operational records with an audit-friendly summary.",
-        placeholder_zh="例如：筛选独居老人台账，仅保留姓名、楼栋、联系电话和走访状态。可粘贴数据。",
-        placeholder_en="Example: Filter elderly residents living alone; keep only name, building, phone, and visit status. Paste data here.",
+        placeholder_zh="例如：从居民台账中筛选60岁以上独居老人，需要姓名、楼栋、联系电话",
+        placeholder_en="Example: Filtering the resident registry to identify elderly individuals aged 60 and older who live alone; the required information includes names, building numbers, and contact phone numbers.",
         instruction="""
 生成一份用于社区数据筛选和清洗的专业 Excel 工作簿。只输出可由 OfficeCLI 渲染的结构化工作簿内容，不得要求或使用 Python、pandas、插件或其他外部软件包。
 工作簿必须满足以下要求：

@@ -85,4 +85,37 @@ describe('run chat abort goal handling', () => {
       synced: true,
     }))
   })
+
+  it('cancels an active Office worker without interrupting the CLI bridge', async () => {
+    const { handleAbort } = await import('../../packages/server/src/services/hermes/run-chat/abort')
+    const { emit, nsp, socket } = makeHarness()
+    const abortController = new AbortController()
+    const state = {
+      messages: [],
+      isWorking: true,
+      isAborting: false,
+      events: [],
+      queue: [],
+      runId: 'office-run-1',
+      profile: 'default',
+      source: 'cli',
+      abortController,
+      abortCompletion: Promise.resolve(),
+    } as any
+    const sessionMap = new Map([['session-1', state]])
+    const bridge = {
+      interrupt: vi.fn(),
+      goalPause: vi.fn(),
+    }
+
+    await handleAbort(nsp as any, socket as any, 'session-1', sessionMap, bridge, vi.fn())
+
+    expect(abortController.signal.aborted).toBe(true)
+    expect(bridge.interrupt).not.toHaveBeenCalled()
+    expect(bridge.goalPause).not.toHaveBeenCalled()
+    expect(emit).toHaveBeenCalledWith('abort.completed', expect.objectContaining({
+      session_id: 'session-1',
+      synced: true,
+    }))
+  })
 })

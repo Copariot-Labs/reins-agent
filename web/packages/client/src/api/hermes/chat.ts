@@ -29,6 +29,8 @@ export interface StartRunRequest {
   display_input?: string | ContentBlock[] | null
   /** Explicit work surface selected in the composer. */
   work_tool?: 'document' | 'spreadsheet' | 'slides' | 'research' | 'browser'
+  /** Fixed Reins Office skill selected from the composer. */
+  office_skill_id?: string
   instructions?: string
   session_id?: string
   profile?: string

@@ -120,11 +120,12 @@ Rules:
 - Use only OfficeCLI DOM mutations: add, set, remove, move, or swap.
 - Do not include the officecli binary or document file path. Reins inserts both.
 - Each arguments array starts with an element path or parent path.
-- For text replacement, prefer: set / --find OLD --replace NEW.
+- For Word and PowerPoint text replacement, prefer: set / --find OLD --replace NEW.
 - For properties, use repeated pairs: --prop key=value.
 - For Word, add paragraphs under /body with --type paragraph.
 - For PowerPoint, edit shapes using paths from the outline; add shapes under a slide.
-- For Excel, edit cells with paths such as /Sheet1/A1.
+- For Excel, edit cells with paths such as /Sheet1/A1 and use --prop value=NEW.
+- For Excel, never use --find/--replace and never put find or replace inside --prop.
 - Preserve content and formatting unrelated to the request.
 - Never use raw XML, import, create, open, close, save, watch, or filesystem commands.
 - Return an empty commands list only when the requested state is already present.
@@ -313,6 +314,15 @@ def normalize_revision_plan(raw: dict[str, Any]) -> dict[str, Any]:
             safe_arguments.append(text)
         if not safe_arguments[0].startswith("/"):
             raise OfficeRevisionError(f"Revision command {index} must start with a document element path.")
+        for argument_index, argument in enumerate(safe_arguments[:-1]):
+            if argument != "--prop":
+                continue
+            property_name = safe_arguments[argument_index + 1].split("=", 1)[0].strip().lower()
+            if property_name in {"find", "replace"}:
+                raise OfficeRevisionError(
+                    f"Revision command {index} uses {property_name} as a property; "
+                    "use the supported mutation flags or set the cell value directly."
+                )
         normalized.append([verb, *safe_arguments])
 
     return {"summary": summary, "commands": normalized}

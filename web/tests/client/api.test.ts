@@ -17,6 +17,7 @@ import { getDownloadUrl } from '../../packages/client/src/api/hermes/download'
 import { uploadFiles } from '../../packages/client/src/api/hermes/files'
 import { batchDeleteSessions, importHermesSession } from '../../packages/client/src/api/hermes/sessions'
 import {
+  cancelOfficeOperation,
   fetchOfficeOperation,
   fetchOfficePreviewHtml,
   fetchOfficeSkills,
@@ -249,6 +250,18 @@ describe('API Client', () => {
       mockFetch.mockClear()
       await fetchOfficeOperation('office_op/1')
       expect(mockFetch.mock.calls[0][0]).toBe('/api/reins/office/operations/office_op%2F1')
+    })
+
+    it('cancels an active Office page operation', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ operation: { id: 'office_op_1', status: 'cancelled' } }),
+      })
+
+      await cancelOfficeOperation('office_op/1')
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/reins/office/operations/office_op%2F1/cancel')
+      expect(mockFetch.mock.calls[0][1]).toMatchObject({ method: 'POST' })
     })
 
     it('extracts the server error message from failed preview JSON', async () => {

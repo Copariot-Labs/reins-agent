@@ -12,10 +12,14 @@ export interface WorkToolOption {
   icon: Exclude<WorkTool, 'general'>;
 }
 
+export type OfficeWorkTool = 'document' | 'spreadsheet' | 'slides';
+
 export interface WorkSuggestion {
   id: string;
   label: string;
   prompt: string;
+  description?: string;
+  officeSkillId?: string;
 }
 
 export interface SuggestionSessionState {
@@ -36,17 +40,31 @@ export function getWorkToolOptions(isChinese: boolean): WorkToolOption[] {
       icon: 'document',
     },
     {
-      id: 'spreadsheet',
-      label: isChinese ? '表格' : 'Spreadsheets',
-      icon: 'spreadsheet',
-    },
-    { id: 'slides', label: isChinese ? '演示文稿' : 'Slides', icon: 'slides' },
-    {
       id: 'research',
       label: isChinese ? '深度研究' : 'Deep research',
       icon: 'research',
     },
     { id: 'browser', label: isChinese ? '浏览器' : 'Browser', icon: 'browser' },
+  ];
+}
+
+export function getOfficeFormatOptions(isChinese: boolean): WorkToolOption[] {
+  return [
+    {
+      id: 'document',
+      label: isChinese ? 'Word 文档' : 'Word documents',
+      icon: 'document',
+    },
+    {
+      id: 'spreadsheet',
+      label: isChinese ? 'Excel 表格' : 'Excel spreadsheets',
+      icon: 'spreadsheet',
+    },
+    {
+      id: 'slides',
+      label: isChinese ? 'PPT 演示' : 'PPT presentations',
+      icon: 'slides',
+    },
   ];
 }
 
@@ -354,11 +372,9 @@ export function shouldShowNewChatSuggestions(
   );
   if (knownMessageCount > 0) return false;
 
-  // A client-created chat has no title or server counts yet. It should show
-  // suggestions immediately even while its initial resume request is pending.
-  if (!state.title?.trim()) return true;
-
-  // A titled session is already an existing conversation, even if its message
-  // count has not arrived yet. Never show the new-chat strip there.
-  return false;
+  // Avoid flashing the strip while an existing titled conversation is still
+  // loading. Once loading confirms that the chat is empty, suggestions stay
+  // visible even if the session already has a title.
+  if (state.isLoadingMessages && state.title?.trim()) return false;
+  return true;
 }

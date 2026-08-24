@@ -11,6 +11,7 @@ import {
   useMessage,
 } from 'naive-ui'
 import {
+  cancelOfficeOperation,
   fetchOfficeDocuments,
   fetchOfficeOperation,
   fetchOfficePreviewHtml,
@@ -58,6 +59,7 @@ const previewHtml = ref('')
 const previewError = ref('')
 const activeOperation = ref<OfficeOperation | null>(null)
 const operationTransportError = ref('')
+const cancelingOperation = ref(false)
 const status = ref<OfficeStatus | null>(null)
 const documents = ref<OfficeDocument[]>([])
 const selectedId = ref<string | null>(null)
@@ -114,6 +116,10 @@ const copy = computed(() => isChinese.value
       running: '处理中',
       completed: '已完成',
       failed: '处理失败',
+      cancelled: '已取消',
+      cancelTask: '取消任务',
+      cancelling: '正在取消',
+      cancelFailed: '取消任务失败',
       waitingForProgress: '正在连接 Office 处理任务',
       suggestion: '建议',
       technicalDetail: '错误详情',
@@ -168,6 +174,10 @@ const copy = computed(() => isChinese.value
       running: 'In progress',
       completed: 'Completed',
       failed: 'Failed',
+      cancelled: 'Cancelled',
+      cancelTask: 'Cancel task',
+      cancelling: 'Cancelling',
+      cancelFailed: 'Failed to cancel task',
       waitingForProgress: 'Connecting to the Office task',
       suggestion: 'Suggestion',
       technicalDetail: 'Error detail',
@@ -226,6 +236,9 @@ const operationStatusText = computed(() => {
   if (!operationStatus) return ''
   return copy.value[operationStatus]
 })
+const canCancelOperation = computed(() =>
+  activeOperation.value?.status === 'queued' || activeOperation.value?.status === 'running',
+)
 const lastRevision = computed(() => {
   const value = selectedDocument.value?.metadata?.last_revision
   return value && typeof value === 'object' ? value as Record<string, unknown> : null
@@ -365,8 +378,24 @@ async function waitForOfficeOperation(initial: OfficeOperation): Promise<OfficeD
       : copy.value.reviseFailed))
     return null
   }
+  if (operation.status === 'cancelled') return null
   if (!operation.document) throw new Error(copy.value.resultMissing)
   return operation.document
+}
+
+async function cancelActiveOperation() {
+  const operation = activeOperation.value
+  if (!operation || !canCancelOperation.value || cancelingOperation.value) return
+  cancelingOperation.value = true
+  try {
+    const response = await cancelOfficeOperation(operation.id)
+    activeOperation.value = response.operation
+    message.info(copy.value.cancelled)
+  } catch (error) {
+    message.error(readableError(error, copy.value.cancelFailed))
+  } finally {
+    cancelingOperation.value = false
+  }
 }
 
 async function loadPreview() {
@@ -645,9 +674,22 @@ onBeforeUnmount(() => {
             <section v-if="activeOperation || operationTransportError" class="operation-activity">
               <header class="activity-header">
                 <strong>{{ copy.activity }}</strong>
-                <span :class="['activity-status', activeOperation?.status || 'failed']">
-                  {{ operationTransportError && !activeOperation ? copy.failed : operationStatusText }}
-                </span>
+                <div class="activity-actions">
+                  <span :class="['activity-status', activeOperation?.status || 'failed']">
+                    {{ operationTransportError && !activeOperation ? copy.failed : operationStatusText }}
+                  </span>
+                  <NButton
+                    v-if="canCancelOperation"
+                    size="tiny"
+                    secondary
+                    type="error"
+                    attr-type="button"
+                    :loading="cancelingOperation"
+                    @click="cancelActiveOperation"
+                  >
+                    {{ cancelingOperation ? copy.cancelling : copy.cancelTask }}
+                  </NButton>
+                </div>
               </header>
               <div v-if="activeOperation" class="activity-progress" role="progressbar" :aria-valuenow="activeOperation.percent" aria-valuemin="0" aria-valuemax="100">
                 <span :style="{ width: `${activeOperation.percent}%` }" />
@@ -660,6 +702,7 @@ onBeforeUnmount(() => {
                     done: activeOperation.status === 'completed' || index < activeOperation.events.length - 1,
                     current: activeOperation.status === 'running' && index === activeOperation.events.length - 1,
                     failed: event.stage === 'failed',
+                    cancelled: event.stage === 'cancelled',
                   }"
                 >
                   <span class="activity-dot" />
@@ -788,9 +831,22 @@ onBeforeUnmount(() => {
             <section v-if="activeOperation || operationTransportError" class="operation-activity">
               <header class="activity-header">
                 <strong>{{ copy.activity }}</strong>
-                <span :class="['activity-status', activeOperation?.status || 'failed']">
-                  {{ operationTransportError && !activeOperation ? copy.failed : operationStatusText }}
-                </span>
+                <div class="activity-actions">
+                  <span :class="['activity-status', activeOperation?.status || 'failed']">
+                    {{ operationTransportError && !activeOperation ? copy.failed : operationStatusText }}
+                  </span>
+                  <NButton
+                    v-if="canCancelOperation"
+                    size="tiny"
+                    secondary
+                    type="error"
+                    attr-type="button"
+                    :loading="cancelingOperation"
+                    @click="cancelActiveOperation"
+                  >
+                    {{ cancelingOperation ? copy.cancelling : copy.cancelTask }}
+                  </NButton>
+                </div>
               </header>
               <div v-if="activeOperation" class="activity-progress" role="progressbar" :aria-valuenow="activeOperation.percent" aria-valuemin="0" aria-valuemax="100">
                 <span :style="{ width: `${activeOperation.percent}%` }" />
@@ -803,6 +859,7 @@ onBeforeUnmount(() => {
                     done: activeOperation.status === 'completed' || index < activeOperation.events.length - 1,
                     current: activeOperation.status === 'running' && index === activeOperation.events.length - 1,
                     failed: event.stage === 'failed',
+                    cancelled: event.stage === 'cancelled',
                   }"
                 >
                   <span class="activity-dot" />
@@ -1247,6 +1304,12 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
+.activity-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
 .activity-status {
   color: $text-muted;
   font-size: 10px;
@@ -1256,6 +1319,7 @@ onBeforeUnmount(() => {
 .activity-status.running { color: #1d4ed8; }
 .activity-status.completed { color: #047857; }
 .activity-status.failed { color: #b91c1c; }
+.activity-status.cancelled { color: #64748b; }
 
 .activity-progress {
   height: 4px;
@@ -1307,6 +1371,7 @@ onBeforeUnmount(() => {
 .activity-list li.done,
 .activity-list li.current { color: $text-secondary; }
 .activity-list li.failed { color: #b91c1c; }
+.activity-list li.cancelled { color: #64748b; }
 
 .activity-dot {
   width: 9px;
@@ -1331,6 +1396,11 @@ onBeforeUnmount(() => {
 .activity-list li.failed .activity-dot {
   border-color: #dc2626;
   background: #dc2626;
+}
+
+.activity-list li.cancelled .activity-dot {
+  border-color: #64748b;
+  background: #64748b;
 }
 
 .activity-list small {

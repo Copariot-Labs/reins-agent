@@ -12,16 +12,19 @@ import {
   type VisibleBrowserStatus,
 } from '@/api/hermes/browser'
 import { fetchComputerUseDoctor, fetchComputerUseStatus, type ComputerUseCheck } from '@/api/hermes/computer-use'
+import { fetchOfficeSkills, type OfficeFormat, type OfficeSkill } from '@/api/reins/office'
 import { NButton, NTooltip, NModal, NInputNumber, useMessage } from 'naive-ui'
 import { computed, ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToolTraceVisibility } from '@/composables/useToolTraceVisibility'
 import {
   getWorkSuggestions,
+  getOfficeFormatOptions,
   getWorkToolOptions,
   shouldShowNewChatSuggestions,
   type WorkSuggestion,
   type WorkTool,
+  type OfficeWorkTool,
 } from './work-suggestions'
 
 const chatStore = useChatStore()
@@ -48,15 +51,58 @@ const visibleBrowserStatus = ref<VisibleBrowserStatus | null>(null)
 const computerUseStatus = ref<ComputerUseCheck | null>(null)
 const computerUseDoctor = ref<ComputerUseCheck | null>(null)
 const suggestionsDismissedForSession = ref(false)
+const officeSkills = ref<OfficeSkill[]>([])
+const officeSkillsLoaded = ref(false)
+const officeSkillsLoading = ref(false)
+const officeSkillsError = ref('')
 
 const selectedWorkTool = ref<WorkTool>('general')
+const selectedOfficeFormat = ref<OfficeWorkTool | null>(null)
+const selectedOfficeSkillId = ref('')
 const isChinese = computed(() => locale.value.toLowerCase().startsWith('zh'))
 const workToolOptions = computed(() => getWorkToolOptions(isChinese.value))
+const officeFormatOptions = computed(() => getOfficeFormatOptions(isChinese.value))
 const selectedWorkToolOption = computed(() =>
-  workToolOptions.value.find(option => option.id === selectedWorkTool.value),
+  (selectedOfficeFormat.value
+    ? officeFormatOptions.value.find(option => option.id === selectedOfficeFormat.value)
+    : workToolOptions.value.find(option => option.id === selectedWorkTool.value)),
 )
+const selectedOfficeSkill = computed(() =>
+  officeSkills.value.find(skill => skill.id === selectedOfficeSkillId.value) || null,
+)
+const officeSkillsCopy = computed(() => isChinese.value
+  ? {
+      loading: '正在读取 Office 技能',
+      empty: '此格式暂无可用技能',
+      failed: 'Office 技能加载失败',
+      retry: '重试',
+    }
+  : {
+      loading: 'Loading Office skills',
+      empty: 'No skills are available for this format',
+      failed: 'Failed to load Office skills',
+      retry: 'Retry',
+    })
+const officeSkillSuggestions = computed<WorkSuggestion[]>(() => {
+  const format = officeFormatForWorkTool(selectedOfficeFormat.value)
+  if (!format) return []
+  return officeSkills.value
+    .filter(skill => skill.format === format)
+    .map(skill => {
+      const placeholder = isChinese.value ? skill.placeholder_zh : skill.placeholder_en
+      return {
+        id: skill.id,
+        label: isChinese.value ? skill.label_zh : skill.label_en,
+        description: isChinese.value ? skill.description_zh : skill.description_en,
+        prompt: placeholder.replace(isChinese.value ? /^例如[：:]\s*/ : /^Example:\s*/i, ''),
+        officeSkillId: skill.id,
+      }
+    })
+})
 const workSuggestions = computed(() =>
-  getWorkSuggestions(selectedWorkTool.value, isChinese.value),
+  selectedOfficeFormat.value
+    ? officeSkillSuggestions.value
+    : getWorkSuggestions(selectedWorkTool.value, isChinese.value),
 )
 const showNewChatSuggestions = computed(() => {
   if (chatStore.isLoadingSessions || suggestionsDismissedForSession.value) return false
@@ -82,6 +128,9 @@ const composerPlaceholder = computed(() => {
 function selectWorkTool(tool: WorkTool) {
   const nextTool = selectedWorkTool.value === tool ? 'general' : tool
   selectedWorkTool.value = nextTool
+  selectedOfficeFormat.value = null
+  selectedOfficeSkillId.value = ''
+  if (nextTool === 'document') void ensureOfficeSkillsLoaded()
   if (nextTool === 'research' && capabilitiesStore.browserMode === 'off') {
     capabilitiesStore.browserMode = 'backend'
   }
@@ -91,12 +140,55 @@ function selectWorkTool(tool: WorkTool) {
   nextTick(() => textareaRef.value?.focus())
 }
 
+function officeFormatForWorkTool(tool: OfficeWorkTool | null): OfficeFormat | null {
+  if (tool === 'document') return 'docx'
+  if (tool === 'spreadsheet') return 'xlsx'
+  if (tool === 'slides') return 'pptx'
+  return null
+}
+
+async function ensureOfficeSkillsLoaded(force = false) {
+  if (officeSkillsLoading.value || (officeSkillsLoaded.value && !force)) return
+  officeSkillsLoading.value = true
+  officeSkillsError.value = ''
+  try {
+    const response = await fetchOfficeSkills()
+    officeSkills.value = response.skills
+    officeSkillsLoaded.value = true
+  } catch (error) {
+    officeSkillsError.value = String((error as { message?: unknown })?.message || officeSkillsCopy.value.failed)
+  } finally {
+    officeSkillsLoading.value = false
+  }
+}
+
+function selectOfficeFormat(tool: OfficeWorkTool) {
+  selectedOfficeFormat.value = tool
+  selectedWorkTool.value = tool
+  selectedOfficeSkillId.value = ''
+  void ensureOfficeSkillsLoaded()
+  nextTick(() => textareaRef.value?.focus())
+}
+
+function backSuggestionLevel() {
+  if (selectedOfficeFormat.value) {
+    selectedOfficeFormat.value = null
+    selectedOfficeSkillId.value = ''
+    selectedWorkTool.value = 'document'
+    return
+  }
+  clearWorkTool()
+}
+
 function clearWorkTool() {
   selectedWorkTool.value = 'general'
+  selectedOfficeFormat.value = null
+  selectedOfficeSkillId.value = ''
   nextTick(() => textareaRef.value?.focus())
 }
 
 function applyWorkSuggestion(suggestion: WorkSuggestion) {
+  selectedOfficeSkillId.value = suggestion.officeSkillId || ''
   inputText.value = suggestion.prompt
   nextTick(() => {
     const el = textareaRef.value
@@ -111,6 +203,8 @@ watch(
   () => chatStore.activeSessionId,
   () => {
     selectedWorkTool.value = 'general'
+    selectedOfficeFormat.value = null
+    selectedOfficeSkillId.value = ''
     suggestionsDismissedForSession.value = false
   },
 )
@@ -557,6 +651,7 @@ function handleSend() {
       workTool: selectedWorkTool.value === 'general'
         ? undefined
         : selectedWorkTool.value,
+      officeSkillId: selectedOfficeSkillId.value || undefined,
     },
   )
   if (startsSession && chatStore.activeSessionId) {
@@ -565,6 +660,8 @@ function handleSend() {
   inputText.value = ''
   attachments.value = []
   selectedWorkTool.value = 'general'
+  selectedOfficeFormat.value = null
+  selectedOfficeSkillId.value = ''
   slashActive.value = false
 
   if (textareaRef.value) {
@@ -692,6 +789,63 @@ function isImage(type: string): boolean {
           <span>{{ tool.label }}</span>
         </button>
       </template>
+      <template v-else-if="selectedWorkTool === 'document' && !selectedOfficeFormat">
+        <button
+          type="button"
+          class="suggestion-back"
+          :aria-label="isChinese ? '返回工作类型' : 'Back to work types'"
+          :title="isChinese ? '返回工作类型' : 'Back to work types'"
+          @click="backSuggestionLevel"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        </button>
+        <button
+          v-for="option in officeFormatOptions"
+          :key="option.id"
+          type="button"
+          class="work-tool-chip office-format-chip"
+          @click="selectOfficeFormat(option.id as OfficeWorkTool)"
+        >
+          <span class="office-format-mark" :class="option.id">
+            {{ option.id === 'document' ? 'W' : option.id === 'spreadsheet' ? 'X' : 'P' }}
+          </span>
+          <span>{{ option.label }}</span>
+        </button>
+      </template>
+      <template v-else-if="selectedOfficeFormat">
+        <button
+          type="button"
+          class="suggestion-back"
+          :aria-label="isChinese ? '返回 Office 格式' : 'Back to Office formats'"
+          :title="isChinese ? '返回 Office 格式' : 'Back to Office formats'"
+          @click="backSuggestionLevel"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        </button>
+        <span v-if="officeSkillsLoading" class="suggestion-state">{{ officeSkillsCopy.loading }}</span>
+        <button
+          v-else-if="officeSkillsError"
+          type="button"
+          class="suggestion-state error"
+          @click="ensureOfficeSkillsLoaded(true)"
+        >
+          {{ officeSkillsCopy.failed }} · {{ officeSkillsCopy.retry }}
+        </button>
+        <span v-else-if="!workSuggestions.length" class="suggestion-state">{{ officeSkillsCopy.empty }}</span>
+        <button
+          v-for="suggestion in workSuggestions"
+          v-else
+          :key="suggestion.id"
+          type="button"
+          class="work-suggestion-chip"
+          :class="{ active: suggestion.officeSkillId === selectedOfficeSkillId }"
+          :title="suggestion.description"
+          @click="applyWorkSuggestion(suggestion)"
+        >
+          <span>{{ suggestion.label }}</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m7 7 10 10M9 17h8V9"/></svg>
+        </button>
+      </template>
       <template v-else>
         <button
           v-for="suggestion in workSuggestions"
@@ -756,6 +910,9 @@ function isImage(type: string): boolean {
           <span>{{ selectedWorkToolOption.label }}</span>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m7 7 10 10M17 7 7 17"/></svg>
         </button>
+        <span v-if="selectedOfficeSkill" class="selected-office-skill">
+          {{ isChinese ? selectedOfficeSkill.label_zh : selectedOfficeSkill.label_en }}
+        </span>
       </div>
       <textarea
         ref="textareaRef"
@@ -928,6 +1085,43 @@ function isImage(type: string): boolean {
 
 .work-tool-strip::-webkit-scrollbar { display: none; }
 
+.suggestion-back {
+  width: 34px;
+  height: 34px;
+  display: inline-grid;
+  flex: 0 0 34px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid $border-color;
+  border-radius: 50%;
+  color: $text-secondary;
+  background: $bg-card;
+  cursor: pointer;
+}
+
+.suggestion-back:hover {
+  color: $text-primary;
+  background: $bg-secondary;
+}
+
+.suggestion-state {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  padding: 0 10px;
+  border: 0;
+  color: $text-muted;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+}
+
+button.suggestion-state.error {
+  color: #b91c1c;
+  cursor: pointer;
+}
+
 .work-tool-chip {
   height: 34px;
   display: inline-flex;
@@ -951,6 +1145,24 @@ function isImage(type: string): boolean {
   border-color: $text-muted;
   background: $bg-secondary;
 }
+
+.office-format-chip { padding-left: 7px; }
+
+.office-format-mark {
+  width: 22px;
+  height: 24px;
+  display: grid;
+  flex: 0 0 22px;
+  place-items: center;
+  border-radius: 4px;
+  color: #fff;
+  background: #2563eb;
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.office-format-mark.spreadsheet { background: #15803d; }
+.office-format-mark.slides { background: #c2410c; }
 
 .work-suggestion-chip {
   height: 38px;
@@ -985,6 +1197,11 @@ function isImage(type: string): boolean {
   border-color: $text-muted;
   background: $bg-card;
   transform: translateY(-1px);
+}
+
+.work-suggestion-chip.active {
+  border-color: rgba(var(--accent-primary-rgb), .34);
+  background: rgba(var(--accent-primary-rgb), .12);
 }
 
 .auto-play-speech-switch {
@@ -1313,6 +1530,16 @@ function isImage(type: string): boolean {
 
 .selected-work-tool-pill:hover {
   background: rgba(var(--accent-primary-rgb), .23);
+}
+
+.selected-office-skill {
+  min-width: 0;
+  overflow: hidden;
+  padding-left: 9px;
+  color: $text-muted;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .resize-handle {

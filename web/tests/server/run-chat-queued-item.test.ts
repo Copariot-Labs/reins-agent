@@ -84,6 +84,8 @@ describe('ChatRunSocket queued bridge runs', () => {
     ;(server as any).runQueuedItem(socket, 'session-1', {
       queue_id: 'queue-normal',
       input: 'queued follow-up',
+      workTool: 'spreadsheet',
+      officeSkillId: 'community-excel-summary',
       source: 'cli',
       profile: 'default',
     }, 'default')
@@ -94,6 +96,8 @@ describe('ChatRunSocket queued bridge runs', () => {
       input: 'queued follow-up',
       display_input: undefined,
       storage_message: undefined,
+      work_tool: 'spreadsheet',
+      office_skill_id: 'community-excel-summary',
       queue_id: 'queue-normal',
     }))
     expect(call[6]).toBe(false)

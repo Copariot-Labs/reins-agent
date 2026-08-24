@@ -441,7 +441,9 @@ def _render_xlsx(content: dict[str, Any], path: Path, client: OfficeCliClient) -
                     if number_format != "@":
                         props.append("alignment.horizontal=right")
                 _run_mutation(client, ["set", path, f"/{sheet_name}/{_column_name(column_index)}{row_index}", *_prop_args(*props)])
-            _run_mutation(client, ["set", path, f"/{sheet_name}/row[{row_index}]", *_prop_args(f"height={body_height}")])
+            row_text = [_text(value) for value in values]
+            if row_text and all("\n" not in value and len(value) <= 18 for value in row_text):
+                _run_mutation(client, ["set", path, f"/{sheet_name}/row[{row_index}]", *_prop_args(f"height={body_height}")])
 
         for column_index, header in enumerate(headers, start=1):
             requested_width = width_map.get(column_index)

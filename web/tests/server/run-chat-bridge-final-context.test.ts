@@ -448,12 +448,20 @@ describe('bridge run final context usage', () => {
     }
     const officeRequest = { operation: 'create', format: 'docx' }
     resolveOfficeChatRequestMock.mockReturnValueOnce(officeRequest)
-    runOfficeChatRequestMock.mockResolvedValueOnce({
-      handled: true,
-      message: 'Office document created successfully.',
-      exit_code: 0,
-      document,
-      operation: 'create',
+    runOfficeChatRequestMock.mockImplementationOnce(async (...args: any[]) => {
+      args[3]?.({
+        stage: 'content_generation',
+        percent: 18,
+        message_zh: 'Reins 正在整理内容',
+        message_en: 'Reins is planning the content',
+      })
+      return {
+        handled: true,
+        message: 'Office document created successfully.',
+        exit_code: 0,
+        document,
+        operation: 'create',
+      }
     })
     addMessageMock.mockReturnValue(42)
     const bridge = {
@@ -469,6 +477,7 @@ describe('bridge run final context usage', () => {
       {
         input: 'create a maintenance report document',
         work_tool: 'document',
+        office_skill_id: 'community-work-summary',
         session_id: 'session-1',
       },
       'default',
@@ -487,6 +496,9 @@ describe('bridge run final context usage', () => {
     expect(runOfficeChatRequestMock).toHaveBeenCalledWith(
       'create a maintenance report document',
       officeRequest,
+      'community-work-summary',
+      expect.any(Function),
+      expect.any(AbortSignal),
     )
     expect(bridge.chat).not.toHaveBeenCalled()
     expect(buildCompressedHistoryMock).not.toHaveBeenCalled()
@@ -495,7 +507,11 @@ describe('bridge run final context usage', () => {
       'session-1',
       expect.stringMatching(/^cli_run_/),
       'reins_office_create',
-      { prompt: 'create a maintenance report document', format: 'docx' },
+      {
+        prompt: 'create a maintenance report document',
+        format: 'docx',
+        skill_id: 'community-work-summary',
+      },
       expect.stringMatching(/^office_tool_/),
     )
     expect(recordBridgeToolCompletedMock).toHaveBeenCalledWith(
@@ -511,6 +527,16 @@ describe('bridge run final context usage', () => {
     expect(emit).toHaveBeenCalledWith('tool.started', expect.objectContaining({
       tool: 'reins_office_create',
       preview: expect.stringContaining('Reins Office'),
+    }))
+    expect(emit).toHaveBeenCalledWith('tool.started', expect.objectContaining({
+      progress_stage: 'content_generation',
+      progress_percent: 18,
+      preview: 'Reins is planning the content · 18%',
+    }))
+    expect(emit).toHaveBeenCalledWith('agent.event', expect.objectContaining({
+      kind: 'workflow',
+      stage: 'content_generation',
+      percent: 18,
     }))
     expect(emit).toHaveBeenCalledWith('tool.completed', expect.objectContaining({
       tool: 'reins_office_create',
@@ -601,6 +627,9 @@ describe('bridge run final context usage', () => {
     expect(runOfficeChatRequestMock).toHaveBeenCalledWith(
       'make the title bolder and use a modern color palette',
       officeRequest,
+      undefined,
+      expect.any(Function),
+      expect.any(AbortSignal),
     )
     expect(getLatestToolMessageMock).toHaveBeenCalledWith(
       'session-1',

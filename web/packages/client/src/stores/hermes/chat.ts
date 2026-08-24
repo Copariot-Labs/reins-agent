@@ -1663,7 +1663,7 @@ export const useChatStore = defineStore('chat', () => {
   async function sendMessage(
     content: string,
     attachments?: Attachment[],
-    options: { workTool?: ChatWorkTool } = {},
+    options: { workTool?: ChatWorkTool; officeSkillId?: string } = {},
   ) {
     if (!content.trim() && !(attachments && attachments.length > 0)) return;
 
@@ -1759,6 +1759,7 @@ export const useChatStore = defineStore('chat', () => {
       const runPayload = {
         input,
         work_tool: options.workTool,
+        office_skill_id: options.officeSkillId,
         session_id: sid,
         profile:
           activeSession.value?.profile ||

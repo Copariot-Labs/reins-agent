@@ -1,6 +1,7 @@
 import Router from '@koa/router'
 import { readFile } from 'fs/promises'
 import {
+  cancelOfficeOperation,
   createOfficeDocument,
   getOfficeOperation,
   getOfficePreviewPath,
@@ -69,6 +70,14 @@ officeRoutes.post('/api/reins/office/operations', async ctx => {
 officeRoutes.get('/api/reins/office/operations/:id', ctx => {
   try {
     ctx.body = { operation: getOfficeOperation(ctx.params.id) }
+  } catch (err) {
+    handleError(ctx, err)
+  }
+})
+
+officeRoutes.post('/api/reins/office/operations/:id/cancel', ctx => {
+  try {
+    ctx.body = { operation: cancelOfficeOperation(ctx.params.id) }
   } catch (err) {
     handleError(ctx, err)
   }

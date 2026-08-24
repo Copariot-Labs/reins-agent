@@ -58,7 +58,14 @@ export async function handleAbort(
     flushResponseRunToDb(state, sessionId)
   }
 
-  if (state.source === 'cli') {
+  if (state.abortController) {
+    state.abortController.abort()
+    try {
+      await state.abortCompletion
+    } catch (err) {
+      logger.debug(err, '[chat-run-socket][abort] Office cancellation cleanup failed for session %s', sessionId)
+    }
+  } else if (state.source === 'cli') {
     try {
       await bridge.interrupt(sessionId, 'Aborted by user', state.profile)
     } catch (err) {
@@ -70,8 +77,6 @@ export async function handleAbort(
     } catch (err) {
       logger.debug(err, '[chat-run-socket][abort] goal pause-on-interrupt skipped for session %s', sessionId)
     }
-  } else if (state.abortController) {
-    state.abortController.abort()
   }
 
   await markAbortCompleted(nsp, socket, sessionId, runId || 'response_stream', sessionMap, runQueuedItem)
@@ -99,6 +104,7 @@ export async function markAbortCompleted(
   state.isAborting = false
   state.profile = undefined
   state.abortController = undefined
+  state.abortCompletion = undefined
   state.runId = undefined
   state.responseRun = undefined
   state.activeRunMarker = undefined

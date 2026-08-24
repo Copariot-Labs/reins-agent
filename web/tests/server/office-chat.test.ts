@@ -41,12 +41,17 @@ describe('Reins Office chat routing', () => {
     createOfficeDocumentMock.mockResolvedValue({ id: 'sheet-1', kind: 'xlsx' })
     const { createOfficeChatDocument } = await import('../../packages/server/src/services/reins/office-chat')
 
-    const result = await createOfficeChatDocument('prepare next month expenses', 'spreadsheet')
+    const result = await createOfficeChatDocument(
+      'prepare next month expenses',
+      'spreadsheet',
+      'community-excel-summary',
+    )
 
     expect(createOfficeDocumentMock).toHaveBeenCalledWith({
       format: 'xlsx',
       prompt: 'prepare next month expenses',
       language: 'en',
+      skill_id: 'community-excel-summary',
     })
     expect(result.document).toEqual({ id: 'sheet-1', kind: 'xlsx' })
   })

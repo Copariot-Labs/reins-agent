@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import shutil
+import subprocess
 from typing import Any, Callable
 from uuid import uuid4
 
@@ -55,6 +56,12 @@ def _report_progress(
         progress(stage, percent, message_zh, message_en)
     except Exception:
         pass
+
+
+def _is_revision_timeout(error: Exception) -> bool:
+    if isinstance(error, (subprocess.TimeoutExpired, TimeoutError)):
+        return True
+    return "timed out" in str(error).casefold()
 
 
 def _append_record(record: OfficeDocumentRecord) -> OfficeDocumentRecord:
@@ -311,6 +318,224 @@ def _revise_structured_presentation(
     return saved
 
 
+def _revise_structured_word_document(
+    *,
+    record: OfficeDocumentRecord,
+    source: Path,
+    instruction: str,
+    timeout: int,
+    client: OfficeCliClient,
+    progress: OfficeProgressReporter | None,
+) -> OfficeDocumentRecord:
+    current = record.metadata.get("content")
+    if not isinstance(current, dict):
+        raise OfficeServiceError("This Word document does not have editable Reins content metadata.")
+
+    _report_progress(
+        progress, "revision_planning", 24,
+        "Reins 正在根据原文重新整理修改后的内容", "Reins is revising the saved document structure",
+    )
+    revision_prompt = f"""
+Revise the existing Word document according to the user's instruction.
+
+User instruction:
+{instruction}
+
+Current structured document content:
+{json.dumps(current, ensure_ascii=False)}
+
+Return the complete revised Word document content, not a patch. Preserve all
+unrelated facts, sections, tables, and design choices. Apply the instruction
+consistently everywhere it is relevant. Preserve the current design unless the
+user explicitly requests a visual change. Do not mention this revision process
+inside the finished document.
+""".strip()
+    revised_content = generate_office_content(
+        prompt=revision_prompt,
+        office_format="docx",
+        title=record.title,
+        language=str(record.metadata.get("language") or "zh"),
+        timeout=timeout,
+        use_reins=True,
+        skill_id=str(record.metadata.get("workflow_id") or "") or None,
+    )
+    if revised_content.get("generator") != "reins":
+        raise OfficeServiceError(
+            "Reins did not return a valid structured Word revision; the original file was preserved."
+        )
+    _report_progress(
+        progress, "content_ready", 52,
+        "修改后的内容和版式方案已完成", "The revised content and layout are ready",
+    )
+
+    temporary = source.with_name(f".{source.stem}-revision-{uuid4().hex}.docx")
+    try:
+        render_office_content(
+            office_format="docx",
+            content=revised_content,
+            output_path=temporary,
+            client=client,
+            progress=progress,
+        )
+        temporary.replace(source)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+
+    metadata = dict(record.metadata)
+    history = metadata.get("revisions")
+    history = list(history) if isinstance(history, list) else []
+    revision = {
+        "revision": record.revision_count + 1,
+        "instruction": instruction,
+        "summary": f"Updated structured Word content: {instruction[:240]}",
+        "command_count": client.command_count,
+        "validation": "OfficeCLI validation passed",
+        "issues": {},
+    }
+    history.append(revision)
+    metadata.update(
+        {
+            "content": revised_content,
+            "document_kind": revised_content.get("document_kind"),
+            "missing_fields": revised_content.get("missing_fields", []),
+            "generator_error": revised_content.get("generator_error"),
+            "revisions": history[-50:],
+            "last_revision": history[-1],
+        }
+    )
+
+    updated = OfficeDocumentRecord(
+        id=record.id,
+        title=normalize_title(revised_content.get("title") or record.title),
+        kind=record.kind,
+        path=record.path,
+        file_name=record.file_name,
+        mime_type=record.mime_type,
+        created_at=record.created_at,
+        updated_at=utc_now_iso(),
+        revision_count=record.revision_count + 1,
+        prompt=record.prompt,
+        generator="reins",
+        command_count=record.command_count + client.command_count,
+        metadata=metadata,
+    )
+    _report_progress(progress, "saving", 98, "正在保存修改记录", "Saving the revision record")
+    saved = _append_record(updated)
+    _report_progress(progress, "completed", 100, "文件修改完成", "Document revision completed")
+    return saved
+
+
+def _revise_structured_excel_document(
+    *,
+    record: OfficeDocumentRecord,
+    source: Path,
+    instruction: str,
+    timeout: int,
+    client: OfficeCliClient,
+    progress: OfficeProgressReporter | None,
+) -> OfficeDocumentRecord:
+    current = record.metadata.get("content")
+    if not isinstance(current, dict) or not isinstance(current.get("sheets"), list):
+        raise OfficeServiceError("This Excel workbook does not have editable Reins content metadata.")
+
+    _report_progress(
+        progress, "revision_planning", 24,
+        "Reins 正在根据原工作簿重新整理数据和设计", "Reins is revising the saved workbook structure and design",
+    )
+    revision_prompt = f"""
+Revise the existing Excel workbook according to the user's instruction.
+
+User instruction:
+{instruction}
+
+Current structured workbook content:
+{json.dumps(current, ensure_ascii=False)}
+
+Return the complete revised Excel workbook content, not a patch or OfficeCLI
+commands. Preserve every unrelated sheet, row, value, format, highlight, and
+design choice. Apply the requested changes consistently to all relevant cells.
+If the user requests a design change, choose a suitable complete workbook
+design; otherwise preserve the current design. Keep long explanatory text
+concise enough for readable wrapped cells. Do not mention the revision process
+inside the finished workbook.
+""".strip()
+    revised_content = generate_office_content(
+        prompt=revision_prompt,
+        office_format="xlsx",
+        title=record.title,
+        language=str(record.metadata.get("language") or "zh"),
+        timeout=timeout,
+        use_reins=True,
+        skill_id=str(record.metadata.get("workflow_id") or "") or None,
+    )
+    if revised_content.get("generator") != "reins" or not revised_content.get("sheets"):
+        raise OfficeServiceError(
+            "Reins did not return a valid structured Excel revision; the original file was preserved."
+        )
+    _report_progress(
+        progress, "content_ready", 52,
+        "修改后的数据和版式方案已完成", "The revised workbook data and layout are ready",
+    )
+
+    temporary = source.with_name(f".{source.stem}-revision-{uuid4().hex}.xlsx")
+    try:
+        render_office_content(
+            office_format="xlsx",
+            content=revised_content,
+            output_path=temporary,
+            client=client,
+            progress=progress,
+        )
+        temporary.replace(source)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+
+    metadata = dict(record.metadata)
+    history = metadata.get("revisions")
+    history = list(history) if isinstance(history, list) else []
+    revision = {
+        "revision": record.revision_count + 1,
+        "instruction": instruction,
+        "summary": f"Updated structured Excel workbook: {instruction[:240]}",
+        "command_count": client.command_count,
+        "validation": "OfficeCLI validation passed",
+        "issues": {},
+    }
+    history.append(revision)
+    metadata.update(
+        {
+            "content": revised_content,
+            "document_kind": revised_content.get("document_kind"),
+            "missing_fields": revised_content.get("missing_fields", []),
+            "generator_error": revised_content.get("generator_error"),
+            "revisions": history[-50:],
+            "last_revision": history[-1],
+        }
+    )
+
+    updated = OfficeDocumentRecord(
+        id=record.id,
+        title=normalize_title(revised_content.get("title") or record.title),
+        kind=record.kind,
+        path=record.path,
+        file_name=record.file_name,
+        mime_type=record.mime_type,
+        created_at=record.created_at,
+        updated_at=utc_now_iso(),
+        revision_count=record.revision_count + 1,
+        prompt=record.prompt,
+        generator="reins",
+        command_count=record.command_count + client.command_count,
+        metadata=metadata,
+    )
+    _report_progress(progress, "saving", 98, "正在保存修改记录", "Saving the revision record")
+    saved = _append_record(updated)
+    _report_progress(progress, "completed", 100, "文件修改完成", "Workbook revision completed")
+    return saved
+
+
 def revise_office_document(
     *,
     document_id: str,
@@ -348,6 +573,24 @@ def revise_office_document(
             timeout=timeout,
             client=client,
             planner=planner,
+            progress=progress,
+        )
+    if record.kind == "docx" and record.generator == "reins" and isinstance(content, dict):
+        return _revise_structured_word_document(
+            record=record,
+            source=source,
+            instruction=clean_instruction,
+            timeout=timeout,
+            client=client,
+            progress=progress,
+        )
+    if record.kind == "xlsx" and record.generator == "reins" and isinstance(content, dict):
+        return _revise_structured_excel_document(
+            record=record,
+            source=source,
+            instruction=clean_instruction,
+            timeout=timeout,
+            client=client,
             progress=progress,
         )
 
@@ -390,6 +633,10 @@ def revise_office_document(
                 )
                 break
             except Exception as exc:
+                if _is_revision_timeout(exc):
+                    raise OfficeServiceError(
+                        f"Reins revision planning timed out after {timeout} seconds."
+                    ) from exc
                 previous_error = f"{type(exc).__name__}: {exc}"
 
         if result is None:

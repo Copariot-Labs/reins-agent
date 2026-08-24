@@ -1,4 +1,4 @@
-import { spawn } from 'child_process'
+import { spawn, type ChildProcess } from 'child_process'
 import { randomUUID } from 'crypto'
 import { once } from 'events'
 import { existsSync } from 'fs'
@@ -59,7 +59,7 @@ export interface OfficeSkillDto {
 }
 
 export type OfficeOperationKind = 'create' | 'revise'
-export type OfficeOperationStatus = 'queued' | 'running' | 'completed' | 'failed'
+export type OfficeOperationStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
 
 export interface OfficeProgressEventDto {
   stage: string
@@ -93,7 +93,7 @@ export interface OfficeOperationDto {
   error?: OfficeOperationErrorDto
 }
 
-interface WorkerProgress {
+export interface OfficeWorkerProgress {
   stage: string
   percent: number
   message_zh: string
@@ -101,10 +101,23 @@ interface WorkerProgress {
 }
 
 const OFFICE_FORMATS = new Set<OfficeFormat>(['docx', 'xlsx', 'pptx'])
-const DEFAULT_TIMEOUT_MS = Number(process.env.REINS_OFFICE_WEB_TIMEOUT_MS || '') || 240_000
+const DEFAULT_TIMEOUT_MS = Number(process.env.REINS_OFFICE_WEB_TIMEOUT_MS || '') || 600_000
+const DEFAULT_REVISION_MODEL_TIMEOUT_SECONDS = Math.min(
+  Math.max(Number(process.env.REINS_OFFICE_REVISION_TIMEOUT_SECONDS || '') || 300, 30),
+  900,
+)
+const DEFAULT_REVISION_WORKER_TIMEOUT_MS = Math.min(
+  Math.max(
+    Number(process.env.REINS_OFFICE_REVISION_WORKER_TIMEOUT_MS || '')
+      || Math.max((DEFAULT_REVISION_MODEL_TIMEOUT_SECONDS + 120) * 1000, 600_000),
+    180_000,
+  ),
+  900_000,
+)
 const OFFICE_PROGRESS_PREFIX = 'REINS_OFFICE_PROGRESS '
 const OFFICE_OPERATION_TTL_MS = 60 * 60 * 1000
 const officeOperations = new Map<string, OfficeOperationDto>()
+const officeOperationControllers = new Map<string, AbortController>()
 
 function serviceError(message: string, code: string): Error & { code: string } {
   return Object.assign(new Error(message), { code })
@@ -252,7 +265,7 @@ function parseJsonOutput(stdout: string): Record<string, unknown> {
   throw serviceError('Office worker returned invalid JSON.', 'worker_error')
 }
 
-function normalizeWorkerProgress(value: unknown): WorkerProgress | null {
+function normalizeWorkerProgress(value: unknown): OfficeWorkerProgress | null {
   if (!value || typeof value !== 'object') return null
   const input = value as Record<string, unknown>
   const stage = String(input.stage || '').trim()
@@ -268,7 +281,7 @@ function normalizeWorkerProgress(value: unknown): WorkerProgress | null {
   }
 }
 
-function parseProgressLine(line: string): WorkerProgress | null {
+function parseProgressLine(line: string): OfficeWorkerProgress | null {
   const text = String(line || '').trim()
   if (!text.startsWith(OFFICE_PROGRESS_PREFIX)) return null
   try {
@@ -278,18 +291,35 @@ function parseProgressLine(line: string): WorkerProgress | null {
   }
 }
 
+function terminateOfficeWorker(child: ChildProcess, signal: NodeJS.Signals) {
+  if (process.platform !== 'win32' && child.pid) {
+    try {
+      process.kill(-child.pid, signal)
+      return
+    } catch {}
+  }
+  try {
+    child.kill(signal)
+  } catch {}
+}
+
 async function runReinsOfficeJson(
   args: string[],
   {
     timeoutMs = DEFAULT_TIMEOUT_MS,
     allowNonZero = false,
     onProgress,
+    signal,
   }: {
     timeoutMs?: number
     allowNonZero?: boolean
-    onProgress?: (progress: WorkerProgress) => void
+    onProgress?: (progress: OfficeWorkerProgress) => void
+    signal?: AbortSignal
   } = {},
 ): Promise<Record<string, unknown>> {
+  if (signal?.aborted) {
+    throw serviceError('Office processing cancelled by user.', 'worker_cancelled')
+  }
   const reinsHome = resolveReinsHome()
   const invocation = resolveReinsInvocation()
   const child = spawn(invocation.command, [...invocation.argsPrefix, ...args], {
@@ -302,6 +332,7 @@ async function runReinsOfficeJson(
         ? { PYTHONPATH: [invocation.pythonPath, process.env.PYTHONPATH].filter(Boolean).join(delimiter) }
         : {}),
     },
+    detached: process.platform !== 'win32',
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -331,20 +362,34 @@ async function runReinsOfficeJson(
 
   let forceKillTimer: NodeJS.Timeout | undefined
   let timeoutTimer: NodeJS.Timeout | undefined
-  let timedOut = false
+  let terminatedEarly = false
+  const terminate = () => {
+    if (terminatedEarly) return
+    terminatedEarly = true
+    terminateOfficeWorker(child, 'SIGTERM')
+    forceKillTimer = setTimeout(() => terminateOfficeWorker(child, 'SIGKILL'), 2_000)
+    forceKillTimer.unref()
+  }
   const timeoutPromise = new Promise<never>((_resolve, reject) => {
     timeoutTimer = setTimeout(() => {
-      timedOut = true
-      child.kill('SIGTERM')
-      forceKillTimer = setTimeout(() => child.kill('SIGKILL'), 2_000)
-      forceKillTimer.unref()
+      terminate()
       reject(serviceError(`Office processing timed out after ${Math.ceil(timeoutMs / 1000)} seconds.`, 'worker_timeout'))
     }, timeoutMs)
+  })
+  let abortHandler: (() => void) | undefined
+  const abortPromise = new Promise<never>((_resolve, reject) => {
+    if (!signal) return
+    abortHandler = () => {
+      terminate()
+      reject(serviceError('Office processing cancelled by user.', 'worker_cancelled'))
+    }
+    if (signal.aborted) abortHandler()
+    else signal.addEventListener('abort', abortHandler, { once: true })
   })
   try {
     const closePromise = once(child, 'close') as Promise<[number | null, NodeJS.Signals | null]>
     const errorPromise = once(child, 'error').then(([error]) => { throw error as Error })
-    const [code] = await Promise.race([closePromise, errorPromise, timeoutPromise])
+    const [code] = await Promise.race([closePromise, errorPromise, timeoutPromise, abortPromise])
     if (stderrBuffer) {
       handleStderrLine(stderrBuffer)
       stderrBuffer = ''
@@ -362,7 +407,8 @@ async function runReinsOfficeJson(
     return payload
   } finally {
     if (timeoutTimer) clearTimeout(timeoutTimer)
-    if (!timedOut && forceKillTimer) clearTimeout(forceKillTimer)
+    if (signal && abortHandler) signal.removeEventListener('abort', abortHandler)
+    if (!terminatedEarly && forceKillTimer) clearTimeout(forceKillTimer)
   }
 }
 
@@ -413,7 +459,8 @@ function normalizeSkill(value: unknown): OfficeSkillDto {
 
 export async function createOfficeDocument(
   input: OfficeCreateRequest,
-  onProgress?: (progress: WorkerProgress) => void,
+  onProgress?: (progress: OfficeWorkerProgress) => void,
+  signal?: AbortSignal,
 ): Promise<OfficeDocumentDto> {
   const args = [
     'office',
@@ -438,7 +485,7 @@ export async function createOfficeDocument(
     )
   }
 
-  const payload = await runReinsOfficeJson(args, { onProgress })
+  const payload = await runReinsOfficeJson(args, { onProgress, signal })
   if (payload.ok === false) {
     throw serviceError(String(payload.error || 'Office creation failed.'), 'worker_error')
   }
@@ -448,7 +495,8 @@ export async function createOfficeDocument(
 export async function reviseOfficeDocument(
   documentId: string,
   input: OfficeRevisionRequest,
-  onProgress?: (progress: WorkerProgress) => void,
+  onProgress?: (progress: OfficeWorkerProgress) => void,
+  signal?: AbortSignal,
 ): Promise<OfficeDocumentDto> {
   const id = requiredText(documentId, 'Office document id', 200)
   const payload = await runReinsOfficeJson([
@@ -458,9 +506,11 @@ export async function reviseOfficeDocument(
     id,
     '--instruction',
     input.instruction,
+    '--timeout',
+    String(DEFAULT_REVISION_MODEL_TIMEOUT_SECONDS),
     '--json',
     ...(onProgress ? ['--progress'] : []),
-  ], { timeoutMs: Math.max(DEFAULT_TIMEOUT_MS, 300_000), onProgress })
+  ], { timeoutMs: DEFAULT_REVISION_WORKER_TIMEOUT_MS, onProgress, signal })
   if (payload.ok === false) {
     throw serviceError(String(payload.error || 'Office revision failed.'), 'worker_error')
   }
@@ -530,7 +580,10 @@ function pruneOfficeOperations() {
   const cutoff = Date.now() - OFFICE_OPERATION_TTL_MS
   for (const [id, operation] of officeOperations) {
     const updatedAt = new Date(operation.updated_at).getTime()
-    if (Number.isFinite(updatedAt) && updatedAt < cutoff) officeOperations.delete(id)
+    if (Number.isFinite(updatedAt) && updatedAt < cutoff) {
+      officeOperations.delete(id)
+      officeOperationControllers.delete(id)
+    }
   }
 }
 
@@ -543,7 +596,7 @@ function operationSnapshot(operation: OfficeOperationDto): OfficeOperationDto {
   }
 }
 
-function appendOperationProgress(operation: OfficeOperationDto, progress: WorkerProgress) {
+function appendOperationProgress(operation: OfficeOperationDto, progress: OfficeWorkerProgress) {
   const event: OfficeProgressEventDto = { ...progress, at: nowIso() }
   const existingIndex = operation.events.findIndex(item => item.stage === event.stage)
   if (existingIndex >= 0) operation.events[existingIndex] = event
@@ -667,6 +720,9 @@ function createOperation(kind: OfficeOperationKind): OfficeOperationDto {
 }
 
 function failOperation(operation: OfficeOperationDto, error: unknown) {
+  if (operation.status === 'cancelled' || String((error as { code?: string })?.code || '') === 'worker_cancelled') {
+    return
+  }
   const lastStage = operation.events.at(-1)?.stage || ''
   operation.status = 'failed'
   operation.error = friendlyOfficeOperationError(error, operation.kind, lastStage)
@@ -680,17 +736,22 @@ function failOperation(operation: OfficeOperationDto, error: unknown) {
 
 export function startOfficeCreateOperation(input: OfficeCreateRequest): OfficeOperationDto {
   const operation = createOperation('create')
+  const controller = new AbortController()
+  officeOperationControllers.set(operation.id, controller)
   queueMicrotask(() => {
+    if (operation.status === 'cancelled') return
     operation.status = 'running'
     operation.updated_at = nowIso()
-    void createOfficeDocument(input, progress => appendOperationProgress(operation, progress))
+    void createOfficeDocument(input, progress => appendOperationProgress(operation, progress), controller.signal)
       .then(document => {
+        if (operation.status === 'cancelled') return
         operation.document = document
         operation.status = 'completed'
         operation.percent = 100
         operation.updated_at = nowIso()
       })
       .catch(error => failOperation(operation, error))
+      .finally(() => officeOperationControllers.delete(operation.id))
   })
   return operationSnapshot(operation)
 }
@@ -700,17 +761,27 @@ export function startOfficeRevisionOperation(
   input: OfficeRevisionRequest,
 ): OfficeOperationDto {
   const operation = createOperation('revise')
+  const controller = new AbortController()
+  officeOperationControllers.set(operation.id, controller)
   queueMicrotask(() => {
+    if (operation.status === 'cancelled') return
     operation.status = 'running'
     operation.updated_at = nowIso()
-    void reviseOfficeDocument(documentId, input, progress => appendOperationProgress(operation, progress))
+    void reviseOfficeDocument(
+      documentId,
+      input,
+      progress => appendOperationProgress(operation, progress),
+      controller.signal,
+    )
       .then(document => {
+        if (operation.status === 'cancelled') return
         operation.document = document
         operation.status = 'completed'
         operation.percent = 100
         operation.updated_at = nowIso()
       })
       .catch(error => failOperation(operation, error))
+      .finally(() => officeOperationControllers.delete(operation.id))
   })
   return operationSnapshot(operation)
 }
@@ -720,5 +791,26 @@ export function getOfficeOperation(operationId: string): OfficeOperationDto {
   const id = requiredText(operationId, 'Office operation id', 200)
   const operation = officeOperations.get(id)
   if (!operation) throw serviceError('Office operation was not found or has expired.', 'not_found')
+  return operationSnapshot(operation)
+}
+
+export function cancelOfficeOperation(operationId: string): OfficeOperationDto {
+  pruneOfficeOperations()
+  const id = requiredText(operationId, 'Office operation id', 200)
+  const operation = officeOperations.get(id)
+  if (!operation) throw serviceError('Office operation was not found or has expired.', 'not_found')
+  if (operation.status !== 'queued' && operation.status !== 'running') {
+    return operationSnapshot(operation)
+  }
+
+  operation.status = 'cancelled'
+  appendOperationProgress(operation, {
+    stage: 'cancelled',
+    percent: operation.percent,
+    message_zh: '任务已由用户取消',
+    message_en: 'Task cancelled by the user',
+  })
+  officeOperationControllers.get(id)?.abort()
+  officeOperationControllers.delete(id)
   return operationSnapshot(operation)
 }
