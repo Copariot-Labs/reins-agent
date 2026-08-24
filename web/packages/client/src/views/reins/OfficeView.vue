@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -11,14 +11,17 @@ import {
   useMessage,
 } from 'naive-ui'
 import {
-  createOfficeDocument,
   fetchOfficeDocuments,
+  fetchOfficeOperation,
+  fetchOfficePreviewHtml,
   fetchOfficeSkills,
   fetchOfficeStatus,
-  getOfficePreviewUrl,
-  reviseOfficeDocument,
+  startOfficeCreateOperation,
+  startOfficeRevisionOperation,
   type OfficeDocument,
   type OfficeFormat,
+  type OfficeOperation,
+  type OfficeProgressEvent,
   type OfficePresentationAudience,
   type OfficePresentationDetail,
   type OfficePresentationStyle,
@@ -51,10 +54,16 @@ const working = ref(false)
 const loading = ref(false)
 const previewLoading = ref(false)
 const previewVersion = ref(0)
+const previewHtml = ref('')
+const previewError = ref('')
+const activeOperation = ref<OfficeOperation | null>(null)
+const operationTransportError = ref('')
 const status = ref<OfficeStatus | null>(null)
 const documents = ref<OfficeDocument[]>([])
 const selectedId = ref<string | null>(null)
 const creatingNew = ref(true)
+let operationRunId = 0
+let previewRunId = 0
 
 const isChinese = computed(() => locale.value.toLowerCase().startsWith('zh'))
 const copy = computed(() => isChinese.value
@@ -100,6 +109,17 @@ const copy = computed(() => isChinese.value
       presentationDetail: '内容密度',
       slideCount: '页数',
       selectedWorkflow: '已选技能',
+      activity: '处理过程',
+      queued: '等待开始',
+      running: '处理中',
+      completed: '已完成',
+      failed: '处理失败',
+      waitingForProgress: '正在连接 Office 处理任务',
+      suggestion: '建议',
+      technicalDetail: '错误详情',
+      previewFailed: '预览生成失败',
+      retry: '重试',
+      resultMissing: '处理已结束，但没有返回文件。',
     }
   : {
       title: 'Office',
@@ -143,6 +163,17 @@ const copy = computed(() => isChinese.value
       presentationDetail: 'Content density',
       slideCount: 'Slides',
       selectedWorkflow: 'Selected skill',
+      activity: 'Activity',
+      queued: 'Waiting',
+      running: 'In progress',
+      completed: 'Completed',
+      failed: 'Failed',
+      waitingForProgress: 'Connecting to the Office task',
+      suggestion: 'Suggestion',
+      technicalDetail: 'Error detail',
+      previewFailed: 'Preview failed',
+      retry: 'Retry',
+      resultMissing: 'The operation finished without returning a document.',
     })
 
 const formatOptions = computed(() => [
@@ -190,15 +221,27 @@ const selectedDocument = computed(() =>
 const isCreateMode = computed(() => creatingNew.value || !selectedDocument.value)
 const servicesReady = computed(() => Boolean(status.value?.available && status.value?.reins_available))
 const currentFormat = computed(() => formatOptions.value.find(option => option.value === format.value)!)
-const previewUrl = computed(() => {
-  const document = selectedDocument.value
-  if (!document || isCreateMode.value) return ''
-  return getOfficePreviewUrl(document.id, `${document.updated_at}-${previewVersion.value}`)
+const operationStatusText = computed(() => {
+  const operationStatus = activeOperation.value?.status
+  if (!operationStatus) return ''
+  return copy.value[operationStatus]
 })
 const lastRevision = computed(() => {
   const value = selectedDocument.value?.metadata?.last_revision
   return value && typeof value === 'object' ? value as Record<string, unknown> : null
 })
+
+function localizedProgress(event: OfficeProgressEvent): string {
+  return isChinese.value ? event.message_zh : event.message_en
+}
+
+function localizedOperationError(field: 'title' | 'message' | 'suggestion'): string {
+  const error = activeOperation.value?.error
+  if (!error) return ''
+  return isChinese.value
+    ? error[`${field}_zh`]
+    : error[`${field}_en`]
+}
 
 function localizedSkillValue(skill: OfficeSkill | null, field: 'label' | 'description' | 'placeholder'): string {
   if (!skill) return ''
@@ -226,7 +269,15 @@ function applySkillDefaults(skill: OfficeSkill | null) {
   slideCount.value = Number.isInteger(count) ? Math.min(Math.max(count, 5), 15) : 8
 }
 
+function resetOperationActivity() {
+  operationRunId += 1
+  activeOperation.value = null
+  operationTransportError.value = ''
+}
+
 function selectSkill(skill: OfficeSkill) {
+  if (working.value) return
+  resetOperationActivity()
   selectedSkillId.value = skill.id
   selectedId.value = null
   creatingNew.value = true
@@ -236,18 +287,21 @@ function selectSkill(skill: OfficeSkill) {
 }
 
 async function selectFormat(nextFormat: OfficeFormat) {
-  if (nextFormat === format.value) return
+  if (working.value || nextFormat === format.value) return
   await router.push({ name: 'hermes.office', query: { ...route.query, type: nextFormat } })
 }
 
-function selectDocument(document: OfficeDocument) {
+function selectDocument(document: OfficeDocument, preserveActivity = false) {
+  if (working.value && !preserveActivity) return
+  if (!preserveActivity) resetOperationActivity()
   selectedId.value = document.id
   creatingNew.value = false
   prompt.value = ''
-  previewLoading.value = true
 }
 
 function startNewDocument() {
+  if (working.value) return
+  resetOperationActivity()
   selectedId.value = null
   creatingNew.value = true
   title.value = ''
@@ -264,8 +318,78 @@ function upsertDocument(document: OfficeDocument) {
 
 function refreshPreview() {
   if (!selectedDocument.value) return
-  previewLoading.value = true
   previewVersion.value += 1
+}
+
+function readableError(error: unknown, fallback: string): string {
+  const raw = String((error as { message?: unknown })?.message || '').trim()
+  const jsonStart = raw.indexOf('{')
+  if (jsonStart >= 0) {
+    try {
+      const payload = JSON.parse(raw.slice(jsonStart)) as { error?: unknown, message?: unknown }
+      const detail = String(payload.error || payload.message || '').trim()
+      if (detail) return detail
+    } catch {}
+  }
+  return raw || fallback
+}
+
+function pause(milliseconds: number): Promise<void> {
+  return new Promise(resolve => window.setTimeout(resolve, milliseconds))
+}
+
+async function waitForOfficeOperation(initial: OfficeOperation): Promise<OfficeDocument | null> {
+  const runId = ++operationRunId
+  activeOperation.value = initial
+  let operation = initial
+  let pollFailures = 0
+
+  while (operation.status === 'queued' || operation.status === 'running') {
+    await pause(650)
+    if (runId !== operationRunId) return null
+    try {
+      const response = await fetchOfficeOperation(operation.id)
+      operation = response.operation
+      activeOperation.value = operation
+      pollFailures = 0
+    } catch (error) {
+      pollFailures += 1
+      if (pollFailures < 3) continue
+      throw error
+    }
+  }
+
+  if (operation.status === 'failed') {
+    message.error(localizedOperationError('title') || (operation.kind === 'create'
+      ? copy.value.createFailed
+      : copy.value.reviseFailed))
+    return null
+  }
+  if (!operation.document) throw new Error(copy.value.resultMissing)
+  return operation.document
+}
+
+async function loadPreview() {
+  const document = selectedDocument.value
+  const runId = ++previewRunId
+  previewHtml.value = ''
+  previewError.value = ''
+  if (!document || isCreateMode.value) {
+    previewLoading.value = false
+    return
+  }
+
+  previewLoading.value = true
+  try {
+    const html = await fetchOfficePreviewHtml(document.id)
+    if (runId === previewRunId) previewHtml.value = html
+  } catch (error) {
+    if (runId === previewRunId) {
+      previewError.value = readableError(error, copy.value.previewFailed)
+    }
+  } finally {
+    if (runId === previewRunId) previewLoading.value = false
+  }
 }
 
 function formatDate(value: string): string {
@@ -310,9 +434,12 @@ async function submitInstruction() {
   }
 
   working.value = true
+  activeOperation.value = null
+  operationTransportError.value = ''
+  const createMode = isCreateMode.value
   try {
-    if (isCreateMode.value && selectedSkill.value) {
-      const response = await createOfficeDocument({
+    if (createMode && selectedSkill.value) {
+      const response = await startOfficeCreateOperation({
         format: format.value,
         skill_id: selectedSkill.value.id,
         prompt: cleanPrompt,
@@ -329,20 +456,30 @@ async function submitInstruction() {
             }
           : {}),
       })
-      upsertDocument(response.document)
-      selectDocument(response.document)
+      const document = await waitForOfficeOperation(response.operation)
+      if (!document) return
+      upsertDocument(document)
+      selectDocument(document, true)
       title.value = ''
       message.success(copy.value.created)
     } else if (selectedDocument.value) {
-      const response = await reviseOfficeDocument(selectedDocument.value.id, cleanPrompt)
-      upsertDocument(response.document)
-      selectedId.value = response.document.id
+      const response = await startOfficeRevisionOperation(selectedDocument.value.id, cleanPrompt)
+      const document = await waitForOfficeOperation(response.operation)
+      if (!document) return
+      upsertDocument(document)
+      selectedId.value = document.id
       prompt.value = ''
       refreshPreview()
       message.success(copy.value.revised)
     }
-  } catch (err: any) {
-    message.error(err?.message || (isCreateMode.value ? copy.value.createFailed : copy.value.reviseFailed))
+  } catch (error) {
+    const fallback = createMode ? copy.value.createFailed : copy.value.reviseFailed
+    operationTransportError.value = readableError(error, fallback)
+    const currentOperation = activeOperation.value as OfficeOperation | null
+    if (currentOperation) {
+      activeOperation.value = Object.assign({}, currentOperation, { status: 'failed' as const })
+    }
+    message.error(operationTransportError.value)
   } finally {
     working.value = false
   }
@@ -366,6 +503,7 @@ watch(() => route.query.type, value => {
   creatingNew.value = true
   title.value = ''
   prompt.value = ''
+  resetOperationActivity()
 }, { immediate: true })
 
 watch([format, skills], () => {
@@ -375,7 +513,16 @@ watch([format, skills], () => {
   applySkillDefaults(first || null)
 })
 
+watch(
+  [() => selectedDocument.value?.id, previewVersion],
+  loadPreview,
+)
+
 onMounted(loadOffice)
+onBeforeUnmount(() => {
+  operationRunId += 1
+  previewRunId += 1
+})
 </script>
 
 <template>
@@ -495,6 +642,47 @@ onMounted(loadOffice)
               />
             </label>
 
+            <section v-if="activeOperation || operationTransportError" class="operation-activity">
+              <header class="activity-header">
+                <strong>{{ copy.activity }}</strong>
+                <span :class="['activity-status', activeOperation?.status || 'failed']">
+                  {{ operationTransportError && !activeOperation ? copy.failed : operationStatusText }}
+                </span>
+              </header>
+              <div v-if="activeOperation" class="activity-progress" role="progressbar" :aria-valuenow="activeOperation.percent" aria-valuemin="0" aria-valuemax="100">
+                <span :style="{ width: `${activeOperation.percent}%` }" />
+              </div>
+              <ol v-if="activeOperation?.events.length" class="activity-list">
+                <li
+                  v-for="(event, index) in activeOperation.events"
+                  :key="event.stage"
+                  :class="{
+                    done: activeOperation.status === 'completed' || index < activeOperation.events.length - 1,
+                    current: activeOperation.status === 'running' && index === activeOperation.events.length - 1,
+                    failed: event.stage === 'failed',
+                  }"
+                >
+                  <span class="activity-dot" />
+                  <span>{{ localizedProgress(event) }}</span>
+                  <small>{{ event.percent }}%</small>
+                </li>
+              </ol>
+              <p v-else-if="activeOperation" class="activity-waiting">{{ copy.waitingForProgress }}</p>
+              <div v-if="activeOperation?.error" class="operation-error">
+                <strong>{{ localizedOperationError('title') }}</strong>
+                <p>{{ localizedOperationError('message') }}</p>
+                <p><b>{{ copy.suggestion }}:</b> {{ localizedOperationError('suggestion') }}</p>
+                <details v-if="activeOperation.error.technical_detail">
+                  <summary>{{ copy.technicalDetail }}</summary>
+                  <pre>{{ activeOperation.error.technical_detail }}</pre>
+                </details>
+              </div>
+              <div v-else-if="operationTransportError" class="operation-error">
+                <strong>{{ copy.failed }}</strong>
+                <p>{{ operationTransportError }}</p>
+              </div>
+            </section>
+
             <div class="form-actions">
               <NButton
                 type="primary"
@@ -562,14 +750,18 @@ onMounted(loadOffice)
               <NSpin size="medium" />
               <span>{{ copy.rendering }}</span>
             </div>
+            <div v-else-if="previewError" class="preview-error">
+              <strong>{{ copy.previewFailed }}</strong>
+              <p>{{ previewError }}</p>
+              <NButton size="small" secondary @click="refreshPreview">{{ copy.retry }}</NButton>
+            </div>
             <iframe
-              v-if="previewUrl"
-              :key="previewUrl"
-              :src="previewUrl"
+              v-else-if="previewHtml"
+              :key="`${selectedDocument?.id}-${previewVersion}`"
+              :srcdoc="previewHtml"
               :title="selectedDocument?.file_name || copy.preview"
               class="office-preview-frame"
               sandbox="allow-scripts"
-              @load="previewLoading = false"
             />
           </div>
         </div>
@@ -593,6 +785,46 @@ onMounted(loadOffice)
                 show-count
               />
             </label>
+            <section v-if="activeOperation || operationTransportError" class="operation-activity">
+              <header class="activity-header">
+                <strong>{{ copy.activity }}</strong>
+                <span :class="['activity-status', activeOperation?.status || 'failed']">
+                  {{ operationTransportError && !activeOperation ? copy.failed : operationStatusText }}
+                </span>
+              </header>
+              <div v-if="activeOperation" class="activity-progress" role="progressbar" :aria-valuenow="activeOperation.percent" aria-valuemin="0" aria-valuemax="100">
+                <span :style="{ width: `${activeOperation.percent}%` }" />
+              </div>
+              <ol v-if="activeOperation?.events.length" class="activity-list">
+                <li
+                  v-for="(event, index) in activeOperation.events"
+                  :key="event.stage"
+                  :class="{
+                    done: activeOperation.status === 'completed' || index < activeOperation.events.length - 1,
+                    current: activeOperation.status === 'running' && index === activeOperation.events.length - 1,
+                    failed: event.stage === 'failed',
+                  }"
+                >
+                  <span class="activity-dot" />
+                  <span>{{ localizedProgress(event) }}</span>
+                  <small>{{ event.percent }}%</small>
+                </li>
+              </ol>
+              <p v-else-if="activeOperation" class="activity-waiting">{{ copy.waitingForProgress }}</p>
+              <div v-if="activeOperation?.error" class="operation-error">
+                <strong>{{ localizedOperationError('title') }}</strong>
+                <p>{{ localizedOperationError('message') }}</p>
+                <p><b>{{ copy.suggestion }}:</b> {{ localizedOperationError('suggestion') }}</p>
+                <details v-if="activeOperation.error.technical_detail">
+                  <summary>{{ copy.technicalDetail }}</summary>
+                  <pre>{{ activeOperation.error.technical_detail }}</pre>
+                </details>
+              </div>
+              <div v-else-if="operationTransportError" class="operation-error">
+                <strong>{{ copy.failed }}</strong>
+                <p>{{ operationTransportError }}</p>
+              </div>
+            </section>
             <section v-if="lastRevision" class="last-change">
               <span>{{ copy.lastChange }}</span>
               <p>{{ lastRevision.summary }}</p>
@@ -996,6 +1228,148 @@ onMounted(loadOffice)
   padding-top: 4px;
 }
 
+.operation-activity {
+  min-width: 0;
+  padding: 14px 0;
+  border-top: 1px solid $border-color;
+  border-bottom: 1px solid $border-color;
+}
+
+.activity-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.activity-header strong {
+  font-size: 12px;
+}
+
+.activity-status {
+  color: $text-muted;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.activity-status.running { color: #1d4ed8; }
+.activity-status.completed { color: #047857; }
+.activity-status.failed { color: #b91c1c; }
+
+.activity-progress {
+  height: 4px;
+  overflow: hidden;
+  background: $bg-secondary;
+}
+
+.activity-progress > span {
+  height: 100%;
+  display: block;
+  background: #2563eb;
+  transition: width .25s ease;
+}
+
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity-list li {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  padding: 5px 0;
+  color: $text-muted;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.activity-list li::before {
+  content: '';
+  position: absolute;
+  top: 18px;
+  bottom: -6px;
+  left: 4px;
+  width: 1px;
+  background: $border-color;
+}
+
+.activity-list li:last-child::before { display: none; }
+
+.activity-list li.done,
+.activity-list li.current { color: $text-secondary; }
+.activity-list li.failed { color: #b91c1c; }
+
+.activity-dot {
+  width: 9px;
+  height: 9px;
+  display: block;
+  margin-top: 3px;
+  border: 2px solid #94a3b8;
+  border-radius: 50%;
+  background: $bg-card;
+}
+
+.activity-list li.done .activity-dot {
+  border-color: #059669;
+  background: #059669;
+}
+
+.activity-list li.current .activity-dot {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
+}
+
+.activity-list li.failed .activity-dot {
+  border-color: #dc2626;
+  background: #dc2626;
+}
+
+.activity-list small {
+  color: $text-muted;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-waiting {
+  margin: 12px 0 0;
+  color: $text-muted;
+  font-size: 11px;
+}
+
+.operation-error {
+  margin-top: 12px;
+  padding: 11px 12px;
+  border-left: 3px solid #dc2626;
+  background: rgba(254, 226, 226, .42);
+  color: #991b1b;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.operation-error p { margin: 4px 0 0; }
+.operation-error details { margin-top: 7px; }
+.operation-error summary { cursor: pointer; font-weight: 600; }
+.operation-error pre {
+  max-height: 130px;
+  overflow: auto;
+  margin: 7px 0 0;
+  padding: 8px;
+  color: #7f1d1d;
+  background: rgba(255, 255, 255, .58);
+  font: 10px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .document-page {
   min-width: 0;
   min-height: 0;
@@ -1049,6 +1423,30 @@ onMounted(loadOffice)
   color: #6b7280;
   background: #f3f4f6;
   font-size: 12px;
+}
+
+.preview-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 9px;
+  padding: 28px;
+  color: #991b1b;
+  background: #f8fafc;
+  text-align: center;
+}
+
+.preview-error strong { font-size: 13px; }
+.preview-error p {
+  max-width: 520px;
+  margin: 0;
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.55;
+  word-break: break-word;
 }
 
 .revision-panel {

@@ -425,12 +425,16 @@ def test_renderer_emits_designed_officecli_xlsx_commands(tmp_path):
 def test_create_office_document_registers_separate_office_record(tmp_path, monkeypatch):
     monkeypatch.setenv("REINS_HOME", str(tmp_path))
     client = FakeOfficeCliClient()
+    progress = []
 
     record = create_office_document(
         prompt="write a resident notice",
         office_format="docx",
         use_reins=False,
         client=client,
+        progress=lambda stage, percent, message_zh, message_en: progress.append(
+            (stage, percent, message_zh, message_en)
+        ),
     )
 
     assert record.kind == "docx"
@@ -440,6 +444,20 @@ def test_create_office_document_registers_separate_office_record(tmp_path, monke
 
     records = list_office_documents(limit=10)
     assert [item.id for item in records] == [record.id]
+    assert [event[0] for event in progress] == [
+        "accepted",
+        "skill_ready",
+        "content_generation",
+        "content_ready",
+        "officecli_prepare",
+        "officecli_render",
+        "validating",
+        "file_ready",
+        "saving",
+        "completed",
+    ]
+    assert progress[-1][1] == 100
+    assert progress[-1][2] == "文件生成完成"
 
 
 def test_revision_plan_rejects_non_officecli_mutations():

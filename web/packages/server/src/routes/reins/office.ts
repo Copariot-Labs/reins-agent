@@ -2,6 +2,7 @@ import Router from '@koa/router'
 import { readFile } from 'fs/promises'
 import {
   createOfficeDocument,
+  getOfficeOperation,
   getOfficePreviewPath,
   getOfficeStatus,
   listOfficeDocuments,
@@ -9,6 +10,8 @@ import {
   normalizeOfficeCreateRequest,
   normalizeOfficeRevisionRequest,
   reviseOfficeDocument,
+  startOfficeCreateOperation,
+  startOfficeRevisionOperation,
 } from '../../services/reins/office'
 
 export const officeRoutes = new Router()
@@ -53,6 +56,24 @@ officeRoutes.get('/api/reins/office/documents', async ctx => {
   }
 })
 
+officeRoutes.post('/api/reins/office/operations', async ctx => {
+  try {
+    const input = normalizeOfficeCreateRequest(ctx.request.body)
+    ctx.status = 202
+    ctx.body = { operation: startOfficeCreateOperation(input) }
+  } catch (err) {
+    handleError(ctx, err)
+  }
+})
+
+officeRoutes.get('/api/reins/office/operations/:id', ctx => {
+  try {
+    ctx.body = { operation: getOfficeOperation(ctx.params.id) }
+  } catch (err) {
+    handleError(ctx, err)
+  }
+})
+
 officeRoutes.post('/api/reins/office/documents', async ctx => {
   try {
     const input = normalizeOfficeCreateRequest(ctx.request.body)
@@ -67,6 +88,16 @@ officeRoutes.post('/api/reins/office/documents/:id/revisions', async ctx => {
   try {
     const input = normalizeOfficeRevisionRequest(ctx.request.body)
     ctx.body = { document: await reviseOfficeDocument(ctx.params.id, input) }
+  } catch (err) {
+    handleError(ctx, err)
+  }
+})
+
+officeRoutes.post('/api/reins/office/documents/:id/revision-operations', async ctx => {
+  try {
+    const input = normalizeOfficeRevisionRequest(ctx.request.body)
+    ctx.status = 202
+    ctx.body = { operation: startOfficeRevisionOperation(ctx.params.id, input) }
   } catch (err) {
     handleError(ctx, err)
   }

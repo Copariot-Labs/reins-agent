@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from typing import Sequence
 
 from reins.features.office.content_writer import generate_office_content
@@ -15,6 +16,29 @@ from reins.features.office.service import (
 )
 from reins.features.office.schemas import normalize_office_format
 from reins.features.office.workflows import list_office_workflows
+
+
+_PROGRESS_PREFIX = "REINS_OFFICE_PROGRESS "
+
+
+def _progress_reporter(enabled: bool):
+    if not enabled:
+        return None
+
+    def report(stage: str, percent: int, message_zh: str, message_en: str) -> None:
+        payload = {
+            "stage": stage,
+            "percent": percent,
+            "message_zh": message_zh,
+            "message_en": message_en,
+        }
+        print(
+            _PROGRESS_PREFIX + json.dumps(payload, ensure_ascii=False),
+            file=sys.stderr,
+            flush=True,
+        )
+
+    return report
 
 
 def _add_presentation_arguments(parser: argparse.ArgumentParser) -> None:
@@ -63,6 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--no-hermes", action="store_true", dest="no_reins", help=argparse.SUPPRESS)
     create.add_argument("--print-content", action="store_true")
     create.add_argument("--json", action="store_true", dest="json_output")
+    create.add_argument("--progress", action="store_true", help=argparse.SUPPRESS)
     _add_presentation_arguments(create)
 
     list_cmd = subparsers.add_parser("list", help="List created Office documents.")
@@ -94,6 +119,7 @@ def build_parser() -> argparse.ArgumentParser:
     revise.add_argument("--instruction", required=True)
     revise.add_argument("--timeout", type=int, default=180)
     revise.add_argument("--json", action="store_true", dest="json_output")
+    revise.add_argument("--progress", action="store_true", help=argparse.SUPPRESS)
 
     preview = subparsers.add_parser("preview", help="Render an Office file preview with Reins.")
     preview.add_argument("--id", required=True, dest="document_id")
@@ -213,6 +239,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 document_id=args.document_id,
                 instruction=args.instruction,
                 timeout=args.timeout,
+                progress=_progress_reporter(args.progress),
             )
         except Exception as exc:
             if args.json_output:
@@ -254,6 +281,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 presentation_options=_presentation_options(args),
                 skill_id=args.skill_id or None,
                 content=content,
+                progress=_progress_reporter(args.progress),
             )
         except (OfficeServiceError, Exception) as exc:
             if args.json_output:

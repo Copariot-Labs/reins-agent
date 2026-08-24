@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import shutil
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
 from reins.features.office.content_writer import generate_office_content, reins_status
@@ -37,6 +37,24 @@ from reins.features.office.workflows import get_office_workflow
 
 class OfficeServiceError(RuntimeError):
     pass
+
+
+OfficeProgressReporter = Callable[[str, int, str, str], None]
+
+
+def _report_progress(
+    progress: OfficeProgressReporter | None,
+    stage: str,
+    percent: int,
+    message_zh: str,
+    message_en: str,
+) -> None:
+    if progress is None:
+        return
+    try:
+        progress(stage, percent, message_zh, message_en)
+    except Exception:
+        pass
 
 
 def _append_record(record: OfficeDocumentRecord) -> OfficeDocumentRecord:
@@ -96,7 +114,9 @@ def create_office_document(
     skill_id: str | None = None,
     content: dict[str, Any] | None = None,
     client: OfficeCliClient | None = None,
+    progress: OfficeProgressReporter | None = None,
 ) -> OfficeDocumentRecord:
+    _report_progress(progress, "accepted", 4, "已接收文件生成请求", "Document request received")
     cleaned_prompt = str(prompt or "").strip()
     if not cleaned_prompt and content is None:
         raise OfficeServiceError("Office prompt is required.")
@@ -107,7 +127,16 @@ def create_office_document(
         if skill_id
         else None
     )
+    _report_progress(
+        progress, "skill_ready", 10,
+        "已读取文档技能和生成要求", "Document skill and requirements loaded",
+    )
     normalized_presentation_options = normalize_presentation_options(presentation_options)
+    if content is None:
+        _report_progress(
+            progress, "content_generation", 18,
+            "Reins 正在整理内容、结构和设计方案", "Reins is planning content, structure, and design",
+        )
     content_payload = content or generate_office_content(
         prompt=cleaned_prompt,
         office_format=normalized,
@@ -117,6 +146,10 @@ def create_office_document(
         use_reins=use_reins,
         presentation_options=normalized_presentation_options,
         skill_id=skill_id,
+    )
+    _report_progress(
+        progress, "content_ready", 49,
+        "内容与版式方案已完成", "Content and layout plan completed",
     )
 
     document_title = normalize_title(content_payload.get("title") or title)
@@ -128,9 +161,14 @@ def create_office_document(
         content=content_payload,
         output_path=output_path,
         client=client,
+        progress=progress,
     )
 
-    return _append_record(
+    _report_progress(
+        progress, "saving", 98,
+        "正在保存文件记录", "Saving the document record",
+    )
+    record = _append_record(
         OfficeDocumentRecord.create(
             title=document_title,
             kind=normalized,
@@ -151,6 +189,8 @@ def create_office_document(
             },
         )
     )
+    _report_progress(progress, "completed", 100, "文件生成完成", "Document created")
+    return record
 
 
 def office_status() -> dict[str, object]:
@@ -197,9 +237,14 @@ def _revise_structured_presentation(
     timeout: int,
     client: OfficeCliClient,
     planner: OfficePlanner | None,
+    progress: OfficeProgressReporter | None,
 ) -> OfficeDocumentRecord:
     temporary = source.with_name(f".{source.stem}-revision-{uuid4().hex}.pptx")
     try:
+        _report_progress(
+            progress, "revision_planning", 24,
+            "Reins 正在分析修改要求并重新设计演示文稿", "Reins is analyzing the revision and redesigning the presentation",
+        )
         revision_plan = revise_presentation_content(
             record=record,
             instruction=instruction,
@@ -212,6 +257,7 @@ def _revise_structured_presentation(
             content=content,
             output_path=temporary,
             client=client,
+            progress=progress,
         )
         temporary.replace(source)
     except Exception:
@@ -259,7 +305,10 @@ def _revise_structured_presentation(
         command_count=record.command_count + client.command_count,
         metadata=metadata,
     )
-    return _append_record(updated)
+    _report_progress(progress, "saving", 98, "正在保存修改记录", "Saving the revision record")
+    saved = _append_record(updated)
+    _report_progress(progress, "completed", 100, "文件修改完成", "Document revision completed")
+    return saved
 
 
 def revise_office_document(
@@ -269,7 +318,9 @@ def revise_office_document(
     timeout: int = 180,
     client: OfficeCliClient | None = None,
     planner: OfficePlanner | None = None,
+    progress: OfficeProgressReporter | None = None,
 ) -> OfficeDocumentRecord:
+    _report_progress(progress, "accepted", 4, "已接收文件修改请求", "Revision request received")
     clean_instruction = str(instruction or "").strip()
     if not clean_instruction:
         raise OfficeServiceError("Office revision instruction is required.")
@@ -280,6 +331,10 @@ def revise_office_document(
         raise OfficeServiceError(f"Office file no longer exists: {source}")
 
     client = client or OfficeCliClient()
+    _report_progress(
+        progress, "backup", 10,
+        "正在备份原文件，修改将保留在同一文件中", "Backing up the original before in-place revision",
+    )
     backup = office_backups_dir() / f"{record.id}-revision-{record.revision_count + 1}.{record.kind}"
     shutil.copy2(source, backup)
 
@@ -293,8 +348,13 @@ def revise_office_document(
             timeout=timeout,
             client=client,
             planner=planner,
+            progress=progress,
         )
 
+    _report_progress(
+        progress, "inspection", 18,
+        "OfficeCLI 正在读取原文件结构", "OfficeCLI is inspecting the original file structure",
+    )
     inspection = inspect_office_document(record, client=client)
 
     previous_error = ""
@@ -302,6 +362,10 @@ def revise_office_document(
     try:
         for attempt in range(2):
             if attempt:
+                _report_progress(
+                    progress, "retry", 44,
+                    "正在根据验证结果调整修改方案", "Adjusting the revision plan after validation",
+                )
                 shutil.copy2(backup, source)
             prompt = build_revision_prompt(
                 record=record,
@@ -310,8 +374,20 @@ def revise_office_document(
                 previous_error=previous_error,
             )
             try:
+                _report_progress(
+                    progress, "revision_planning", 34,
+                    "Reins 正在制定精确修改方案", "Reins is preparing an exact revision plan",
+                )
                 plan = plan_office_revision(prompt, timeout, planner=planner)
+                _report_progress(
+                    progress, "officecli_apply", 62,
+                    "OfficeCLI 正在修改原文件并验证结果", "OfficeCLI is revising the original file and validating it",
+                )
                 result = apply_revision_plan(record, plan, client=client)
+                _report_progress(
+                    progress, "validating", 92,
+                    "文件修改已通过结构和格式检查", "The revision passed structure and formatting checks",
+                )
                 break
             except Exception as exc:
                 previous_error = f"{type(exc).__name__}: {exc}"
@@ -355,4 +431,7 @@ def revise_office_document(
         command_count=record.command_count + client.command_count,
         metadata=metadata,
     )
-    return _append_record(updated)
+    _report_progress(progress, "saving", 98, "正在保存修改记录", "Saving the revision record")
+    saved = _append_record(updated)
+    _report_progress(progress, "completed", 100, "文件修改完成", "Document revision completed")
+    return saved

@@ -1,4 +1,5 @@
 import { spawn } from 'child_process'
+import { randomUUID } from 'crypto'
 import { once } from 'events'
 import { existsSync } from 'fs'
 import { delimiter, resolve } from 'path'
@@ -57,8 +58,53 @@ export interface OfficeSkillDto {
   defaults: Record<string, unknown>
 }
 
+export type OfficeOperationKind = 'create' | 'revise'
+export type OfficeOperationStatus = 'queued' | 'running' | 'completed' | 'failed'
+
+export interface OfficeProgressEventDto {
+  stage: string
+  percent: number
+  message_zh: string
+  message_en: string
+  at: string
+}
+
+export interface OfficeOperationErrorDto {
+  code: string
+  title_zh: string
+  title_en: string
+  message_zh: string
+  message_en: string
+  suggestion_zh: string
+  suggestion_en: string
+  technical_detail: string
+  retryable: boolean
+}
+
+export interface OfficeOperationDto {
+  id: string
+  kind: OfficeOperationKind
+  status: OfficeOperationStatus
+  percent: number
+  created_at: string
+  updated_at: string
+  events: OfficeProgressEventDto[]
+  document?: OfficeDocumentDto
+  error?: OfficeOperationErrorDto
+}
+
+interface WorkerProgress {
+  stage: string
+  percent: number
+  message_zh: string
+  message_en: string
+}
+
 const OFFICE_FORMATS = new Set<OfficeFormat>(['docx', 'xlsx', 'pptx'])
 const DEFAULT_TIMEOUT_MS = Number(process.env.REINS_OFFICE_WEB_TIMEOUT_MS || '') || 240_000
+const OFFICE_PROGRESS_PREFIX = 'REINS_OFFICE_PROGRESS '
+const OFFICE_OPERATION_TTL_MS = 60 * 60 * 1000
+const officeOperations = new Map<string, OfficeOperationDto>()
 
 function serviceError(message: string, code: string): Error & { code: string } {
   return Object.assign(new Error(message), { code })
@@ -206,12 +252,43 @@ function parseJsonOutput(stdout: string): Record<string, unknown> {
   throw serviceError('Office worker returned invalid JSON.', 'worker_error')
 }
 
+function normalizeWorkerProgress(value: unknown): WorkerProgress | null {
+  if (!value || typeof value !== 'object') return null
+  const input = value as Record<string, unknown>
+  const stage = String(input.stage || '').trim()
+  const messageZh = String(input.message_zh || '').trim()
+  const messageEn = String(input.message_en || '').trim()
+  const parsedPercent = Number(input.percent)
+  if (!stage || (!messageZh && !messageEn)) return null
+  return {
+    stage,
+    percent: Number.isFinite(parsedPercent) ? Math.min(Math.max(Math.round(parsedPercent), 0), 100) : 0,
+    message_zh: messageZh || messageEn,
+    message_en: messageEn || messageZh,
+  }
+}
+
+function parseProgressLine(line: string): WorkerProgress | null {
+  const text = String(line || '').trim()
+  if (!text.startsWith(OFFICE_PROGRESS_PREFIX)) return null
+  try {
+    return normalizeWorkerProgress(JSON.parse(text.slice(OFFICE_PROGRESS_PREFIX.length)))
+  } catch {
+    return null
+  }
+}
+
 async function runReinsOfficeJson(
   args: string[],
   {
     timeoutMs = DEFAULT_TIMEOUT_MS,
     allowNonZero = false,
-  }: { timeoutMs?: number, allowNonZero?: boolean } = {},
+    onProgress,
+  }: {
+    timeoutMs?: number
+    allowNonZero?: boolean
+    onProgress?: (progress: WorkerProgress) => void
+  } = {},
 ): Promise<Record<string, unknown>> {
   const reinsHome = resolveReinsHome()
   const invocation = resolveReinsInvocation()
@@ -231,10 +308,26 @@ async function runReinsOfficeJson(
 
   let stdout = ''
   let stderr = ''
+  let stderrBuffer = ''
   child.stdout.setEncoding('utf8')
   child.stderr.setEncoding('utf8')
   child.stdout.on('data', chunk => { stdout += chunk })
-  child.stderr.on('data', chunk => { stderr += chunk })
+  const handleStderrLine = (line: string) => {
+    const progress = parseProgressLine(line)
+    if (progress) {
+      try {
+        onProgress?.(progress)
+      } catch {}
+      return
+    }
+    if (line.trim()) stderr += `${line}\n`
+  }
+  child.stderr.on('data', chunk => {
+    stderrBuffer += String(chunk)
+    const lines = stderrBuffer.split(/\r?\n/)
+    stderrBuffer = lines.pop() || ''
+    for (const line of lines) handleStderrLine(line)
+  })
 
   let forceKillTimer: NodeJS.Timeout | undefined
   let timeoutTimer: NodeJS.Timeout | undefined
@@ -252,10 +345,19 @@ async function runReinsOfficeJson(
     const closePromise = once(child, 'close') as Promise<[number | null, NodeJS.Signals | null]>
     const errorPromise = once(child, 'error').then(([error]) => { throw error as Error })
     const [code] = await Promise.race([closePromise, errorPromise, timeoutPromise])
+    if (stderrBuffer) {
+      handleStderrLine(stderrBuffer)
+      stderrBuffer = ''
+    }
     const payload = parseJsonOutput(stdout)
     if (!allowNonZero && code !== 0) {
       const message = String(payload.error || stderr.trim() || `Office worker exited ${code}`)
-      throw serviceError(message, 'worker_error')
+      const error = serviceError(message, 'worker_error') as Error & {
+        code: string
+        workerErrorType?: string
+      }
+      error.workerErrorType = String(payload.error_type || '')
+      throw error
     }
     return payload
   } finally {
@@ -309,7 +411,10 @@ function normalizeSkill(value: unknown): OfficeSkillDto {
   }
 }
 
-export async function createOfficeDocument(input: OfficeCreateRequest): Promise<OfficeDocumentDto> {
+export async function createOfficeDocument(
+  input: OfficeCreateRequest,
+  onProgress?: (progress: WorkerProgress) => void,
+): Promise<OfficeDocumentDto> {
   const args = [
     'office',
     'create',
@@ -321,6 +426,7 @@ export async function createOfficeDocument(input: OfficeCreateRequest): Promise<
     input.language,
     '--json',
   ]
+  if (onProgress) args.push('--progress')
   if (input.title) args.push('--title', input.title)
   if (input.skill_id) args.push('--skill', input.skill_id)
   if (input.format === 'pptx' && input.presentation) {
@@ -332,7 +438,7 @@ export async function createOfficeDocument(input: OfficeCreateRequest): Promise<
     )
   }
 
-  const payload = await runReinsOfficeJson(args)
+  const payload = await runReinsOfficeJson(args, { onProgress })
   if (payload.ok === false) {
     throw serviceError(String(payload.error || 'Office creation failed.'), 'worker_error')
   }
@@ -342,6 +448,7 @@ export async function createOfficeDocument(input: OfficeCreateRequest): Promise<
 export async function reviseOfficeDocument(
   documentId: string,
   input: OfficeRevisionRequest,
+  onProgress?: (progress: WorkerProgress) => void,
 ): Promise<OfficeDocumentDto> {
   const id = requiredText(documentId, 'Office document id', 200)
   const payload = await runReinsOfficeJson([
@@ -352,7 +459,8 @@ export async function reviseOfficeDocument(
     '--instruction',
     input.instruction,
     '--json',
-  ], { timeoutMs: Math.max(DEFAULT_TIMEOUT_MS, 300_000) })
+    ...(onProgress ? ['--progress'] : []),
+  ], { timeoutMs: Math.max(DEFAULT_TIMEOUT_MS, 300_000), onProgress })
   if (payload.ok === false) {
     throw serviceError(String(payload.error || 'Office revision failed.'), 'worker_error')
   }
@@ -412,4 +520,205 @@ export async function getOfficeStatus(): Promise<Record<string, unknown>> {
     error: available && reinsAvailable ? null : 'Reins Office support is unavailable.',
     setup_hint: 'Restart Reins or reinstall the desktop app.',
   }
+}
+
+function nowIso(): string {
+  return new Date().toISOString()
+}
+
+function pruneOfficeOperations() {
+  const cutoff = Date.now() - OFFICE_OPERATION_TTL_MS
+  for (const [id, operation] of officeOperations) {
+    const updatedAt = new Date(operation.updated_at).getTime()
+    if (Number.isFinite(updatedAt) && updatedAt < cutoff) officeOperations.delete(id)
+  }
+}
+
+function operationSnapshot(operation: OfficeOperationDto): OfficeOperationDto {
+  return {
+    ...operation,
+    events: operation.events.map(event => ({ ...event })),
+    ...(operation.document ? { document: { ...operation.document } } : {}),
+    ...(operation.error ? { error: { ...operation.error } } : {}),
+  }
+}
+
+function appendOperationProgress(operation: OfficeOperationDto, progress: WorkerProgress) {
+  const event: OfficeProgressEventDto = { ...progress, at: nowIso() }
+  const existingIndex = operation.events.findIndex(item => item.stage === event.stage)
+  if (existingIndex >= 0) operation.events[existingIndex] = event
+  else operation.events.push(event)
+  operation.percent = Math.max(operation.percent, event.percent)
+  operation.updated_at = event.at
+}
+
+function cleanTechnicalDetail(value: unknown): string {
+  const text = String(value || '')
+    .replace(/\u001b\[[0-9;]*m/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return text.slice(0, 1800)
+}
+
+export function friendlyOfficeOperationError(
+  error: unknown,
+  kind: OfficeOperationKind,
+  stage = '',
+): OfficeOperationErrorDto {
+  const input = error as { code?: string, message?: string, workerErrorType?: string }
+  const code = String(input?.code || 'worker_error')
+  const detail = cleanTechnicalDetail(input?.message || error)
+  const normalized = detail.toLowerCase()
+
+  if (code === 'worker_timeout' || normalized.includes('timed out')) {
+    return {
+      code: 'timeout',
+      title_zh: '处理时间过长',
+      title_en: 'Office operation timed out',
+      message_zh: kind === 'create' ? '文件未能在规定时间内完成生成。' : '文件未能在规定时间内完成修改。',
+      message_en: `The document could not finish ${kind === 'create' ? 'generating' : 'revising'} within the time limit.`,
+      suggestion_zh: '请减少一次请求中的内容量，或稍后重试。原文件不会因超时而丢失。',
+      suggestion_en: 'Reduce the amount of content in one request or try again later. The original file is preserved.',
+      technical_detail: detail,
+      retryable: true,
+    }
+  }
+
+  if (normalized.includes('not found') || normalized.includes('no longer exists')) {
+    return {
+      code: 'document_not_found',
+      title_zh: '找不到原文件',
+      title_en: 'Original file not found',
+      message_zh: '要修改的 Office 文件已移动、删除或不再存在。',
+      message_en: 'The Office file being revised was moved, deleted, or no longer exists.',
+      suggestion_zh: '请从最近文件中重新选择有效文件，然后再次提交修改。',
+      suggestion_en: 'Select an available file from Recent files and submit the revision again.',
+      technical_detail: detail,
+      retryable: false,
+    }
+  }
+
+  if (
+    stage.includes('content')
+    || stage.includes('planning')
+    || normalized.includes('reins failed to generate')
+    || normalized.includes('json')
+  ) {
+    return {
+      code: 'content_generation_failed',
+      title_zh: kind === 'create' ? '内容生成失败' : '修改方案生成失败',
+      title_en: kind === 'create' ? 'Content generation failed' : 'Revision planning failed',
+      message_zh: 'Reins 未能生成可供 OfficeCLI 使用的有效内容结构。',
+      message_en: 'Reins did not produce a valid content structure for OfficeCLI.',
+      suggestion_zh: '请补充更明确的主题、数据或修改要求后重试，并确认当前模型连接正常。',
+      suggestion_en: 'Add clearer topic, data, or revision requirements and confirm the model connection before retrying.',
+      technical_detail: detail,
+      retryable: true,
+    }
+  }
+
+  if (
+    stage.includes('officecli')
+    || stage.includes('validat')
+    || stage.includes('layout')
+    || normalized.includes('officecli')
+    || normalized.includes('layout issue')
+  ) {
+    return {
+      code: 'officecli_failed',
+      title_zh: '文件生成或验证失败',
+      title_en: 'File rendering or validation failed',
+      message_zh: '内容已经准备完成，但 OfficeCLI 未能生成通过检查的文件。',
+      message_en: 'The content was prepared, but OfficeCLI could not produce a file that passed validation.',
+      suggestion_zh: '请缩短过长内容、减少复杂版式后重试。演示文稿可尝试减少单页文字。',
+      suggestion_en: 'Shorten long content or simplify the layout. For presentations, reduce text on each slide.',
+      technical_detail: detail,
+      retryable: true,
+    }
+  }
+
+  return {
+    code,
+    title_zh: kind === 'create' ? '文件生成失败' : '文件修改失败',
+    title_en: kind === 'create' ? 'Document creation failed' : 'Document revision failed',
+    message_zh: kind === 'create' ? '本次 Office 文件生成未完成。' : '本次 Office 文件修改未完成，原文件已保留。',
+    message_en: kind === 'create' ? 'The Office document was not created.' : 'The Office revision did not complete; the original file was preserved.',
+    suggestion_zh: '请查看下方错误详情，调整要求后重试。',
+    suggestion_en: 'Review the error detail below, adjust the request, and try again.',
+    technical_detail: detail,
+    retryable: code !== 'invalid_request',
+  }
+}
+
+function createOperation(kind: OfficeOperationKind): OfficeOperationDto {
+  pruneOfficeOperations()
+  const timestamp = nowIso()
+  const operation: OfficeOperationDto = {
+    id: `office_op_${randomUUID()}`,
+    kind,
+    status: 'queued',
+    percent: 0,
+    created_at: timestamp,
+    updated_at: timestamp,
+    events: [],
+  }
+  officeOperations.set(operation.id, operation)
+  return operation
+}
+
+function failOperation(operation: OfficeOperationDto, error: unknown) {
+  const lastStage = operation.events.at(-1)?.stage || ''
+  operation.status = 'failed'
+  operation.error = friendlyOfficeOperationError(error, operation.kind, lastStage)
+  appendOperationProgress(operation, {
+    stage: 'failed',
+    percent: operation.percent,
+    message_zh: operation.error.title_zh,
+    message_en: operation.error.title_en,
+  })
+}
+
+export function startOfficeCreateOperation(input: OfficeCreateRequest): OfficeOperationDto {
+  const operation = createOperation('create')
+  queueMicrotask(() => {
+    operation.status = 'running'
+    operation.updated_at = nowIso()
+    void createOfficeDocument(input, progress => appendOperationProgress(operation, progress))
+      .then(document => {
+        operation.document = document
+        operation.status = 'completed'
+        operation.percent = 100
+        operation.updated_at = nowIso()
+      })
+      .catch(error => failOperation(operation, error))
+  })
+  return operationSnapshot(operation)
+}
+
+export function startOfficeRevisionOperation(
+  documentId: string,
+  input: OfficeRevisionRequest,
+): OfficeOperationDto {
+  const operation = createOperation('revise')
+  queueMicrotask(() => {
+    operation.status = 'running'
+    operation.updated_at = nowIso()
+    void reviseOfficeDocument(documentId, input, progress => appendOperationProgress(operation, progress))
+      .then(document => {
+        operation.document = document
+        operation.status = 'completed'
+        operation.percent = 100
+        operation.updated_at = nowIso()
+      })
+      .catch(error => failOperation(operation, error))
+  })
+  return operationSnapshot(operation)
+}
+
+export function getOfficeOperation(operationId: string): OfficeOperationDto {
+  pruneOfficeOperations()
+  const id = requiredText(operationId, 'Office operation id', 200)
+  const operation = officeOperations.get(id)
+  if (!operation) throw serviceError('Office operation was not found or has expired.', 'not_found')
+  return operationSnapshot(operation)
 }

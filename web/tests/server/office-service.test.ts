@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeOfficeCreateRequest } from '../../packages/server/src/services/reins/office'
+import {
+  friendlyOfficeOperationError,
+  normalizeOfficeCreateRequest,
+} from '../../packages/server/src/services/reins/office'
 
 describe('Reins Office service', () => {
   it('defaults document generation to Chinese', () => {
@@ -37,5 +40,28 @@ describe('Reins Office service', () => {
       prompt: 'Create a notice',
       skill_id: 'x'.repeat(121),
     })).toThrow('Office skill cannot exceed 120 characters')
+  })
+
+  it('turns OfficeCLI validation failures into actionable bilingual errors', () => {
+    const error = friendlyOfficeOperationError(
+      new Error('OfficeCLI found 3 layout issues'),
+      'create',
+      'layout_check',
+    )
+
+    expect(error.code).toBe('officecli_failed')
+    expect(error.title_zh).toBe('文件生成或验证失败')
+    expect(error.suggestion_zh).toContain('减少单页文字')
+    expect(error.retryable).toBe(true)
+  })
+
+  it('explains that the original file is preserved after revision timeouts', () => {
+    const error = friendlyOfficeOperationError(
+      Object.assign(new Error('Office worker timed out'), { code: 'worker_timeout' }),
+      'revise',
+    )
+
+    expect(error.code).toBe('timeout')
+    expect(error.suggestion_zh).toContain('原文件不会因超时而丢失')
   })
 })

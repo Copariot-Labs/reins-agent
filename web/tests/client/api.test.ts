@@ -16,7 +16,12 @@ import { getApiKey, setApiKey, clearApiKey, hasApiKey, getStoredUserRole, isStor
 import { getDownloadUrl } from '../../packages/client/src/api/hermes/download'
 import { uploadFiles } from '../../packages/client/src/api/hermes/files'
 import { batchDeleteSessions, importHermesSession } from '../../packages/client/src/api/hermes/sessions'
-import { fetchOfficePreviewHtml, fetchOfficeSkills } from '../../packages/client/src/api/reins/office'
+import {
+  fetchOfficeOperation,
+  fetchOfficePreviewHtml,
+  fetchOfficeSkills,
+  startOfficeRevisionOperation,
+} from '../../packages/client/src/api/reins/office'
 import router from '@/router'
 
 function fakeJwt(payload: Record<string, unknown>) {
@@ -221,8 +226,42 @@ describe('API Client', () => {
       })
 
       await expect(fetchOfficePreviewHtml('office-1')).rejects.toThrow(
-        'Office preview failed (503): OfficeCLI preview unavailable',
+        'OfficeCLI preview unavailable',
       )
+    })
+
+    it('starts and polls an in-place Office revision operation', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 202,
+        json: () => Promise.resolve({ operation: { id: 'office_op_1' } }),
+      })
+
+      await startOfficeRevisionOperation('office/id', '调整颜色并补充细节')
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        '/api/reins/office/documents/office%2Fid/revision-operations',
+      )
+      expect(mockFetch.mock.calls[0][1]).toMatchObject({
+        method: 'POST',
+        body: JSON.stringify({ instruction: '调整颜色并补充细节' }),
+      })
+
+      mockFetch.mockClear()
+      await fetchOfficeOperation('office_op/1')
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/reins/office/operations/office_op%2F1')
+    })
+
+    it('extracts the server error message from failed preview JSON', async () => {
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 503,
+        text: () => Promise.resolve(JSON.stringify({
+          error: 'OfficeCLI 无法读取此文件',
+          code: 'worker_error',
+        })),
+      })
+
+      await expect(fetchOfficePreviewHtml('office-1')).rejects.toThrow('OfficeCLI 无法读取此文件')
     })
   })
 

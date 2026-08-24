@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import re
-from typing import Any
+from typing import Any, Callable
 
 from reins.features.office.officecli_client import OfficeCliClient
 from reins.features.office.schemas import (
@@ -18,6 +18,24 @@ from reins.features.office.schemas import (
 
 class OfficeRenderError(RuntimeError):
     pass
+
+
+OfficeRenderProgress = Callable[[str, int, str, str], None]
+
+
+def _report_render_progress(
+    progress: OfficeRenderProgress | None,
+    stage: str,
+    percent: int,
+    message_zh: str,
+    message_en: str,
+) -> None:
+    if progress is None:
+        return
+    try:
+        progress(stage, percent, message_zh, message_en)
+    except Exception:
+        pass
 
 
 def _text(value: object) -> str:
@@ -1614,16 +1632,25 @@ def render_office_content(
     content: dict[str, Any],
     output_path: str | Path,
     client: OfficeCliClient | None = None,
+    progress: OfficeRenderProgress | None = None,
 ) -> Path:
     normalized = normalize_office_format(office_format)
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     client = client or OfficeCliClient()
 
+    _report_render_progress(
+        progress, "officecli_prepare", 56,
+        "OfficeCLI 正在创建文件容器", "OfficeCLI is preparing the file container",
+    )
     _run_mutation(client, ["create", path], timeout=60)
     _run_mutation(client, ["open", path], timeout=60)
 
     try:
+        _report_render_progress(
+            progress, "officecli_render", 64,
+            "OfficeCLI 正在写入内容和版式", "OfficeCLI is writing content and layout",
+        )
         if normalized == "xlsx":
             _render_xlsx(content, path, client)
         elif normalized == "pptx":
@@ -1636,8 +1663,16 @@ def render_office_content(
         except Exception:
             pass
 
+    _report_render_progress(
+        progress, "validating", 90,
+        "正在验证文件结构和格式", "Validating file structure and formatting",
+    )
     client.run(["validate", path], timeout=60, allowed_returncodes=(0, 2))
     if normalized == "pptx":
+        _report_render_progress(
+            progress, "layout_check", 94,
+            "正在检查幻灯片布局问题", "Checking presentation layout issues",
+        )
         issues = client.run(
             ["view", path, "issues", "--json"],
             timeout=90,
@@ -1650,4 +1685,8 @@ def render_office_content(
                 f"Reins Office found {issue_count} presentation layout issue(s). "
                 "Shorten the requested slide copy or revise the presentation structure."
             )
+    _report_render_progress(
+        progress, "file_ready", 97,
+        "OfficeCLI 文件检查已通过", "OfficeCLI file checks passed",
+    )
     return path

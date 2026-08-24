@@ -57,6 +57,40 @@ export interface OfficeStatus {
   documents: number
 }
 
+export type OfficeOperationStatus = 'queued' | 'running' | 'completed' | 'failed'
+
+export interface OfficeProgressEvent {
+  stage: string
+  percent: number
+  message_zh: string
+  message_en: string
+  at: string
+}
+
+export interface OfficeOperationError {
+  code: string
+  title_zh: string
+  title_en: string
+  message_zh: string
+  message_en: string
+  suggestion_zh: string
+  suggestion_en: string
+  technical_detail: string
+  retryable: boolean
+}
+
+export interface OfficeOperation {
+  id: string
+  kind: 'create' | 'revise'
+  status: OfficeOperationStatus
+  percent: number
+  created_at: string
+  updated_at: string
+  events: OfficeProgressEvent[]
+  document?: OfficeDocument
+  error?: OfficeOperationError
+}
+
 export async function fetchOfficeStatus(): Promise<OfficeStatus> {
   return request<OfficeStatus>('/api/reins/office/status')
 }
@@ -90,6 +124,34 @@ export async function reviseOfficeDocument(
   )
 }
 
+export async function startOfficeCreateOperation(
+  input: OfficeCreateInput,
+): Promise<{ operation: OfficeOperation }> {
+  return request<{ operation: OfficeOperation }>('/api/reins/office/operations', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export async function startOfficeRevisionOperation(
+  documentId: string,
+  instruction: string,
+): Promise<{ operation: OfficeOperation }> {
+  return request<{ operation: OfficeOperation }>(
+    `/api/reins/office/documents/${encodeURIComponent(documentId)}/revision-operations`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ instruction }),
+    },
+  )
+}
+
+export async function fetchOfficeOperation(operationId: string): Promise<{ operation: OfficeOperation }> {
+  return request<{ operation: OfficeOperation }>(
+    `/api/reins/office/operations/${encodeURIComponent(operationId)}`,
+  )
+}
+
 export function getOfficePreviewUrl(documentId: string, version = ''): string {
   const params = new URLSearchParams()
   const token = getApiKey()
@@ -112,8 +174,13 @@ export async function fetchOfficePreviewHtml(documentId: string): Promise<string
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
   if (!response.ok) {
-    const detail = await response.text().catch(() => '')
-    throw new Error(`Office preview failed (${response.status})${detail ? `: ${detail}` : ''}`)
+    const responseBody = await response.text().catch(() => '')
+    let detail = responseBody.trim()
+    try {
+      const payload = JSON.parse(responseBody) as { error?: unknown, message?: unknown }
+      detail = String(payload.error || payload.message || '').trim()
+    } catch {}
+    throw new Error(detail || `Office preview failed (${response.status})`)
   }
   return response.text()
 }
