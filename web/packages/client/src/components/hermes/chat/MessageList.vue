@@ -222,7 +222,7 @@ defineExpose({
           aria-hidden="true"
           class="thinking-video"
         > -->
-        <ThinkingIndicator :show-text="true" text="Thinking" />
+        <ThinkingIndicator :show-text="true" :text="t('chat.thinkingInProgress')" />
         <div v-if="visibleToolCalls.length > 0 || chatStore.compressionState || chatStore.abortState" class="tool-calls-panel">
           <!-- Abort indicator -->
           <div v-if="chatStore.abortState" class="tool-call-item compression-item">

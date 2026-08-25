@@ -275,6 +275,8 @@ describe('bridge run final context usage', () => {
       }),
     )
     expect(bridge.contextEstimate.mock.calls[0][2]).toContain('system prompt')
+    expect(bridge.contextEstimate.mock.calls[0][2]).toContain('[Reins language policy]')
+    expect(bridge.contextEstimate.mock.calls[0][2]).toContain('user-visible process text must be written in Simplified Chinese')
     expect(bridge.contextEstimate.mock.calls[0][2]).toContain('[Reins Finance workflow]')
     expect(bridge.contextEstimate.mock.calls[0][2]).toContain('finance_record_transaction')
     expect(bridge.contextEstimate.mock.calls[0][2]).toContain('X-Hermes-Profile')

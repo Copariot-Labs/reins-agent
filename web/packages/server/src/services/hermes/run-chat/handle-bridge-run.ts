@@ -54,6 +54,7 @@ import {
 import {
   reinsFinanceAgentInstructions,
 } from '../../reins/finance-chat'
+import { reinsChatLanguageInstructions } from '../../reins/chat-language'
 import { chatCapabilitiesInstructions, chatCapabilitiesKey, normalizeChatCapabilities, toBridgeCapabilities } from './capabilities'
 import { prepareBrowserForRun } from '../browser-connection'
 import {
@@ -273,6 +274,7 @@ export async function handleBridgeRun(
   }
   const runContext = [
     `[Current Reins profile: ${profile}]`,
+    reinsChatLanguageInstructions(),
     reinsWorkspaceInstructions(),
     reinsFinanceAgentInstructions(),
     workToolInstruction(data.work_tool),

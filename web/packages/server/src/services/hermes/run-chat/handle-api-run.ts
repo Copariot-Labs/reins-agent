@@ -25,6 +25,7 @@ import { countTokens, SUMMARY_PREFIX } from '../../../lib/context-compressor'
 import { getCompressionSnapshot } from '../../../db/hermes/compression-snapshot'
 import type { ContentBlock, SessionState, ChatRunSource } from './types'
 import { reinsWorkspaceInstructions } from '../../reins/workspace-path'
+import { reinsChatLanguageInstructions } from '../../reins/chat-language'
 
 export function resolveRunSource(_source?: string, _sessionId?: string): ChatRunSource {
   return 'cli'
@@ -99,6 +100,7 @@ export async function handleApiRun(
 
   // Keep request-specific context before the authoritative Reins identity.
   const customInstructions: string[] = []
+  customInstructions.push(reinsChatLanguageInstructions())
   customInstructions.push(reinsWorkspaceInstructions())
   if (instructions) customInstructions.push(instructions)
   customInstructions.push(getSystemPrompt())

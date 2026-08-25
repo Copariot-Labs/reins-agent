@@ -77,6 +77,7 @@ describe('tool trace visibility', () => {
       'assistant-1',
     ])
     expect(wrapper.findAll('.tool-call-name').map(node => node.text())).toContain('read_file')
+    expect(wrapper.text()).toContain('chat.thinkingInProgress')
   })
 
   it('applies the same default-visible rule to history sessions', () => {
