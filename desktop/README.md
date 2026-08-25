@@ -14,7 +14,9 @@ and launch Reins.
 ## End-user experience
 
 1. Double-click `Reins-Setup-x64.exe`.
-2. Complete the per-user installer; administrator access is not required.
+2. Complete the per-user installer; administrator access is not required. When
+   upgrading, the installer stops the Reins window and its private background
+   processes before replacing the bundled runtime.
 3. Launch **Reins** from the Start menu or desktop shortcut.
 4. Sign in or create the local Reins account.
 5. Open **Settings → WeCom** and enter the ticket URL, ticket token, group robot
