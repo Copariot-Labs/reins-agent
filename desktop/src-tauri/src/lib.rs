@@ -176,10 +176,18 @@ fn start_backend(app: &tauri::App) -> Result<Option<Child>, String> {
     let python = runtime.join("python").join("python.exe");
     let reins = runtime.join("bin").join("reins-runtime.exe");
     let officecli = runtime.join("bin").join("officecli.exe");
+    let admin_password_hash = runtime.join("config").join("admin-password.hash");
     let agent_root = runtime.join("agent");
     let skills = runtime.join("web").join("skills");
 
-    for required in [&node, &server, &python, &reins, &officecli] {
+    for required in [
+        &node,
+        &server,
+        &python,
+        &reins,
+        &officecli,
+        &admin_password_hash,
+    ] {
         if !required.is_file() {
             return Err(format!(
                 "Required Reins runtime file is missing: {}",
@@ -244,6 +252,7 @@ fn start_backend(app: &tauri::App) -> Result<Option<Child>, String> {
         .env("HERMES_HOME", &reins_home)
         .env("HERMES_WEB_UI_HOME", reins_home.join("web-ui"))
         .env("REINS_RUNTIME_ROOT", &runtime)
+        .env("REINS_ADMIN_PASSWORD_HASH_FILE", &admin_password_hash)
         .env("REINS_BIN", &reins)
         .env("HERMES_BIN", &reins)
         .env("REINS_SERVICE_PYTHON", &python)

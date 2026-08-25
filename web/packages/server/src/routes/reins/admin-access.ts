@@ -1,10 +1,15 @@
 import Router from '@koa/router';
 
 import {
+  ADMIN_PASSWORD_MAX_LENGTH,
+  ADMIN_PASSWORD_MIN_LENGTH,
+  adminPasswordValidationError,
+  configureDevelopmentAdminPassword,
   createAdminSession,
   getAdminAccessStatus,
   isAdminAccessAvailable,
   isAdminAccessConfigured,
+  isAdminSetupAllowed,
   readAdminToken,
   revokeAdminSession,
 } from '../../services/reins/admin-access';
@@ -126,6 +131,7 @@ adminAccessRoutes.post('/api/reins/admin-access/unlock', async (ctx) => {
 
     ctx.body = {
       error: 'Administrator access is not configured',
+      code: 'not_configured',
     };
 
     return;
@@ -140,6 +146,7 @@ adminAccessRoutes.post('/api/reins/admin-access/unlock', async (ctx) => {
 
     ctx.body = {
       error: 'Too many failed attempts. Try again shortly.',
+      code: 'rate_limited',
       retry_after_seconds: Math.max(1, Math.ceil(remaining / 1000)),
     };
 
@@ -159,6 +166,7 @@ adminAccessRoutes.post('/api/reins/admin-access/unlock', async (ctx) => {
 
     ctx.body = {
       error: 'Administrator password is required',
+      code: 'password_required',
     };
 
     return;
@@ -173,12 +181,68 @@ adminAccessRoutes.post('/api/reins/admin-access/unlock', async (ctx) => {
 
     ctx.body = {
       error: 'Invalid administrator password',
+      code: 'invalid_password',
     };
 
     return;
   }
 
   clearFailures(key);
+
+  ctx.body = {
+    ok: true,
+    token,
+  };
+});
+
+/*
+ * The packaged Windows build is always preconfigured. This route exists only
+ * for a local Tauri development build where no release password is bundled.
+ */
+adminAccessRoutes.post('/api/reins/admin-access/setup', async (ctx) => {
+  if (!ensureAvailable(ctx)) {
+    return;
+  }
+
+  if (!isAdminSetupAllowed()) {
+    ctx.status = 403;
+    ctx.body = {
+      error: 'Administrator password setup is not available',
+      code: 'setup_unavailable',
+    };
+    return;
+  }
+
+  const body = ctx.request.body as
+    | {
+        password?: unknown;
+      }
+    | undefined;
+  const password = typeof body?.password === 'string' ? body.password : '';
+  const validationError = adminPasswordValidationError(password);
+
+  if (validationError) {
+    ctx.status = 400;
+    ctx.body = {
+      error:
+        validationError === 'too_short'
+          ? `Administrator password must contain at least ${ADMIN_PASSWORD_MIN_LENGTH} characters`
+          : `Administrator password must contain at most ${ADMIN_PASSWORD_MAX_LENGTH} characters`,
+      code: `password_${validationError}`,
+    };
+    return;
+  }
+
+  const token = configureDevelopmentAdminPassword(password);
+
+  if (!token) {
+    ctx.status = 409;
+    ctx.body = {
+      error: 'Administrator password was already configured',
+      code: 'already_configured',
+    };
+    return;
+  }
 
   ctx.body = {
     ok: true,

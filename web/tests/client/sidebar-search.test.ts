@@ -34,6 +34,19 @@ const mockProfilesStore = vi.hoisted(() => ({
   activeProfileName: 'default',
   fetchProfiles: vi.fn(),
 }))
+const mockAdminStore = vi.hoisted(() => ({
+  unlocked: false,
+  lock: vi.fn(),
+}))
+const mockRouter = vi.hoisted(() => ({
+  push: vi.fn(),
+  replace: vi.fn(),
+}))
+const mockRoute = vi.hoisted(() => ({
+  name: 'hermes.chat',
+  query: {},
+  matched: [] as Array<{ meta: Record<string, unknown> }>,
+}))
 
 vi.mock('@/composables/useSessionSearch', () => ({
   useSessionSearch: () => ({
@@ -53,6 +66,10 @@ vi.mock('@/stores/hermes/profiles', () => ({
   useProfilesStore: () => mockProfilesStore,
 }))
 
+vi.mock('@/stores/reins/admin-access', () => ({
+  useAdminAccessStore: () => mockAdminStore,
+}))
+
 vi.mock('@/api/client', () => ({
   isStoredSuperAdmin: () => true,
 }))
@@ -61,8 +78,8 @@ vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal<any>()
   return {
     ...actual,
-    useRoute: () => ({ name: 'hermes.chat' }),
-    useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+    useRoute: () => mockRoute,
+    useRouter: () => mockRouter,
   }
 })
 
@@ -141,6 +158,12 @@ describe('AppSidebar search entry', () => {
     mockAppStore.toggleSidebarCollapsed.mockClear()
     mockAppStore.reloadClient.mockClear()
     mockAppStore.doUpdate.mockReset()
+    mockAdminStore.unlocked = false
+    mockAdminStore.lock.mockReset()
+    mockRouter.replace.mockReset()
+    mockRoute.name = 'hermes.chat'
+    mockRoute.query = {}
+    mockRoute.matched = []
   })
 
   it('opens the session search modal from the sidebar button', async () => {
@@ -162,28 +185,6 @@ describe('AppSidebar search entry', () => {
 
     await searchButton!.trigger('click')
     expect(openSessionSearchMock).toHaveBeenCalledTimes(1)
-  })
-
-  it('starts a managed Reins update from the sidebar', async () => {
-    mockAppStore.updateSupported = true
-    mockAppStore.doUpdate.mockResolvedValue(true)
-    const wrapper = mount(AppSidebar, {
-      global: {
-        stubs: {
-          ProfileSelector: true,
-          ModelSelector: true,
-          LanguageSwitch: true,
-          ThemeSwitch: true,
-        },
-      },
-    })
-
-    const updateButton = wrapper.findAll('button')
-      .find(node => node.text().includes('common.update'))
-    expect(updateButton).toBeTruthy()
-
-    await updateButton!.trigger('click')
-    expect(mockAppStore.doUpdate).toHaveBeenCalledTimes(1)
   })
 
   it('collapses to the compact icon rail', async () => {
@@ -209,5 +210,32 @@ describe('AppSidebar search entry', () => {
     expect(wrapper.find('.primary-nav').exists()).toBe(true)
     expect(wrapper.find('.task-section').exists()).toBe(true)
     expect(wrapper.find('.utility-sections').exists()).toBe(true)
+  })
+
+  it('logs out of administrator access and leaves a protected page', async () => {
+    mockAdminStore.unlocked = true
+    mockRoute.name = 'hermes.settings'
+    mockRoute.matched = [{
+      meta: {
+        requiresDesktopAdmin: true,
+      },
+    }]
+    const wrapper = mount(AppSidebar, {
+      global: {
+        stubs: {
+          LanguageSwitch: true,
+          ThemeSwitch: true,
+        },
+      },
+    })
+
+    const logout = wrapper.find('.admin-logout')
+    expect(logout.exists()).toBe(true)
+    await logout.trigger('click')
+
+    expect(mockAdminStore.lock).toHaveBeenCalledTimes(1)
+    expect(mockRouter.replace).toHaveBeenCalledWith({
+      name: 'hermes.chat',
+    })
   })
 })

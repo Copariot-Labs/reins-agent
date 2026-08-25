@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/hermes/app'
 import { useChatStore } from '@/stores/hermes/chat'
 import { useProfilesStore } from '@/stores/hermes/profiles'
+import { useAdminAccessStore } from '@/stores/reins/admin-access'
 import { useSessionSearch } from '@/composables/useSessionSearch'
 import RouteLinkItem from '@/components/common/RouteLinkItem.vue'
 import LanguageSwitch from './LanguageSwitch.vue'
@@ -19,6 +20,7 @@ const router = useRouter()
 const appStore = useAppStore()
 const chatStore = useChatStore()
 const profilesStore = useProfilesStore()
+const adminStore = useAdminAccessStore()
 const { openSessionSearch } = useSessionSearch()
 
 const selectedKey = computed(() => {
@@ -41,6 +43,7 @@ const copy = computed(() => isChinese.value
       noTasks: '暂无任务',
       monitoring: '监控',
       system: '系统',
+      adminLogout: '退出管理员登录',
     }
   : {
       newTask: 'New Task',
@@ -51,6 +54,7 @@ const copy = computed(() => isChinese.value
       noTasks: 'No tasks yet',
       monitoring: 'Monitoring',
       system: 'System',
+      adminLogout: 'Exit administrator',
     })
 
 const recentSessions = computed(() => [...chatStore.sessions]
@@ -69,6 +73,19 @@ async function startNewTask() {
 async function openSession(sessionId: string) {
   if (chatStore.activeSessionId === sessionId && route.name === 'hermes.session') return
   await router.push({ name: 'hermes.session', params: { sessionId } })
+}
+
+async function exitAdministrator() {
+  await adminStore.lock()
+
+  if (
+    (route.matched || [])
+      .some(record => record.meta.requiresDesktopAdmin)
+  ) {
+    await router.replace({
+      name: 'hermes.chat',
+    })
+  }
 }
 
 function toggleOfficeMenu() {
@@ -271,6 +288,30 @@ onMounted(async () => {
             </svg>
             <span>{{ t("sidebar.models") }}</span>
           </RouteLinkItem>
+
+        <button
+          v-if="adminStore.unlocked"
+          type="button"
+          class="nav-item compact admin-logout"
+          :title="copy.adminLogout"
+          @click="exitAdministrator"
+        >
+          <svg
+            width="17"
+            height="17"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M10 17l5-5-5-5" />
+            <path d="M15 12H3" />
+            <path d="M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5" />
+          </svg>
+          <span>{{ copy.adminLogout }}</span>
+        </button>
       </section>
     </div>
 

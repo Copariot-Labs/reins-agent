@@ -5,11 +5,29 @@ const ADMIN_TOKEN_KEY = 'reins_admin_access_token';
 export interface AdminAccessStatus {
   configured: boolean;
   unlocked: boolean;
+  setupAllowed: boolean;
 }
 
 export interface AdminUnlockResponse {
   ok: boolean;
   token: string;
+}
+
+export class AdminAccessApiError extends Error {
+  readonly code: string;
+
+  readonly retryAfterSeconds: number;
+
+  constructor(
+    message: string,
+    code = '',
+    retryAfterSeconds = 0,
+  ) {
+    super(message);
+    this.name = 'AdminAccessApiError';
+    this.code = code;
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
 }
 
 function baseUrl(): string {
@@ -75,7 +93,11 @@ async function readResponse<T>(response: Response): Promise<T> {
         ? data.error
         : text || response.statusText || 'Administrator access request failed';
 
-    throw new Error(message);
+    throw new AdminAccessApiError(
+      message,
+      typeof data?.code === 'string' ? data.code : '',
+      Number(data?.retry_after_seconds) || 0,
+    );
   }
 
   return data as T;
@@ -98,6 +120,26 @@ export async function unlockAdminAccess(
 
     headers: adminHeaders(true),
 
+    body: JSON.stringify({
+      password,
+    }),
+  });
+
+  const result = await readResponse<AdminUnlockResponse>(response);
+
+  if (result.ok && result.token) {
+    setAdminToken(result.token);
+  }
+
+  return result;
+}
+
+export async function setupAdminAccess(
+  password: string,
+): Promise<AdminUnlockResponse> {
+  const response = await fetch(`${baseUrl()}/api/reins/admin-access/setup`, {
+    method: 'POST',
+    headers: adminHeaders(true),
     body: JSON.stringify({
       password,
     }),

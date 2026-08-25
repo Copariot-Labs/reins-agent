@@ -3,10 +3,12 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 
 import {
+  AdminAccessApiError,
   clearAdminToken,
   fetchAdminAccessStatus,
   getAdminToken,
   lockAdminAccess,
+  setupAdminAccess,
   unlockAdminAccess,
 } from '@/api/reins/admin-access';
 
@@ -14,6 +16,10 @@ export const useAdminAccessStore = defineStore('reins-admin-access', () => {
   const configured = ref(false);
 
   const unlocked = ref(false);
+
+  const setupAllowed = ref(false);
+
+  const initialized = ref(false);
 
   const checking = ref(false);
 
@@ -23,44 +29,64 @@ export const useAdminAccessStore = defineStore('reins-admin-access', () => {
 
   const error = ref('');
 
+  const errorCode = ref('');
+
+  const retryAfterSeconds = ref(0);
+
   /*
    * Route the administrator wanted
    * to open before being challenged.
    */
   const pendingRoute = ref<string | null>(null);
 
-  async function refreshStatus(): Promise<boolean> {
-    if (checking.value) {
-      return unlocked.value;
+  let statusRequest: Promise<boolean> | null = null;
+
+  function refreshStatus(): Promise<boolean> {
+    if (statusRequest) {
+      return statusRequest;
     }
 
     checking.value = true;
 
-    try {
-      const status = await fetchAdminAccessStatus();
+    statusRequest = (async () => {
+      try {
+        const status = await fetchAdminAccessStatus();
 
-      configured.value = status.configured;
+        configured.value = status.configured;
 
-      unlocked.value = status.unlocked;
+        unlocked.value = status.unlocked;
 
-      /*
-       * A token can become invalid if the
-       * backend was restarted.
-       */
-      if (!status.unlocked && getAdminToken()) {
+        setupAllowed.value = Boolean(status.setupAllowed);
+
+        /*
+         * A token can become invalid if the
+         * backend was restarted.
+         */
+        if (!status.unlocked && getAdminToken()) {
+          clearAdminToken();
+        }
+
+        return status.unlocked;
+      } catch (err: any) {
+        unlocked.value = false;
+
+        setupAllowed.value = false;
+
+        error.value = err?.message || '';
+
         clearAdminToken();
+
+        return false;
+      } finally {
+        initialized.value = true;
+
+        checking.value = false;
+
+        statusRequest = null;
       }
+    })();
 
-      return status.unlocked;
-    } catch {
-      unlocked.value = false;
-
-      clearAdminToken();
-
-      return false;
-    } finally {
-      checking.value = false;
-    }
+    return statusRequest;
   }
 
   async function ensureUnlocked(): Promise<boolean> {
@@ -72,10 +98,10 @@ export const useAdminAccessStore = defineStore('reins-admin-access', () => {
       return true;
     }
 
-    if (!getAdminToken()) {
-      return false;
-    }
-
+    /*
+     * The route guard runs before App.vue mounts. Always load status here so
+     * the first unlock dialog does not incorrectly look unconfigured.
+     */
     return refreshStatus();
   }
 
@@ -85,6 +111,10 @@ export const useAdminAccessStore = defineStore('reins-admin-access', () => {
     }
 
     error.value = '';
+
+    errorCode.value = '';
+
+    retryAfterSeconds.value = 0;
     modalOpen.value = true;
   }
 
@@ -94,6 +124,10 @@ export const useAdminAccessStore = defineStore('reins-admin-access', () => {
     pendingRoute.value = null;
 
     error.value = '';
+
+    errorCode.value = '';
+
+    retryAfterSeconds.value = 0;
   }
 
   async function unlock(password: string): Promise<boolean> {
@@ -102,12 +136,18 @@ export const useAdminAccessStore = defineStore('reins-admin-access', () => {
     if (!clean) {
       error.value = 'Administrator password is required';
 
+      errorCode.value = 'password_required';
+
       return false;
     }
 
     unlocking.value = true;
 
     error.value = '';
+
+    errorCode.value = '';
+
+    retryAfterSeconds.value = 0;
 
     try {
       const result = await unlockAdminAccess(clean);
@@ -122,14 +162,59 @@ export const useAdminAccessStore = defineStore('reins-admin-access', () => {
 
       unlocked.value = true;
 
+      setupAllowed.value = false;
+
       modalOpen.value = false;
 
       return true;
     } catch (err: any) {
       error.value = err?.message || 'Unable to unlock administrator access';
 
+      errorCode.value =
+        err instanceof AdminAccessApiError
+          ? err.code
+          : '';
+
+      retryAfterSeconds.value =
+        err instanceof AdminAccessApiError
+          ? err.retryAfterSeconds
+          : 0;
+
       unlocked.value = false;
 
+      return false;
+    } finally {
+      unlocking.value = false;
+    }
+  }
+
+  async function setup(password: string): Promise<boolean> {
+    unlocking.value = true;
+    error.value = '';
+    errorCode.value = '';
+    retryAfterSeconds.value = 0;
+
+    try {
+      const result = await setupAdminAccess(password);
+
+      if (!result.ok || !result.token) {
+        error.value = 'Unable to configure administrator access';
+        errorCode.value = 'setup_failed';
+        return false;
+      }
+
+      configured.value = true;
+      unlocked.value = true;
+      setupAllowed.value = false;
+      modalOpen.value = false;
+      return true;
+    } catch (err: any) {
+      error.value = err?.message || 'Unable to configure administrator access';
+      errorCode.value =
+        err instanceof AdminAccessApiError
+          ? err.code
+          : '';
+      unlocked.value = false;
       return false;
     } finally {
       unlocking.value = false;
@@ -150,6 +235,10 @@ export const useAdminAccessStore = defineStore('reins-admin-access', () => {
     modalOpen.value = false;
 
     error.value = '';
+
+    errorCode.value = '';
+
+    retryAfterSeconds.value = 0;
   }
 
   function takePendingRoute(): string | null {
@@ -163,10 +252,14 @@ export const useAdminAccessStore = defineStore('reins-admin-access', () => {
   return {
     configured,
     unlocked,
+    setupAllowed,
+    initialized,
     checking,
     unlocking,
     modalOpen,
     error,
+    errorCode,
+    retryAfterSeconds,
     pendingRoute,
 
     refreshStatus,
@@ -174,6 +267,7 @@ export const useAdminAccessStore = defineStore('reins-admin-access', () => {
     requestUnlock,
     cancelUnlock,
     unlock,
+    setup,
     lock,
     takePendingRoute,
   };

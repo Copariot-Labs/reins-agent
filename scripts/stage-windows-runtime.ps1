@@ -42,6 +42,15 @@ $Pnpm = Require-Command "pnpm.cmd"
 $Cargo = Require-Command "cargo.exe"
 $Dotnet = Require-Command "dotnet.exe"
 $Node = Require-Command "node.exe"
+$AdminHashTool = Join-Path $ProjectRoot "scripts\generate-admin-password-hash.mjs"
+$AdminPasswordHash = [string]$env:REINS_ADMIN_PASSWORD_HASH
+if (-not $AdminPasswordHash.Trim()) {
+    throw "REINS_ADMIN_PASSWORD_HASH is required. Use scripts\build-windows-desktop.ps1 so the release is password protected."
+}
+$HashValidation = $AdminPasswordHash | & $Node $AdminHashTool --validate
+if ($LASTEXITCODE -ne 0 -or ($HashValidation | Out-String).Trim() -ne "valid") {
+    throw "REINS_ADMIN_PASSWORD_HASH is not a valid Reins administrator password hash."
+}
 
 $WebLockfile = Join-Path $WebRoot "pnpm-lock.yaml"
 if (-not (Test-Path $WebLockfile)) {
@@ -59,8 +68,14 @@ if (Test-Path $Runtime) { Remove-Item -Recurse -Force $Runtime }
     (Join-Path $Runtime "bin"),
     (Join-Path $Runtime "node"),
     (Join-Path $Runtime "web"),
+    (Join-Path $Runtime "config"),
     (Join-Path $Runtime "licenses")
 ) | ForEach-Object { New-Item -ItemType Directory -Force -Path $_ | Out-Null }
+
+$AdminPasswordHash.Trim() | Set-Content `
+    (Join-Path $Runtime "config\admin-password.hash") `
+    -Encoding ASCII `
+    -NoNewline
 
 Copy-Item $Node (Join-Path $Runtime "node\node.exe")
 $NodeLicense = Join-Path (Split-Path -Parent $Node) "LICENSE"
@@ -170,9 +185,12 @@ $SmokeStdout = Join-Path $SmokeHome "stdout.log"
 $SmokeStderr = Join-Path $SmokeHome "stderr.log"
 New-Item -ItemType Directory -Force -Path $SmokeHome | Out-Null
 $SmokeEnvironment = @{
+    NODE_ENV = "production"
     PORT = "18648"
     BIND_HOST = "127.0.0.1"
     REINS_DESKTOP = "1"
+    REINS_ADMIN_PASSWORD_HASH = $null
+    REINS_ADMIN_PASSWORD_HASH_FILE = (Join-Path $Runtime "config\admin-password.hash")
     REINS_HOME = $SmokeHome
     HERMES_HOME = $SmokeHome
     HERMES_WEB_UI_HOME = (Join-Path $SmokeHome "web-ui")
@@ -216,6 +234,19 @@ try {
         $Output = if (Test-Path $SmokeStdout) { Get-Content $SmokeStdout -Raw } else { "" }
         $Errors = if (Test-Path $SmokeStderr) { Get-Content $SmokeStderr -Raw } else { "" }
         throw "Staged Reins local service failed its readiness check.`n$Output`n$Errors"
+    }
+    $AdminRequest = [Net.HttpWebRequest]::Create("http://127.0.0.1:18648/api/reins/admin-access/status")
+    $AdminRequest.Proxy = $null
+    $AdminRequest.Timeout = 5000
+    $AdminResponse = $AdminRequest.GetResponse()
+    try {
+        $AdminReader = New-Object IO.StreamReader($AdminResponse.GetResponseStream())
+        try { $AdminStatus = ($AdminReader.ReadToEnd() | ConvertFrom-Json) }
+        finally { $AdminReader.Dispose() }
+    }
+    finally { $AdminResponse.Dispose() }
+    if (-not $AdminStatus.configured -or $AdminStatus.unlocked) {
+        throw "Staged Reins administrator access did not load the bundled password hash correctly."
     }
     Write-Host "Staged Reins local service verified" -ForegroundColor Green
 }

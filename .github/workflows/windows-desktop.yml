@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: windows-desktop-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   windows-installer:
     name: Windows x64 installer
@@ -18,6 +22,42 @@ jobs:
     steps:
       - name: Check out Reins
         uses: actions/checkout@v6
+
+      - name: Validate release configuration
+        shell: pwsh
+        env:
+          REINS_ADMIN_PASSWORD: ${{ secrets.REINS_ADMIN_PASSWORD }}
+          REINS_ADMIN_PASSWORD_HASH: ${{ secrets.REINS_ADMIN_PASSWORD_HASH }}
+          WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+        run: |
+          if (-not $env:REINS_ADMIN_PASSWORD -and -not $env:REINS_ADMIN_PASSWORD_HASH) {
+            throw "Configure the REINS_ADMIN_PASSWORD or REINS_ADMIN_PASSWORD_HASH Actions secret before building Reins."
+          }
+
+          $hasCertificate = -not [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_PFX_BASE64)
+          $hasCertificatePassword = -not [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_PFX_PASSWORD)
+          if ($hasCertificate -ne $hasCertificatePassword) {
+            throw "WINDOWS_SIGNING_PFX_BASE64 and WINDOWS_SIGNING_PFX_PASSWORD must be configured together."
+          }
+
+          if ("${{ github.ref }}" -like "refs/tags/desktop-v*") {
+            $version = "${{ github.ref_name }}" -replace '^desktop-v', ''
+            if ($version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?$') {
+              throw "Release tag must use desktop-vMAJOR.MINOR.PATCH, optionally followed by a prerelease suffix."
+            }
+
+            $packageVersion = (Get-Content desktop\package.json -Raw | ConvertFrom-Json).version
+            $tauriVersion = (Get-Content desktop\src-tauri\tauri.conf.json -Raw | ConvertFrom-Json).version
+            $cargoManifest = Get-Content desktop\src-tauri\Cargo.toml -Raw
+            $cargoVersion = [regex]::Match($cargoManifest, '(?ms)^\[package\].*?^version\s*=\s*"([^"]+)"').Groups[1].Value
+            $versions = @($packageVersion, $tauriVersion, $cargoVersion)
+            if ($versions | Where-Object { $_ -ne $version }) {
+              throw "Tag ${{ github.ref_name }} does not match the desktop versions: package=$packageVersion, tauri=$tauriVersion, cargo=$cargoVersion."
+            }
+
+            Write-Host "Validated Reins Desktop $version release configuration."
+          }
 
       - name: Install Node.js
         uses: actions/setup-node@v6
@@ -47,6 +87,9 @@ jobs:
 
       - name: Build the Reins setup executable
         shell: pwsh
+        env:
+          REINS_ADMIN_PASSWORD: ${{ secrets.REINS_ADMIN_PASSWORD }}
+          REINS_ADMIN_PASSWORD_HASH: ${{ secrets.REINS_ADMIN_PASSWORD_HASH }}
         run: ./scripts/build-windows-desktop.ps1
 
       - name: Sign installer when a certificate is configured

@@ -61,6 +61,13 @@ From PowerShell at the repository root:
 .\scripts\build-windows-desktop.ps1
 ```
 
+The build prompts twice for the administrator password. It must contain at
+least 12 characters. For a non-interactive build, set either
+`REINS_ADMIN_PASSWORD` or a previously generated `REINS_ADMIN_PASSWORD_HASH`.
+Only the salted `scrypt` hash is included in the installer; the plaintext
+password is never staged. Every fresh installation is therefore protected
+before its first launch.
+
 The output is:
 
 ```text
@@ -87,14 +94,26 @@ a private repository remain available only to people who can access the
 repository. Re-running a tagged workflow replaces the files on its existing
 release instead of creating duplicates.
 
+Before creating a release tag, keep these three desktop versions equal to the
+tag version:
+
+```text
+desktop/package.json
+desktop/src-tauri/tauri.conf.json
+desktop/src-tauri/Cargo.toml
+```
+
 For a public release, configure these repository secrets so the workflow signs
 the installer and avoids Windows' unsigned-publisher warning:
 
 - `WINDOWS_SIGNING_PFX_BASE64`: Base64-encoded Authenticode `.pfx` certificate
 - `WINDOWS_SIGNING_PFX_PASSWORD`: Certificate password
 
-Without those secrets, the workflow still publishes the installer but marks a
-new tagged release as a pre-release because the executable is unsigned.
+The workflow also requires one of these administrator-access secrets:
+
+- `REINS_ADMIN_PASSWORD`: Administrator password used for this Windows build
+- `REINS_ADMIN_PASSWORD_HASH`: Pre-generated Reins password hash; when present,
+  it takes precedence over `REINS_ADMIN_PASSWORD`
 
 ## User data and background work
 
