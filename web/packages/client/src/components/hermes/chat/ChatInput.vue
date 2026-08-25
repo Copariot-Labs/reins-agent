@@ -21,6 +21,7 @@ import {
   getWorkSuggestions,
   getOfficeFormatOptions,
   getWorkToolOptions,
+  routedWorkTool,
   shouldShowNewChatSuggestions,
   type WorkSuggestion,
   type WorkTool,
@@ -648,9 +649,7 @@ function handleSend() {
     text,
     attachments.value.length > 0 ? attachments.value : undefined,
     {
-      workTool: selectedWorkTool.value === 'general'
-        ? undefined
-        : selectedWorkTool.value,
+      workTool: routedWorkTool(selectedWorkTool.value),
       officeSkillId: selectedOfficeSkillId.value || undefined,
     },
   )
@@ -784,6 +783,8 @@ function isImage(type: string): boolean {
           <svg v-if="tool.icon === 'document'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l4 4v16H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v5h5M8 12h7M8 16h6"/></svg>
           <svg v-else-if="tool.icon === 'spreadsheet'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
           <svg v-else-if="tool.icon === 'slides'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 22l4-4 4 4M8 8h8M8 12h5"/></svg>
+          <svg v-else-if="tool.icon === 'finance'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h15a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h12"/><path d="M16 13h5M17 13h.01"/></svg>
+          <svg v-else-if="tool.icon === 'work-orders'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2h6v2M9 11l2 2 4-4M9 17h6"/></svg>
           <svg v-else-if="tool.icon === 'research'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="10" cy="10" r="6"/><path d="m14.5 14.5 5 5M17 3v4M15 5h4"/></svg>
           <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
           <span>{{ tool.label }}</span>
@@ -848,6 +849,15 @@ function isImage(type: string): boolean {
       </template>
       <template v-else>
         <button
+          type="button"
+          class="suggestion-back"
+          :aria-label="isChinese ? '返回工作类型' : 'Back to work types'"
+          :title="isChinese ? '返回工作类型' : 'Back to work types'"
+          @click="backSuggestionLevel"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        </button>
+        <button
           v-for="suggestion in workSuggestions"
           :key="suggestion.id"
           type="button"
@@ -905,6 +915,8 @@ function isImage(type: string): boolean {
           <svg v-if="selectedWorkToolOption.icon === 'document'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l4 4v16H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v5h5M8 12h7M8 16h6"/></svg>
           <svg v-else-if="selectedWorkToolOption.icon === 'spreadsheet'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
           <svg v-else-if="selectedWorkToolOption.icon === 'slides'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 22l4-4 4 4M8 8h8M8 12h5"/></svg>
+          <svg v-else-if="selectedWorkToolOption.icon === 'finance'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h15a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h12"/><path d="M16 13h5M17 13h.01"/></svg>
+          <svg v-else-if="selectedWorkToolOption.icon === 'work-orders'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2h6v2M9 11l2 2 4-4M9 17h6"/></svg>
           <svg v-else-if="selectedWorkToolOption.icon === 'research'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10" cy="10" r="6"/><path d="m14.5 14.5 5 5M17 3v4M15 5h4"/></svg>
           <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
           <span>{{ selectedWorkToolOption.label }}</span>

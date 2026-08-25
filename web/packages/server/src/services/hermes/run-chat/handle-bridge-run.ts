@@ -55,6 +55,10 @@ import {
   reinsFinanceAgentInstructions,
 } from '../../reins/finance-chat'
 import { reinsChatLanguageInstructions } from '../../reins/chat-language'
+import {
+  buildWorkOrderOfficePrompt,
+  reinsWorkOrderAgentInstructions,
+} from '../../reins/work-order-chat'
 import { chatCapabilitiesInstructions, chatCapabilitiesKey, normalizeChatCapabilities, toBridgeCapabilities } from './capabilities'
 import { prepareBrowserForRun } from '../browser-connection'
 import {
@@ -277,6 +281,7 @@ export async function handleBridgeRun(
     reinsChatLanguageInstructions(),
     reinsWorkspaceInstructions(),
     reinsFinanceAgentInstructions(),
+    reinsWorkOrderAgentInstructions(),
     workToolInstruction(data.work_tool),
     ...chatCapabilitiesInstructions(normalizedCapabilities),
     ...(weComWorkflow?.instructions || []),
@@ -762,19 +767,19 @@ async function maybeHandleOfficeChatRun(args: {
     name: startedTool.name,
     arguments: startedTool.arguments,
     preview: request.operation === 'revise'
-      ? 'Updating the existing document with Reins Office'
-      : 'Creating the document with Reins Office',
+      ? '正在使用 Reins Office 更新现有文档'
+      : '正在使用 Reins Office 创建文档',
   }
   pushState(args.sessionMap, args.sessionId, 'tool.started', startedPayload)
   args.emit('tool.started', startedPayload)
 
   let result: OfficeChatResult
   let lastProgressStage = ''
-  const useChineseProgress = /[\u3400-\u9fff]/.test(args.input)
+  let officeInput = args.input
   const reportProgress = (progress: OfficeWorkerProgress) => {
     if (abortController.signal.aborted || args.state.isAborting) return
     lastProgressStage = progress.stage
-    const message = useChineseProgress ? progress.message_zh : progress.message_en
+    const message = progress.message_zh
     const preview = `${message} · ${progress.percent}%`
     const toolProgressPayload = {
       ...startedPayload,
@@ -796,7 +801,25 @@ async function maybeHandleOfficeChatRun(args: {
     args.emit('agent.event', activityPayload)
   }
   try {
-    result = request.operation === 'revise' && officeRevisionNeedsClarification(args.input)
+    let workOrderSourceUnavailable = false
+    if (request.operation === 'create') {
+      try {
+        officeInput = buildWorkOrderOfficePrompt(args.input)
+      } catch (error) {
+        workOrderSourceUnavailable = true
+        logger.warn(error, '[chat-run-socket] failed to load Work Orders data for Office report')
+      }
+    }
+
+    result = workOrderSourceUnavailable
+      ? {
+          handled: true,
+          message: '暂时无法读取本地工单数据，因此没有生成报告。请确认工单数据可用后重试。',
+          exit_code: 1,
+          document: null,
+          operation: 'create',
+        }
+      : request.operation === 'revise' && officeRevisionNeedsClarification(args.input)
       ? {
           handled: true,
           message: officeClarificationPrompt(request, args.input),
@@ -806,7 +829,7 @@ async function maybeHandleOfficeChatRun(args: {
           needs_clarification: true,
         }
       : await runOfficeChatRequest(
-          args.input,
+          officeInput,
           request,
           args.officeSkillId,
           reportProgress,
@@ -847,9 +870,7 @@ async function maybeHandleOfficeChatRun(args: {
     } else {
       result = {
         handled: true,
-        message: useChineseProgress
-          ? `${friendly.title_zh}。${friendly.message_zh} ${friendly.suggestion_zh}`
-          : `${friendly.title_en}. ${friendly.message_en} ${friendly.suggestion_en}`,
+        message: `${friendly.title_zh}。${friendly.message_zh} ${friendly.suggestion_zh}`,
         exit_code: 1,
         document: null,
         operation: request.operation,
@@ -863,7 +884,7 @@ async function maybeHandleOfficeChatRun(args: {
 
   await finishOfficeChatRun(args, result.handled ? result : {
     handled: true,
-    message: 'The Office document request could not be handled.',
+    message: '无法处理此 Office 文档请求，请补充文档类型、主题和具体要求。',
     exit_code: 1,
     document: null,
   }, { runId, toolCallId: startedTool.id, toolName: startedTool.name })
@@ -887,7 +908,7 @@ function finishCancelledOfficeChatTool(args: {
       result: {
         ok: false,
         cancelled: true,
-        error: 'Office operation cancelled by user.',
+        error: '用户已取消 Office 操作。',
       },
       is_error: true,
     },

@@ -3,6 +3,8 @@ export type WorkTool =
   | 'document'
   | 'spreadsheet'
   | 'slides'
+  | 'finance'
+  | 'work-orders'
   | 'research'
   | 'browser';
 
@@ -13,6 +15,7 @@ export interface WorkToolOption {
 }
 
 export type OfficeWorkTool = 'document' | 'spreadsheet' | 'slides';
+export type RoutedWorkTool = OfficeWorkTool | 'research' | 'browser';
 
 export interface WorkSuggestion {
   id: string;
@@ -38,6 +41,16 @@ export function getWorkToolOptions(isChinese: boolean): WorkToolOption[] {
       id: 'document',
       label: isChinese ? '文档' : 'Documents',
       icon: 'document',
+    },
+    {
+      id: 'finance',
+      label: isChinese ? '财务' : 'Finance',
+      icon: 'finance',
+    },
+    {
+      id: 'work-orders',
+      label: isChinese ? '工单' : 'Work orders',
+      icon: 'work-orders',
     },
     {
       id: 'research',
@@ -154,6 +167,76 @@ const ENGLISH_SUGGESTIONS: Record<
       label: 'Automation Proposal',
       prompt:
         'Create an automation proposal presentation for Reins with the current workflow, opportunity, solution, rollout plan, risks, and ROI.',
+    },
+  ],
+  finance: [
+    {
+      id: 'record-expense',
+      label: 'Record an Expense',
+      prompt:
+        'Record an expense of [enter amount] yuan for [enter purpose] today. Ask me before recording if any required information is unclear.',
+    },
+    {
+      id: 'record-income',
+      label: 'Record Income',
+      prompt:
+        'Record income of [enter amount] yuan from [enter source] today. Ask me before recording if any required information is unclear.',
+    },
+    {
+      id: 'monthly-finance-summary',
+      label: 'Monthly Summary',
+      prompt:
+        'Summarize this month\'s income, expenses, net balance, and largest categories using my Reins Finance records.',
+    },
+    {
+      id: 'largest-expenses',
+      label: 'Largest Expenses',
+      prompt:
+        'List the 10 largest expenses this month from my Reins Finance records and summarize what drove the spending.',
+    },
+    {
+      id: 'export-finance-ledger',
+      label: 'Export Finance Excel',
+      prompt:
+        'Export the latest Reins Finance Excel ledger to my Reins Workspace and tell me the saved file path.',
+    },
+  ],
+  'work-orders': [
+    {
+      id: 'monthly-work-order-summary',
+      label: 'Monthly Summary',
+      prompt:
+        'Summarize this month\'s work orders by status, priority, category, and responsible department using the current Reins Work Orders data.',
+    },
+    {
+      id: 'urgent-pending-work-orders',
+      label: 'Urgent Pending Orders',
+      prompt:
+        'List all urgent pending work orders, including their work-order IDs, locations, responsible departments, and creation times.',
+    },
+    {
+      id: 'recent-work-orders',
+      label: 'Recent Work Orders',
+      prompt:
+        'Show the 10 most recent work orders with their IDs, status, priority, category, and responsible department.',
+    },
+    {
+      id: 'update-work-order',
+      label: 'Update a Work Order',
+      prompt:
+        'Update work order [enter work-order ID] with this handling result: [enter result]. Ask me for any missing information before changing the record.',
+    },
+    {
+      id: 'export-work-order-ledger',
+      label: 'Export Work Orders Excel',
+      prompt:
+        'Export the latest work-order Excel ledger to my Reins Workspace and tell me the saved file path.',
+    },
+    {
+      id: 'work-order-report-document',
+      label: 'Create Work Order Report',
+      prompt:
+        'Create a professional Word document reporting this month\'s real Reins work-order activity, including totals, status distribution, urgent cases, department workload, completed results, risks, and next actions.',
     },
   ],
   research: [
@@ -298,6 +381,65 @@ const CHINESE_SUGGESTIONS: Record<
         '创建一份 Reins 自动化提案演示文稿，包含当前流程、机会、解决方案、上线计划、风险和投资回报。',
     },
   ],
+  finance: [
+    {
+      id: 'record-expense',
+      label: '记录支出',
+      prompt: '记录一笔支出：金额【请输入金额】元，用途【请输入用途】，日期为今天。如有必要信息不明确，请先向我确认。',
+    },
+    {
+      id: 'record-income',
+      label: '记录收入',
+      prompt: '记录一笔收入：金额【请输入金额】元，来源【请输入来源】，日期为今天。如有必要信息不明确，请先向我确认。',
+    },
+    {
+      id: 'monthly-finance-summary',
+      label: '本月财务汇总',
+      prompt: '根据 Reins 财务记录，汇总本月收入、支出、净收支和主要收支分类。',
+    },
+    {
+      id: 'largest-expenses',
+      label: '本月大额支出',
+      prompt: '从 Reins 财务记录中列出本月金额最高的 10 笔支出，并总结主要支出原因。',
+    },
+    {
+      id: 'export-finance-ledger',
+      label: '导出财务 Excel',
+      prompt: '将最新的 Reins 财务 Excel 台账导出到 Reins Workspace，并告诉我保存路径。',
+    },
+  ],
+  'work-orders': [
+    {
+      id: 'monthly-work-order-summary',
+      label: '本月工单汇总',
+      prompt: '使用当前 Reins 工单数据，按状态、优先级、分类和负责部门汇总本月工单。',
+    },
+    {
+      id: 'urgent-pending-work-orders',
+      label: '紧急待处理工单',
+      prompt: '列出所有紧急且待处理的工单，包含工单编号、地点、负责部门和创建时间。',
+    },
+    {
+      id: 'recent-work-orders',
+      label: '最近工单',
+      prompt: '查询最近 10 条工单，显示工单编号、状态、优先级、分类和负责部门。',
+    },
+    {
+      id: 'update-work-order',
+      label: '更新工单',
+      prompt: '更新工单【请输入工单编号】，处理结果为【请输入处理结果】。信息不完整时，请先向我确认再修改。',
+    },
+    {
+      id: 'export-work-order-ledger',
+      label: '导出工单 Excel',
+      prompt: '将最新的工单 Excel 台账导出到 Reins Workspace，并告诉我保存路径。',
+    },
+    {
+      id: 'work-order-report-document',
+      label: '生成工单报告',
+      prompt: '根据真实的 Reins 工单数据，创建一份本月工单处理情况 Word 报告，包含总量、状态分布、紧急事项、部门工作量、完成结果、风险和下一步行动。',
+    },
+  ],
   research: [
     {
       id: 'competitor-analysis',
@@ -357,6 +499,11 @@ export function getWorkSuggestions(
 ): WorkSuggestion[] {
   if (tool === 'general') return [];
   return (isChinese ? CHINESE_SUGGESTIONS : ENGLISH_SUGGESTIONS)[tool];
+}
+
+export function routedWorkTool(tool: WorkTool): RoutedWorkTool | undefined {
+  if (tool === 'finance' || tool === 'work-orders' || tool === 'general') return undefined;
+  return tool;
 }
 
 export function shouldShowNewChatSuggestions(

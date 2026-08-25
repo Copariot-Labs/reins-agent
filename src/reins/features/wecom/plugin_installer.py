@@ -39,7 +39,10 @@ def _write_plugin(plugin_dir: Path) -> None:
                 "provides_tools:",
                 "  - wecom_ingest_group_ticket",
                 "  - wecom_record_staff_reply",
+                "  - wecom_list_work_orders",
+                "  - wecom_get_work_order",
                 "  - wecom_work_order_report",
+                "  - wecom_export_work_orders_excel",
                 "  - wecom_work_order_doctor",
                 "",
             ]

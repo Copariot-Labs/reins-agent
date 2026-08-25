@@ -11,6 +11,7 @@ describe('WeCom workflow detection', () => {
     expect(mayNeedWeComWorkflow('Handle a WeCom customer-service ticket')).toBe(true)
     expect(mayNeedWeComWorkflow('Record this Enterprise WeChat work order')).toBe(true)
     expect(mayNeedWeComWorkflow('企业微信收到工单后写入Excel并通知物业')).toBe(true)
+    expect(mayNeedWeComWorkflow('请汇总企业微信工单并生成报告')).toBe(false)
   })
 
   it('does not treat generic WeCom feature discussion as a gateway task', () => {
@@ -22,7 +23,8 @@ describe('WeCom workflow detection', () => {
     const workflow = buildWeComWorkflow('When WeCom receives a ticket notification, save it and notify staff')
     expect(workflow).not.toBeNull()
     expect(workflow!.instructions.join('\n')).toContain('WeChat Customer Service / 微信客服 is handled by the VPS-side wechat_kf system')
-    expect(workflow!.instructions.join('\n')).toContain('parse that text into JSON')
+    expect(workflow!.instructions.join('\n')).toContain('wecom_ingest_group_ticket')
+    expect(workflow!.toolPreview).toContain('正在解析企业微信工单通知')
     const args = weComWorkflowToolArgs(workflow!, 'When WeCom receives a ticket notification, save it and notify staff')
     expect(args).toMatchObject({
       workflow: 'reins_wecom_work_order_intake',
@@ -30,16 +32,17 @@ describe('WeCom workflow detection', () => {
       resident_chat_handler: false,
       wechat_customer_service_callback: false,
     })
-    expect(args.preferred_processor_commands).toEqual(expect.arrayContaining([
-      expect.stringContaining('reins wecom work-order add --payload-json'),
-      expect.stringContaining('reins wecom work-order add --message'),
-      expect.stringContaining('reins wecom records export'),
+    expect(args.preferred_native_tools).toEqual(expect.arrayContaining([
+      'wecom_ingest_group_ticket',
+      'wecom_record_staff_reply',
+      'wecom_work_order_report',
     ]))
     expect(args.steps).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'receive_ticket_text' }),
       expect.objectContaining({ id: 'parse_ticket_text' }),
       expect.objectContaining({ id: 'record_idempotently' }),
     ]))
+    expect(workflow!.instructions.join('\n')).not.toContain('reins wecom work-order add')
 
     const result = weComWorkflowToolResult({
       workflow: workflow!,

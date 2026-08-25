@@ -167,6 +167,7 @@ class WeComWorkOrderTests(unittest.TestCase):
                 os.environ,
                 {
                     "REINS_HOME": directory,
+                    "REINS_WECOM_NOTIFY_ENABLED": "true",
                     "REINS_WECOM_NOTIFY_GROUP_WEBHOOK": TEST_GROUP_WEBHOOK,
                     "REINS_WECOM_NOTIFY_USERS_CLEANING": "cleaner-1",
                 },
@@ -267,6 +268,7 @@ class WeComWorkOrderTests(unittest.TestCase):
                 os.environ,
                 {
                     "REINS_HOME": directory,
+                    "REINS_WECOM_NOTIFY_ENABLED": "true",
                     "REINS_WECOM_NOTIFY_GROUP_WEBHOOK": TEST_GROUP_WEBHOOK,
                     "REINS_WECOM_NOTIFY_USERS_PROPERTY": "property-user-1|property-user-2",
                 },
@@ -325,6 +327,7 @@ class WeComWorkOrderTests(unittest.TestCase):
                 os.environ,
                 {
                     "REINS_HOME": directory,
+                    "REINS_WECOM_NOTIFY_ENABLED": "true",
                     "REINS_WECOM_NOTIFY_GROUP_WEBHOOK": TEST_GROUP_WEBHOOK,
                     "REINS_WECOM_NOTIFY_USERS_PROPERTY": "property-maintenance-1",
                 },
@@ -357,6 +360,7 @@ class WeComWorkOrderTests(unittest.TestCase):
                 os.environ,
                 {
                     "REINS_HOME": directory,
+                    "REINS_WECOM_NOTIFY_ENABLED": "true",
                     "REINS_WECOM_NOTIFY_GROUP_WEBHOOK": TEST_GROUP_WEBHOOK,
                     "REINS_WECOM_NOTIFY_USERS_PROPERTY": "property-maintenance-1",
                 },
@@ -538,6 +542,7 @@ class WeComWorkOrderTests(unittest.TestCase):
                 os.environ,
                 {
                     "REINS_HOME": directory,
+                    "REINS_WECOM_NOTIFY_ENABLED": "true",
                     "REINS_WECOM_NOTIFY_GROUP_WEBHOOK": TEST_GROUP_WEBHOOK,
                     "REINS_WECOM_NOTIFY_USERS_PROPERTY": "property-1",
                 },
@@ -688,7 +693,10 @@ class WeComWorkOrderTests(unittest.TestCase):
             {
                 "wecom_ingest_group_ticket",
                 "wecom_record_staff_reply",
+                "wecom_list_work_orders",
+                "wecom_get_work_order",
                 "wecom_work_order_report",
+                "wecom_export_work_orders_excel",
                 "wecom_work_order_doctor",
             },
         )
@@ -699,6 +707,7 @@ class WeComWorkOrderTests(unittest.TestCase):
                 os.environ,
                 {
                     "REINS_HOME": directory,
+                    "REINS_WECOM_NOTIFY_ENABLED": "true",
                     "REINS_WECOM_NOTIFY_GROUP_WEBHOOK": TEST_GROUP_WEBHOOK,
                     "REINS_WECOM_NOTIFY_USERS_HOSPITAL": "doctor-1",
                 },
@@ -735,6 +744,7 @@ class WeComWorkOrderTests(unittest.TestCase):
                 os.environ,
                 {
                     "REINS_HOME": directory,
+                    "REINS_WECOM_NOTIFY_ENABLED": "true",
                     "REINS_WECOM_NOTIFY_GROUP_WEBHOOK": TEST_GROUP_WEBHOOK,
                     "REINS_WECOM_NOTIFY_USERS_PROPERTY": "property-maintenance-1",
                 },

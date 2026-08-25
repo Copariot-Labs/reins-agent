@@ -30,6 +30,12 @@ const WECOM_RE =
 const WORK_ORDER_ACTION_RE =
   /\b(?:ticket|work\s*order|workorder|order|record|excel|report|assign|assignment|notify|notification|staff|reply|update|status|complaint|intake)\b|(?:工单|记录|报告|报表|分配|指派|通知|员工|工作人员|回复|更新|状态|投诉|录入|台账)/i;
 
+const READ_ONLY_RE =
+  /\b(?:summary|summarize|count|list|show|find|detail|report|export)\b|(?:汇总|总结|统计|查询|查看|列出|详情|报告|报表|台账|导出)/i;
+
+const MUTATION_RE =
+  /\b(?:receive|ingest|intake|save|record|notify|assign|reply|update)\b|(?:接收|录入|保存|记录|通知|分配|指派|回复|更新|处理结果)/i;
+
 const NON_TASK_RE =
   /^(?:section|integration|feature|design|settings?|config(?:uration)?|docs?|page|route)\b/i;
 
@@ -51,6 +57,7 @@ export function mayNeedWeComWorkflow(input: string): boolean {
 
   const remainingText = text.replace(WECOM_RE, '').trim();
   if (NON_TASK_RE.test(remainingText)) return false;
+  if (READ_ONLY_RE.test(text) && !MUTATION_RE.test(text)) return false;
 
   return WORK_ORDER_ACTION_RE.test(text);
 }
@@ -61,84 +68,75 @@ export function buildWeComWorkflow(input: string): WeComWorkflow | null {
 
   return {
     statusText:
-      'Reins WeCom work-order workflow enabled: receive the documented WeCom ticket notification text from the VPS wechat_kf system, parse it, record it idempotently, classify and assign it, notify staff, update the same Excel-backed record from staff replies, and generate reports.',
+      '正在使用 Reins 工单流程校验通知内容、写入同一工单记录并通知负责人员。',
 
     toolPreview:
-      'Receive WeCom ticket notification text, parse ticket_id/category/priority/resident_ref/summary/source/created_at into JSON, call work-order add, notify staff, and update the Excel ledger.',
+      '正在解析企业微信工单通知并更新本地工单台账',
 
     steps: [
       {
         id: 'receive_ticket_text',
-        label:
-          'Receive the documented WeCom bot/group ticket notification text from VPS wechat_kf',
+        label: '接收企业微信中的结构化工单通知',
       },
       {
         id: 'parse_ticket_text',
-        label:
-          'Parse ticket_id, category, priority, resident_ref, summary, source, and created_at into JSON',
+        label: '解析工单编号、分类、优先级、诉求、来源和创建时间',
       },
       {
         id: 'validate_ticket',
-        label:
-          'Validate ticket_id/external_id, category, priority, resident reference, summary, and creation time',
+        label: '校验工单编号和必填信息',
       },
       {
         id: 'record_idempotently',
-        label:
-          'Create or update the local work-order record using ticket_id/external_id as the idempotency key',
+        label: '按工单编号创建或更新同一条本地记录',
       },
       {
         id: 'classify_assign',
-        label:
-          'Classify the ticket and assign it to property, cleaning, police, hospital, community, or human review',
+        label: '识别工单类型并分配负责部门',
       },
       {
         id: 'write_excel',
-        label:
-          'Write or update the Excel-backed work-order ledger only after validation succeeds',
+        label: '校验成功后更新 Excel 工单台账',
       },
       {
         id: 'notify_staff',
-        label:
-          'Notify the responsible staff target through the configured Enterprise WeChat webhook/API after the local record write succeeds',
+        label: '本地记录成功后通知负责人员',
       },
       {
         id: 'update_from_reply',
-        label:
-          'Update the same local ticket record when responsible staff reply with progress, resolution, or escalation notes',
+        label: '收到处理回复后更新同一张工单',
       },
       {
         id: 'generate_report',
-        label:
-          'Generate a progress report or closure report from the local ticket record and event history',
+        label: '根据真实工单记录生成进度或结案报告',
       },
       {
         id: 'human_review',
-        label:
-          'Mark malformed, ambiguous, or uncertain tickets as waiting_human_review instead of silently dropping them',
+        label: '信息不完整或分类不确定时转为人工审核',
       },
     ],
 
     instructions: [
-      '[Reins WeCom work-order workflow requested]',
-      `Original request: ${request}`,
+      '[已请求 Reins 企业微信工单流程]',
+      `用户原始请求：${request}`,
 
       'Use the NEW project boundary: WeChat Customer Service / 微信客服 is handled by the VPS-side wechat_kf system, not by Reins.',
       'Do not implement or expect WeChat Customer Service callbacks inside Reins.',
       'Do not treat Reins as the resident-facing chatbot.',
       'Do not use generic desktop WeChat automation or computer_use for this workflow.',
-      'Do not use Hermes WeCom gateway as the resident conversation handler for this workflow.',
+      'Do not use any legacy or external agent gateway as the resident conversation handler for this workflow.',
 
       'Reins receives the documented WeCom bot/group ticket notification text produced by the VPS wechat_kf system.',
       'The expected text block starts with `[WeChat Customer-Service Ticket]` and includes ticket_id, category, priority, resident_ref, summary, source, and created_at.',
-      "The Hermes WeCom gateway / WeCom reader should parse that text into JSON, then internally call `reins wecom work-order add --payload-json '{...}' --notify --json`.",
-      'The web endpoint `POST /api/reins/wecom/work-orders` also accepts the raw text as `{ "message": "...", "notify": true }` and performs that parse/call step.',
+      'Use the native wecom_ingest_group_ticket tool to parse and save one complete structured notification.',
       'Use ticket_id/external_id as the idempotency key. Repeated ticket notifications must update the same local record and must not create duplicate Excel rows.',
       'Notify the assigned responsible role only after the local Excel-backed record write succeeds.',
       'Responsible-role notification uses configured Enterprise WeChat webhook/API environment variables such as REINS_WECOM_NOTIFY_WEBHOOK_PROPERTY, REINS_WECOM_NOTIFY_WEBHOOK_CLEANING, REINS_WECOM_NOTIFY_WEBHOOK_POLICE, REINS_WECOM_NOTIFY_WEBHOOK_HOSPITAL, REINS_WECOM_NOTIFY_WEBHOOK_COMMUNITY, or REINS_WECOM_NOTIFY_WEBHOOK_DEFAULT.',
 
-      "For staff follow-up replies, use `reins wecom work-order reply --payload-json '{...}' --json` or POST `/api/reins/wecom/work-orders/replies`.",
+      'For staff follow-up replies, use the native wecom_record_staff_reply tool.',
       'A staff reply must update the existing ticket by external_id/ticket_id instead of creating a new ticket.',
+      'If the ticket ID or handling result is missing, ask the user for that information in concise Chinese instead of using a terminal or returning a technical error.',
+      'Do not run shell commands, install packages, read SQLite directly, or use another document/work-order implementation as a fallback.',
       'Do not mark a ticket completed before the Excel update succeeds.',
       'If the payload is malformed, duplicated, or ambiguous, return a clear result and preserve enough evidence for diagnosis.',
       'If classification is uncertain, set the ticket to waiting_human_review and notify the default/human-review target.',
@@ -159,36 +157,28 @@ export function weComWorkflowToolArgs(
     resident_chat_handler: false,
     wechat_customer_service_callback: false,
 
-    transport:
-      'Structured work-order payload from VPS wechat_kf or temporary Enterprise WeChat bridge',
+    transport: '来自 VPS wechat_kf 或企业微信桥接服务的结构化工单通知',
 
-    preferred_processor_commands: [
-      'reins wecom doctor --json',
-      "reins wecom work-order add --payload-json '{...}' --notify --json",
-      'reins wecom work-order add --message "<WeCom ticket text>" --notify --json',
-      "reins wecom work-order reply --payload-json '{...}' --json",
-      'reins wecom work-order reply --external-id "<ticket_id>" --message "<staff reply>" --json',
-      'reins wecom records export --json',
-      'reins wecom records report --kind work_order --json',
-    ],
-
-    preferred_http_endpoints: [
-      'POST /api/reins/wecom/work-orders',
-      'POST /api/reins/wecom/work-orders/replies',
+    preferred_native_tools: [
+      'wecom_ingest_group_ticket',
+      'wecom_record_staff_reply',
+      'wecom_list_work_orders',
+      'wecom_get_work_order',
+      'wecom_work_order_report',
+      'wecom_export_work_orders_excel',
+      'wecom_work_order_doctor',
     ],
 
     decision_flow: [
-      'Receive documented WeCom ticket notification text from VPS wechat_kf.',
-      'Parse that text into JSON fields.',
-      'Validate required fields, especially ticket_id/external_id.',
-      'Use ticket_id/external_id as the idempotency key.',
-      'Create or update the same local ticket record.',
-      'Classify the ticket and assign the responsible role.',
-      'Write or update the Excel-backed ledger.',
-      'Notify the responsible staff target only after the local record write succeeds.',
-      'When staff reply, update the same ticket row and append progress/resolution information.',
-      'Generate progress or closure report.',
-      'If data is malformed or uncertain, mark waiting_human_review and notify a human-review/default target.',
+      '接收结构化企业微信工单通知。',
+      '解析并校验工单字段，尤其是 ticket_id/external_id。',
+      '使用 ticket_id/external_id 作为幂等键。',
+      '创建或更新同一条本地工单记录。',
+      '识别分类并分配负责部门。',
+      '更新 Excel 工单台账。',
+      '本地写入成功后再通知负责人员。',
+      '工作人员回复后更新同一条工单并追加处理结果。',
+      '数据不完整或分类不确定时转为人工审核。',
     ],
 
     steps: workflow.steps.map((step, index) => ({

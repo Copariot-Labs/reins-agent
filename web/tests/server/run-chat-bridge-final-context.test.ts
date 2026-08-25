@@ -430,7 +430,7 @@ describe('bridge run final context usage', () => {
     expect(bridge.contextEstimate).toHaveBeenCalledWith(
       'session-1',
       [],
-      expect.stringContaining('[Reins WeCom work-order workflow requested]'),
+      expect.stringContaining('[已请求 Reins 企业微信工单流程]'),
       'default',
       expect.objectContaining({
         capabilities: {
@@ -443,7 +443,7 @@ describe('bridge run final context usage', () => {
       'session-1',
       'Handle a WeCom ticket notification and record it',
       expect.any(Array),
-      expect.stringContaining('parse that text into JSON'),
+      expect.stringContaining('wecom_ingest_group_ticket'),
       'default',
       expect.objectContaining({
         capabilities: {
@@ -454,7 +454,7 @@ describe('bridge run final context usage', () => {
     )
     expect(emit).toHaveBeenCalledWith('tool.started', expect.objectContaining({
       tool: 'wecom_workflow',
-      preview: expect.stringContaining('Receive WeCom ticket notification text'),
+      preview: expect.stringContaining('正在解析企业微信工单通知'),
       arguments: expect.stringContaining('desktop_computer_use'),
     }))
     expect(emit).toHaveBeenCalledWith('tool.completed', expect.objectContaining({
@@ -463,7 +463,7 @@ describe('bridge run final context usage', () => {
     }))
     expect(emit).toHaveBeenCalledWith('agent.event', expect.objectContaining({
       kind: 'workflow',
-      text: expect.stringContaining('Reins WeCom work-order workflow enabled'),
+      text: expect.stringContaining('正在使用 Reins 工单流程'),
     }))
   })
 
@@ -565,7 +565,7 @@ describe('bridge run final context usage', () => {
     expect(emit).toHaveBeenCalledWith('tool.started', expect.objectContaining({
       progress_stage: 'content_generation',
       progress_percent: 18,
-      preview: 'Reins is planning the content · 18%',
+      preview: 'Reins 正在整理内容 · 18%',
     }))
     expect(emit).toHaveBeenCalledWith('agent.event', expect.objectContaining({
       kind: 'workflow',
@@ -684,7 +684,7 @@ describe('bridge run final context usage', () => {
     )
     expect(emit).toHaveBeenCalledWith('tool.started', expect.objectContaining({
       tool: 'reins_office_revise',
-      preview: expect.stringContaining('existing document'),
+      preview: expect.stringContaining('更新现有文档'),
     }))
   })
 

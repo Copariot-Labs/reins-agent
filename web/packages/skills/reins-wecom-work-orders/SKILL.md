@@ -31,8 +31,14 @@ If the message has no ticket ID, ask the staff member for the ticket ID before u
 
 ## Reports And Readiness
 
-- Use `wecom_work_order_report` for counts or operational summaries.
+- Use `wecom_work_order_report` for date-range counts or operational summaries.
+- Use `wecom_list_work_orders` for filtered records such as urgent, pending, category, department, location, or keyword queries.
+- Use `wecom_get_work_order` for one exact ticket. Ask for the ticket ID when the user did not provide one.
+- Use `wecom_export_work_orders_excel` when the user wants the current ledger in the Reins Workspace.
 - Use `wecom_work_order_doctor` to verify Excel storage, application credentials, role recipients, and webhook fallbacks.
+- For Word, Excel, or PowerPoint reports, use the real query/summary results as source data and then use Reins Office. Never create a generic report with invented counts.
+- Respond in Simplified Chinese and keep progress summaries concise.
+- Never use terminal commands, scripts, direct SQLite access, or package installation as a fallback for work-order requests.
 - Never expose application secrets, access tokens, or unnecessary resident identifiers in chat.
 
 ## Scope

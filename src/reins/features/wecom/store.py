@@ -597,6 +597,29 @@ def list_records(limit: int = 50, kind: str | None = None) -> list[dict[str, Any
     return [_row_to_dict(row) for row in rows]
 
 
+def list_all_records(kind: str | None = None) -> list[dict[str, Any]]:
+    """Return the complete local record set for trusted summaries and reports."""
+    migrate()
+    clauses = []
+    params: list[Any] = []
+    if kind:
+        clauses.append("kind = ?")
+        params.append(kind)
+
+    where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    with closing(connect()) as connection:
+        rows = connection.execute(
+            f"""
+            SELECT *
+            FROM wecom_records
+            {where_sql}
+            ORDER BY id DESC
+            """,
+            params,
+        ).fetchall()
+    return [_row_to_dict(row) for row in rows]
+
+
 def export_records_xlsx(path: Path | None = None) -> Path:
     """Export the staff-facing work-order workbook.
 
