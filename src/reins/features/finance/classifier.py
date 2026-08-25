@@ -44,8 +44,13 @@ INCOME_KEYWORDS = {
 QUERY_TRANSACTION_KEYWORDS = {
     "查",
     "查询",
+    "查看",
+    "显示",
+    "列出",
     "流水",
-    "记录",
+    "交易记录",
+    "收支记录",
+    "账单",
     "明细",
     "最近",
     "列表",
@@ -64,7 +69,29 @@ SUMMARY_KEYWORDS = {
     "本月支出",
     "这个月收入",
     "本月收入",
+    "收支情况",
+    "收支状况",
+    "财务情况",
+    "财务状况",
+    "余额",
+    "结余",
+    "花了多少",
+    "赚了多少",
 }
+
+RECORD_KEYWORDS = {
+    "记账",
+    "记一笔",
+    "记录一笔",
+    "新增一笔",
+    "添加一笔",
+    "录入一笔",
+}
+
+EXCEL_EXPORT_KEYWORDS = {"excel", "xlsx", "工作簿", "电子表格", "表格"}
+EXPORT_KEYWORDS = {"导出", "下载", "生成", "制作", "创建", "保存"}
+FINANCE_CONTEXT_KEYWORDS = {"财务", "收支", "交易", "流水", "账单", "记账"}
+FINANCE_TEMPLATE_KEYWORDS = {"预算", "模板", "规划", "计划", "监控", "预测"}
 
 
 def _contains_any(text: str, keywords: set[str]) -> bool:
@@ -73,11 +100,25 @@ def _contains_any(text: str, keywords: set[str]) -> bool:
 
 def classify_finance_intent(text: str) -> FinanceIntent:
     normalized = text.strip()
+    normalized_lower = normalized.lower()
 
     if not normalized:
         return FinanceIntent(
             intent="unknown",
             confidence=0.0,
+            raw_text=text,
+            missing_fields=[],
+        )
+
+    if (
+        _contains_any(normalized_lower, EXCEL_EXPORT_KEYWORDS)
+        and _contains_any(normalized, EXPORT_KEYWORDS)
+        and _contains_any(normalized, FINANCE_CONTEXT_KEYWORDS)
+        and not _contains_any(normalized, FINANCE_TEMPLATE_KEYWORDS)
+    ):
+        return FinanceIntent(
+            intent="export_excel",
+            confidence=0.94,
             raw_text=text,
             missing_fields=[],
         )
@@ -89,6 +130,23 @@ def classify_finance_intent(text: str) -> FinanceIntent:
             raw_text=text,
             missing_fields=[],
         )
+
+    # "记录一笔支出" is an add command, not a request to list records.
+    if _contains_any(normalized, RECORD_KEYWORDS):
+        if _contains_any(normalized, INCOME_KEYWORDS):
+            return FinanceIntent(
+                intent="record_income",
+                confidence=0.92,
+                raw_text=text,
+                missing_fields=[],
+            )
+        if _contains_any(normalized, EXPENSE_KEYWORDS) or "支出" in normalized:
+            return FinanceIntent(
+                intent="record_expense",
+                confidence=0.92,
+                raw_text=text,
+                missing_fields=[],
+            )
 
     if _contains_any(normalized, QUERY_TRANSACTION_KEYWORDS):
         return FinanceIntent(

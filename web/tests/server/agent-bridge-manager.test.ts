@@ -102,6 +102,41 @@ describe('agent bridge manager command resolution', () => {
     expect(env.HERMES_OPENROUTER_APP_CATEGORIES).toBe('cli-agent,personal-agent')
     expect(env.REINS_WORKSPACE_ROOT).toBe('/tmp/Reins Workspace')
     expect(env.TERMINAL_CWD).toBe('/tmp/Reins Workspace')
+    expect(env.REINS_HOME).toBe('/tmp/hermes-home')
+    expect(env.REINS_REQUIRED_TOOLSETS).toContain('reins_finance')
+  })
+
+  it('uses the Reins project runtime when launched directly from the web workspace', async () => {
+    const projectRoot = join(tempDir, 'reins-project')
+    const agentRoot = join(projectRoot, 'vendor', 'hermes-agent')
+    const projectPython = process.platform === 'win32'
+      ? join(projectRoot, '.venv', 'Scripts', 'python.exe')
+      : join(projectRoot, '.venv', 'bin', 'python3')
+    mkdirSync(join(projectRoot, 'src', 'reins'), { recursive: true })
+    mkdirSync(agentRoot, { recursive: true })
+    mkdirSync(join(projectRoot, '.venv', process.platform === 'win32' ? 'Scripts' : 'bin'), { recursive: true })
+    writeFileSync(join(agentRoot, 'run_agent.py'), '')
+    writeFileSync(projectPython, '#!/bin/sh\n')
+    chmodSync(projectPython, 0o755)
+    delete process.env.HERMES_HOME
+    delete process.env.HERMES_BIN
+    process.env.REINS_HOME = join(tempDir, 'reins-home')
+
+    const { buildAgentBridgeProcessEnv, resolveAgentBridgeCommand } = await import('../../packages/server/src/services/hermes/agent-bridge/manager')
+    const command = resolveAgentBridgeCommand({ reinsProjectRoot: projectRoot })
+    const env = buildAgentBridgeProcessEnv(
+      'ipc:///tmp/test.sock',
+      command.hermesHome,
+      command.agentRoot,
+      '/tmp/Reins Workspace',
+      command.reinsProjectRoot,
+    )
+
+    expect(command.command).toBe(projectPython)
+    expect(command.agentRoot).toBe(agentRoot)
+    expect(command.hermesHome).toBe(join(tempDir, 'reins-home'))
+    expect(env.PYTHONPATH).toContain(join(projectRoot, 'src'))
+    expect(env.REINS_RUNTIME_ROOT).toBe(projectRoot)
   })
 
   it('keeps explicit OpenRouter attribution env values when starting the bridge', async () => {

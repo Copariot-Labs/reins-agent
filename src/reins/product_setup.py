@@ -25,6 +25,7 @@ from reins.features.wecom.ticket_service import install_service, service_status
 
 
 PRODUCT_PLUGINS = ("reins-finance", "reins-wecom")
+PRODUCT_PLUGIN_TOOLSETS = ("reins_finance", "reins_wecom")
 
 
 def _config_paths(home: Path) -> list[Path]:
@@ -73,6 +74,21 @@ def _enable_product_plugins(config_path: Path) -> None:
             entry = {}
             entries[name] = entry
         entry["allow_tool_override"] = False
+
+    platform_toolsets = payload.setdefault("platform_toolsets", {})
+    if not isinstance(platform_toolsets, dict):
+        platform_toolsets = {}
+        payload["platform_toolsets"] = platform_toolsets
+    if not platform_toolsets:
+        platform_toolsets["cli"] = ["hermes-cli", *PRODUCT_PLUGIN_TOOLSETS]
+    else:
+        cli_toolsets = platform_toolsets.setdefault("cli", ["hermes-cli"])
+        if not isinstance(cli_toolsets, list):
+            cli_toolsets = ["hermes-cli"]
+            platform_toolsets["cli"] = cli_toolsets
+        for toolset in PRODUCT_PLUGIN_TOOLSETS:
+            if toolset not in cli_toolsets:
+                cli_toolsets.append(toolset)
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = config_path.with_name(f".{config_path.name}.tmp")

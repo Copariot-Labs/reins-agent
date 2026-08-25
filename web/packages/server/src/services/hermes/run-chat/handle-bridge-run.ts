@@ -51,6 +51,9 @@ import {
   shouldAskForOfficeClarification,
   type OfficeWorkerProgress,
 } from '../../reins/office'
+import {
+  reinsFinanceAgentInstructions,
+} from '../../reins/finance-chat'
 import { chatCapabilitiesInstructions, chatCapabilitiesKey, normalizeChatCapabilities, toBridgeCapabilities } from './capabilities'
 import { prepareBrowserForRun } from '../browser-connection'
 import {
@@ -271,6 +274,7 @@ export async function handleBridgeRun(
   const runContext = [
     `[Current Reins profile: ${profile}]`,
     reinsWorkspaceInstructions(),
+    reinsFinanceAgentInstructions(),
     workToolInstruction(data.work_tool),
     ...chatCapabilitiesInstructions(normalizedCapabilities),
     ...(weComWorkflow?.instructions || []),

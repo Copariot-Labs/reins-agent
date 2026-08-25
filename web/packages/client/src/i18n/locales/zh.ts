@@ -302,7 +302,7 @@ export default {
       edit: '编辑',
       delete: '删除',
       refresh: '刷新',
-      exportCsv: '导出 CSV',
+      exportExcel: '导出 Excel',
     },
     filters: {
       all: '全部',

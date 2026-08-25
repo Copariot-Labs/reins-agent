@@ -15,10 +15,10 @@ def format_money(amount: float, currency: str = "CNY") -> str:
 
 def format_transaction_type(value: str) -> str:
     if value == "income":
-        return "income"
+        return "收入"
 
     if value == "expense":
-        return "expense"
+        return "支出"
 
     return value
 
@@ -47,41 +47,41 @@ def format_transaction(tx: Transaction) -> str:
 def format_transaction_created(tx: Transaction) -> str:
     return "\n".join(
         [
-            f"Recorded {format_transaction_type(tx.type)}: {format_money(tx.amount, tx.currency)}",
-            f"Category: {tx.category}",
-            f"Date: {tx.occurred_at.isoformat()}",
-            f"Description: {tx.description}",
-            f"ID: {tx.id}",
+            f"已记录{format_transaction_type(tx.type)}：{format_money(tx.amount, tx.currency)}",
+            f"分类：{tx.category}",
+            f"日期：{tx.occurred_at.isoformat()}",
+            f"说明：{tx.description}",
+            f"编号：{tx.id}",
         ]
     )
 
 
 def format_summary_report(report: SummaryReport) -> str:
     lines = [
-        f"Finance summary: {report.start_date.isoformat()} to {report.end_date.isoformat()}",
+        f"财务汇总：{report.start_date.isoformat()} 至 {report.end_date.isoformat()}",
         "",
-        f"Total income: {format_money(report.total_income)}",
-        f"Total expense: {format_money(report.total_expense)}",
-        f"Net income: {format_money(report.net)}",
+        f"总收入：{format_money(report.total_income)}",
+        f"总支出：{format_money(report.total_expense)}",
+        f"净收支：{format_money(report.net)}",
     ]
 
     if report.expense_by_category:
-        lines.extend(["", "Expense by category:"])
+        lines.extend(["", "支出分类："])
         for category, amount in report.expense_by_category.items():
             lines.append(f"- {category}: {format_money(amount)}")
 
     if report.income_by_category:
-        lines.extend(["", "Income by category:"])
+        lines.extend(["", "收入分类："])
         for category, amount in report.income_by_category.items():
             lines.append(f"- {category}: {format_money(amount)}")
 
     if report.recent_transactions:
-        lines.extend(["", "Recent transactions:"])
+        lines.extend(["", "最近交易："])
         for tx in report.recent_transactions:
             lines.append(f"- {format_transaction(tx)}")
 
     if not report.recent_transactions:
-        lines.extend(["", "No transactions found for this period."])
+        lines.extend(["", "该时间段内暂无交易记录。"])
 
     return "\n".join(lines)
 

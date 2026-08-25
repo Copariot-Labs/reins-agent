@@ -1,9 +1,8 @@
 import { existsSync, mkdirSync } from 'fs';
-import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { DatabaseSync } from 'node:sqlite';
 import { resolveReinsHome } from './reins-path';
-import { reinsWorkspaceDir } from '../reins/workspace-path';
+import { runFinanceWorkbookExport } from '../reins/finance-chat';
 
 export type FinanceTransactionType = 'income' | 'expense';
 
@@ -62,26 +61,6 @@ export interface FinanceSummary {
   expense_by_category: FinanceCategoryTotal[];
   recent_transactions: FinanceTransaction[];
 }
-
-const CSV_COLUMNS: Array<{
-  header: string;
-  value: (transaction: FinanceTransaction) => unknown;
-}> = [
-  { header: 'ID/编号', value: (tx) => tx.id },
-  { header: 'Type/类型', value: (tx) => tx.type },
-  { header: 'Amount/金额', value: (tx) => tx.amount },
-  { header: 'Currency/币种', value: (tx) => tx.currency },
-  { header: 'Category/分类', value: (tx) => tx.category },
-  { header: 'Description/描述', value: (tx) => tx.description },
-  { header: 'Counterparty/交易对象', value: (tx) => tx.counterparty },
-  { header: 'Payment Method/支付方式', value: (tx) => tx.payment_method },
-  {
-    header: 'Transaction Date/交易日期',
-    value: (tx) => formatCsvDate(tx.occurred_at),
-  },
-  { header: 'Created At/创建时间', value: (tx) => formatCsvDateTime(tx.created_at) },
-  { header: 'Updated At/更新时间', value: (tx) => formatCsvDateTime(tx.updated_at) },
-];
 
 type SqlParam = string | number | null;
 
@@ -221,29 +200,6 @@ function formatDate(value: Date): string {
   const month = String(value.getMonth() + 1).padStart(2, '0');
   const day = String(value.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
-}
-
-function formatCsvDate(value: string | null | undefined): string {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) return raw;
-  return formatDate(parsed);
-}
-
-function formatCsvDateTime(value: string | null | undefined): string {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) return raw;
-
-  const hours = String(parsed.getHours()).padStart(2, '0');
-  const minutes = String(parsed.getMinutes()).padStart(2, '0');
-  const seconds = String(parsed.getSeconds()).padStart(2, '0');
-  return `${formatDate(parsed)} ${hours}:${minutes}:${seconds}`;
 }
 
 export function resolveFinancePeriod(query: Record<string, unknown>): {
@@ -669,37 +625,8 @@ export function getFinanceSummary(query: FinanceQuery): FinanceSummary {
   }
 }
 
-function csvEscape(value: unknown): string {
-  const raw = value == null ? '' : String(value);
-  if (!/[",\r\n]/.test(raw)) return raw;
-  return `"${raw.replace(/"/g, '""')}"`;
-}
-
-function transactionsToCsv(transactions: FinanceTransaction[]): string {
-  const lines = [
-    CSV_COLUMNS.map((column) => csvEscape(column.header)).join(','),
-    ...transactions.map((tx) =>
-      CSV_COLUMNS.map((column) => csvEscape(column.value(tx))).join(','),
-    ),
-  ];
-  return `\uFEFF${lines.join('\n')}\n`;
-}
-
 export async function exportFinanceTransactions(
   query: FinanceQuery,
 ): Promise<{ path: string; fileName: string; count: number }> {
-  const exportDir = join(reinsWorkspaceDir('Generated'), 'Finance');
-  await mkdir(exportDir, { recursive: true });
-
-  const transactions = listFinanceTransactions({
-    ...query,
-    limit: 100_000,
-    offset: 0,
-  });
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const fileName = `reins-finance-${query.startDate || 'all'}-to-${query.endDate || 'all'}-${stamp}.csv`;
-  const outputPath = join(exportDir, fileName);
-  await writeFile(outputPath, transactionsToCsv(transactions), 'utf-8');
-
-  return { path: outputPath, fileName, count: transactions.length };
+  return runFinanceWorkbookExport(query);
 }

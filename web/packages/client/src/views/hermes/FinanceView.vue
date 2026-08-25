@@ -510,7 +510,7 @@ onMounted(() => {
           {{ t('finance.actions.refresh') }}
         </NButton>
         <NButton size="small" secondary :loading="exporting" :disabled="!summary?.databaseExists" @click="exportData">
-          {{ t('finance.actions.exportCsv') }}
+          {{ t('finance.actions.exportExcel') }}
         </NButton>
       </div>
     </header>

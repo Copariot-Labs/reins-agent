@@ -49,6 +49,7 @@ def write_plugin_yaml(plugin_dir: Path) -> None:
                 "  - finance_record_transaction_from_text",
                 "  - finance_list_transactions",
                 "  - finance_summarize_period",
+                "  - finance_export_excel",
                 "",
             ]
         ),

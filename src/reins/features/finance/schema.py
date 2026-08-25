@@ -13,6 +13,7 @@ FinanceIntentName = Literal[
     "record_income",
     "query_transactions",
     "query_summary",
+    "export_excel",
     "unknown",
 ]
 

@@ -1,25 +1,66 @@
 import { execFile } from 'child_process'
+import { existsSync } from 'fs'
+import { delimiter, resolve } from 'path'
 import { promisify } from 'util'
 import { logger } from '../logger'
 import { resolveReinsHome } from './reins-path'
 import { resolveReinsWorkspaceRoot } from './workspace-path'
 
 const execFileAsync = promisify(execFile)
+let productSetupInFlight: Promise<Record<string, unknown> | null> | null = null
 
-function resolveReinsBin(): string {
-  return process.env.REINS_BIN?.trim() || process.env.HERMES_BIN?.trim() || 'reins'
+interface ReinsSetupInvocation {
+  command: string
+  argsPrefix: string[]
+  cwd?: string
+  pythonPath?: string
 }
 
-export async function ensureReinsProductReady(): Promise<Record<string, unknown> | null> {
+export function resolveReinsSetupInvocation(): ReinsSetupInvocation {
+  const explicit = process.env.REINS_BIN?.trim()
+  if (explicit) return { command: explicit, argsPrefix: [] }
+
+  const roots = new Set([
+    process.env.REINS_PROJECT_ROOT?.trim(),
+    process.env.REINS_RUNTIME_ROOT?.trim(),
+    resolve(process.cwd(), '..'),
+    process.cwd(),
+  ].filter(Boolean) as string[])
+  for (const root of roots) {
+    const python = process.platform === 'win32'
+      ? resolve(root, '.venv', 'Scripts', 'python.exe')
+      : resolve(root, '.venv', 'bin', 'python')
+    if (existsSync(python) && existsSync(resolve(root, 'src', 'reins'))) {
+      return {
+        command: python,
+        argsPrefix: ['-m', 'reins.main'],
+        cwd: root,
+        pythonPath: resolve(root, 'src'),
+      }
+    }
+  }
+
+  return {
+    command: process.env.HERMES_BIN?.trim() || 'reins',
+    argsPrefix: [],
+  }
+}
+
+async function runReinsProductSetup(): Promise<Record<string, unknown> | null> {
   try {
+    const invocation = resolveReinsSetupInvocation()
     const args = ['bootstrap', '--json']
     if (process.env.REINS_DESKTOP === '1') args.push('--enable-background-wecom')
-    const { stdout } = await execFileAsync(resolveReinsBin(), args, {
+    const { stdout } = await execFileAsync(invocation.command, [...invocation.argsPrefix, ...args], {
+      cwd: invocation.cwd,
       env: {
         ...process.env,
         REINS_HOME: resolveReinsHome(),
         HERMES_HOME: resolveReinsHome(),
         REINS_WORKSPACE_ROOT: resolveReinsWorkspaceRoot(),
+        ...(invocation.pythonPath
+          ? { PYTHONPATH: [invocation.pythonPath, process.env.PYTHONPATH].filter(Boolean).join(delimiter) }
+          : {}),
       },
       encoding: 'utf8',
       maxBuffer: 4 * 1024 * 1024,
@@ -32,5 +73,14 @@ export async function ensureReinsProductReady(): Promise<Record<string, unknown>
   } catch (error) {
     logger.warn(error, '[bootstrap] Reins product feature setup failed')
     return null
+  }
+}
+
+export async function ensureReinsProductReady(): Promise<Record<string, unknown> | null> {
+  if (!productSetupInFlight) productSetupInFlight = runReinsProductSetup()
+  try {
+    return await productSetupInFlight
+  } finally {
+    productSetupInFlight = null
   }
 }

@@ -301,7 +301,7 @@ export default {
       edit: '編輯',
       delete: '刪除',
       refresh: '重新整理',
-      exportCsv: '匯出 CSV',
+      exportExcel: '匯出 Excel',
     },
     filters: {
       all: '全部',

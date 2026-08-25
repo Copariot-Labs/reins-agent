@@ -70,6 +70,14 @@ class ProductSetupTests(unittest.TestCase):
                     plugins["entries"]["reins-wecom"]["allow_tool_override"]
                 )
                 self.assertIn(
+                    "reins_finance",
+                    config["platform_toolsets"]["cli"],
+                )
+                self.assertIn(
+                    "reins_wecom",
+                    config["platform_toolsets"]["cli"],
+                )
+                self.assertIn(
                     "You are Reins Agent",
                     config["agent"]["system_prompt"],
                 )
@@ -79,6 +87,15 @@ class ProductSetupTests(unittest.TestCase):
                 )
                 self.assertTrue((config_path.parent / "plugins" / "reins-finance").is_dir())
                 self.assertTrue((config_path.parent / "plugins" / "reins-wecom").is_dir())
+                finance_plugin = config_path.parent / "plugins" / "reins-finance"
+                self.assertIn(
+                    "finance_export_excel",
+                    (finance_plugin / "plugin.yaml").read_text(encoding="utf-8"),
+                )
+                self.assertIn(
+                    "needs_clarification",
+                    (finance_plugin / "reins_finance_plugin.py").read_text(encoding="utf-8"),
+                )
 
 
 if __name__ == "__main__":

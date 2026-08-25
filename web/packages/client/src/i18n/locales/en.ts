@@ -305,7 +305,7 @@ export default {
       edit: 'Edit',
       delete: 'Delete',
       refresh: 'Refresh',
-      exportCsv: 'Export CSV',
+      exportExcel: 'Export Excel',
     },
     filters: {
       all: 'All',

@@ -39,7 +39,7 @@ AMOUNT_PATTERN = re.compile(
 ISO_DATE_PATTERN = re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})")
 CHINESE_DATE_PATTERN = re.compile(r"(?:(\d{4})年)?(\d{1,2})月(\d{1,2})[日号]?")
 SLASH_DATE_PATTERN = re.compile(r"\b(\d{1,2})/(\d{1,2})\b")
-RECENT_LIMIT_PATTERN = re.compile(r"最近\s*(\d+)\s*条")
+RECENT_LIMIT_PATTERN = re.compile(r"最近\s*(\d+)\s*(?:条|笔)")
 
 
 def _normalize_text(text: str) -> str:
@@ -212,6 +212,12 @@ def _infer_payment_method(text: str) -> str | None:
 def _clean_description(text: str, amount: float | None) -> str:
     description = text.strip()
 
+    for token in [
+        "请帮我", "帮我", "记录一笔", "新增一笔", "添加一笔", "录入一笔",
+        "记一笔", "记账", "一笔收入", "一笔支出",
+    ]:
+        description = description.replace(token, "")
+
     for token in ["今天", "昨天", "前天", "明天", "本月", "这个月", "上个月", "上月", "本周", "这周", "上周"]:
         description = description.replace(token, "")
 
@@ -279,7 +285,7 @@ def parse_finance_text(text: str, today: date | None = None) -> ParsedFinanceInt
     classified = classify_finance_intent(normalized)
     intent = classified.intent
 
-    if intent in {"query_transactions", "query_summary"}:
+    if intent in {"query_transactions", "query_summary", "export_excel"}:
         start_date, end_date = _parse_period(normalized, today)
 
         if start_date is None or end_date is None:

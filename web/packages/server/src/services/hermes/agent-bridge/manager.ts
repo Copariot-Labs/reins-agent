@@ -1,11 +1,13 @@
 import { execFileSync, spawn, type ChildProcess } from 'child_process'
 import { existsSync, readFileSync } from 'fs'
 import { createServer } from 'net'
-import { dirname, isAbsolute, join, resolve } from 'path'
+import { delimiter, dirname, isAbsolute, join, resolve } from 'path'
 import { logger } from '../../logger'
 import { detectHermesHome, getHermesBin } from '../hermes-path'
+import { resolveReinsHome } from '../reins-path'
 import { DEFAULT_AGENT_BRIDGE_ENDPOINT } from './client'
 import { ensureReinsWorkspaceSync, resolveReinsWorkspaceRoot } from '../../reins/workspace-path'
+import { ensureReinsProductReady } from '../../reins/product-setup'
 
 const DEFAULT_AGENT_BRIDGE_STARTUP_TIMEOUT_MS = 120000
 const DEFAULT_AGENT_BRIDGE_RESTART_DELAY_MS = 1000
@@ -21,6 +23,7 @@ export interface AgentBridgeManagerOptions {
   python?: string
   agentRoot?: string
   hermesHome?: string
+  reinsProjectRoot?: string
   startupTimeoutMs?: number
 }
 
@@ -29,6 +32,7 @@ export interface BridgeCommand {
   argsPrefix: string[]
   agentRoot?: string
   hermesHome: string
+  reinsProjectRoot?: string
 }
 
 export interface AgentBridgeManagerRuntimeState {
@@ -54,18 +58,42 @@ export function buildAgentBridgeProcessEnv(
   hermesHome: string | undefined,
   agentRoot: string | undefined,
   workspaceRoot = resolveReinsWorkspaceRoot(),
+  reinsProjectRoot?: string,
 ): NodeJS.ProcessEnv {
+  const pythonPath = reinsProjectRoot
+    ? [join(reinsProjectRoot, 'src'), process.env.PYTHONPATH].filter(Boolean).join(delimiter)
+    : process.env.PYTHONPATH
   return {
     ...process.env,
     HERMES_AGENT_BRIDGE_ENDPOINT: endpoint,
     HERMES_HOME: hermesHome,
+    REINS_HOME: hermesHome,
     REINS_WORKSPACE_ROOT: workspaceRoot,
+    REINS_REQUIRED_TOOLSETS: process.env.REINS_REQUIRED_TOOLSETS || 'reins_finance,reins_wecom',
     TERMINAL_CWD: workspaceRoot,
     HERMES_OPENROUTER_APP_REFERER: process.env.HERMES_OPENROUTER_APP_REFERER || OPENROUTER_WEB_UI_ATTRIBUTION_ENV.HERMES_OPENROUTER_APP_REFERER,
     HERMES_OPENROUTER_APP_TITLE: process.env.HERMES_OPENROUTER_APP_TITLE || OPENROUTER_WEB_UI_ATTRIBUTION_ENV.HERMES_OPENROUTER_APP_TITLE,
     HERMES_OPENROUTER_APP_CATEGORIES: process.env.HERMES_OPENROUTER_APP_CATEGORIES || OPENROUTER_WEB_UI_ATTRIBUTION_ENV.HERMES_OPENROUTER_APP_CATEGORIES,
     ...(agentRoot ? { HERMES_AGENT_ROOT: agentRoot } : {}),
+    ...(reinsProjectRoot ? { REINS_RUNTIME_ROOT: reinsProjectRoot, PYTHONPATH: pythonPath } : {}),
   }
+}
+
+function resolveReinsProjectRoot(explicit?: string): string | undefined {
+  const candidates = [
+    explicit,
+    process.env.REINS_PROJECT_ROOT,
+    process.env.REINS_RUNTIME_ROOT,
+    resolve(process.cwd(), '..'),
+    process.cwd(),
+  ].filter((value): value is string => !!value && value.trim().length > 0)
+
+  return candidates
+    .map(candidate => resolve(candidate))
+    .find(candidate => (
+      existsSync(join(candidate, 'src', 'reins'))
+      && existsSync(join(candidate, 'vendor', 'hermes-agent', 'run_agent.py'))
+    ))
 }
 
 function pathCandidates(agentRoot?: string): string[] {
@@ -185,10 +213,17 @@ function firstExistingExecutable(candidates: string[]): string | undefined {
   return undefined
 }
 
-function resolveAgentRoot(explicit?: string, hermesHome = detectHermesHome()): string | undefined {
+function resolveAgentRoot(
+  explicit?: string,
+  hermesHome = detectHermesHome(),
+  reinsProjectRoot?: string,
+): string | undefined {
   const candidates = [
     explicit,
     process.env.HERMES_AGENT_ROOT,
+    reinsProjectRoot ? join(reinsProjectRoot, 'vendor', 'hermes-agent') : undefined,
+    reinsProjectRoot ? join(reinsProjectRoot, 'hermes-agent') : undefined,
+    reinsProjectRoot ? join(reinsProjectRoot, 'agent') : undefined,
     join(hermesHome, 'hermes-agent'),
     agentRootFromHermesBin(),
     process.cwd(),
@@ -202,21 +237,33 @@ function resolveAgentRoot(explicit?: string, hermesHome = detectHermesHome()): s
 }
 
 export function resolveAgentBridgeCommand(options: AgentBridgeManagerOptions = {}): BridgeCommand {
-  const hermesHome = options.hermesHome || detectHermesHome()
-  const agentRoot = resolveAgentRoot(options.agentRoot, hermesHome)
+  const hermesHome = options.hermesHome || resolveReinsHome()
+  const canAutoDiscoverReins = !process.env.HERMES_BIN?.trim() && !process.env.HERMES_AGENT_ROOT?.trim()
+  const configuredReinsProjectRoot = options.reinsProjectRoot
+    || process.env.REINS_PROJECT_ROOT
+    || process.env.REINS_RUNTIME_ROOT
+  const reinsProjectRoot = configuredReinsProjectRoot
+    ? resolveReinsProjectRoot(configuredReinsProjectRoot)
+    : canAutoDiscoverReins
+      ? resolveReinsProjectRoot()
+      : undefined
+  const agentRoot = resolveAgentRoot(options.agentRoot, hermesHome, reinsProjectRoot)
   const explicitPython = options.python || process.env.HERMES_AGENT_BRIDGE_PYTHON
   if (explicitPython) {
-    return { command: explicitPython, argsPrefix: [], agentRoot, hermesHome }
+    return { command: explicitPython, argsPrefix: [], agentRoot, hermesHome, reinsProjectRoot }
   }
 
-  const venvPython = firstExistingExecutable(pathCandidates(agentRoot))
+  const venvPython = firstExistingExecutable([
+    ...pathCandidates(reinsProjectRoot),
+    ...pathCandidates(agentRoot),
+  ])
   if (venvPython) {
-    return { command: venvPython, argsPrefix: [], agentRoot, hermesHome }
+    return { command: venvPython, argsPrefix: [], agentRoot, hermesHome, reinsProjectRoot }
   }
 
   const shebangPython = hermesBinPython()
   if (shebangPython && existsSync(shebangPython)) {
-    return { command: shebangPython, argsPrefix: [], agentRoot, hermesHome }
+    return { command: shebangPython, argsPrefix: [], agentRoot, hermesHome, reinsProjectRoot }
   }
 
   const uv = firstExistingExecutable(uvCandidates(agentRoot))
@@ -224,14 +271,14 @@ export function resolveAgentBridgeCommand(options: AgentBridgeManagerOptions = {
     const prefix = ['run']
     if (agentRoot) prefix.push('--project', agentRoot)
     prefix.push('python')
-    return { command: uv, argsPrefix: prefix, agentRoot, hermesHome }
+    return { command: uv, argsPrefix: prefix, agentRoot, hermesHome, reinsProjectRoot }
   }
 
   const fallback = firstExistingExecutable([
     process.env.PYTHON || '',
     ...(process.platform === 'win32' ? ['py', 'python', 'python3'] : ['python3', 'python']),
   ]) || (process.platform === 'win32' ? 'python' : 'python3')
-  return { command: fallback, argsPrefix: [], agentRoot, hermesHome }
+  return { command: fallback, argsPrefix: [], agentRoot, hermesHome, reinsProjectRoot }
 }
 
 function bridgeScriptPath(): string {
@@ -374,6 +421,7 @@ export class AgentBridgeManager {
   }
 
   private async startProcess(): Promise<void> {
+    await ensureReinsProductReady()
     const script = bridgeScriptPath()
     const command = resolveAgentBridgeCommand(this.options)
     await this.prepareEndpoint()
@@ -384,7 +432,13 @@ export class AgentBridgeManager {
     if (hermesHome) args.push('--hermes-home', hermesHome)
 
     const workspaceRoot = ensureReinsWorkspaceSync()
-    const env = buildAgentBridgeProcessEnv(this.endpoint, hermesHome, agentRoot, workspaceRoot)
+    const env = buildAgentBridgeProcessEnv(
+      this.endpoint,
+      hermesHome,
+      agentRoot,
+      workspaceRoot,
+      command.reinsProjectRoot,
+    )
 
     logger.info('[agent-bridge] starting: %s %s', command.command, args.join(' '))
     const child = spawn(command.command, args, {

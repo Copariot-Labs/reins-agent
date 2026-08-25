@@ -234,7 +234,7 @@ describe('bridge run final context usage', () => {
     await handleBridgeRun(
       nsp,
       socket,
-      { input: 'hello', session_id: 'session-1' },
+      { input: '记录一笔午餐支出30元', session_id: 'session-1' },
       'default',
       sessionMap,
       bridge,
@@ -263,7 +263,7 @@ describe('bridge run final context usage', () => {
     )
     expect(bridge.chat).toHaveBeenCalledWith(
       'session-1',
-      'hello',
+      '记录一笔午餐支出30元',
       [{ role: 'user', content: 'previous' }],
       expect.stringContaining('[Web chat browser mode: backend]'),
       'default',
@@ -275,6 +275,8 @@ describe('bridge run final context usage', () => {
       }),
     )
     expect(bridge.contextEstimate.mock.calls[0][2]).toContain('system prompt')
+    expect(bridge.contextEstimate.mock.calls[0][2]).toContain('[Reins Finance workflow]')
+    expect(bridge.contextEstimate.mock.calls[0][2]).toContain('finance_record_transaction')
     expect(bridge.contextEstimate.mock.calls[0][2]).toContain('X-Hermes-Profile')
     expect(state.contextTokens).toBe(12345)
     expect(emit).toHaveBeenCalledWith('usage.updated', expect.objectContaining({

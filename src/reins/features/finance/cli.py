@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import json
 from typing import Sequence
 
 from reins.features.finance.db import doctor as db_doctor
@@ -36,7 +37,12 @@ from reins.features.finance.plugin_installer import (
 )
 
 # Export finance data into CSV
-from reins.features.finance.export import export_transactions_to_csv, parse_export_args
+from reins.features.finance.export import (
+    export_transactions_to_csv,
+    export_transactions_to_xlsx,
+    parse_export_args,
+)
+from reins.features.finance.chat import run_finance_chat_request
 
 
 def print_finance_help() -> None:
@@ -63,6 +69,8 @@ Commands:
   export csv --month YYYY-MM
   export csv --output PATH
   export csv --include-voided
+  export xlsx               Export an OfficeCLI Excel workbook to the Reins Workspace
+  chat-json <text>          Handle a finance chat request and return JSON
 
 Examples:
   reins finance doctor
@@ -81,6 +89,7 @@ Examples:
   reins finance export csv
   reins finance export csv --month 2026-05
   reins finance export csv --output ~/Desktop/reins-finance.csv
+  reins finance export xlsx --month 2026-05
 """
     )
 
@@ -294,20 +303,21 @@ def handle_install_plugin() -> int:
 # Export as CSV
 def handle_export(argv: Sequence[str]) -> int:
     if not argv:
-        print("Usage: reins finance export csv [--month YYYY-MM] [--output PATH] [--include-voided]")
+        print("Usage: reins finance export <csv|xlsx> [--month YYYY-MM] [--output PATH] [--include-voided]")
         return 1
 
     export_type = argv[0]
 
-    if export_type != "csv":
+    if export_type not in {"csv", "xlsx"}:
         print(f"Unknown export type: {export_type}")
-        print("Supported export types: csv")
+        print("Supported export types: csv, xlsx")
         return 1
 
     try:
         options = parse_export_args(argv[1:])
 
-        output_path = export_transactions_to_csv(
+        export_function = export_transactions_to_xlsx if export_type == "xlsx" else export_transactions_to_csv
+        output_path = export_function(
             output_path=options["output_path"],  # type: ignore[arg-type]
             month=options["month"],  # type: ignore[arg-type]
             include_voided=bool(options["include_voided"]),
@@ -318,6 +328,58 @@ def handle_export(argv: Sequence[str]) -> int:
 
     print("Finance transactions exported.")
     print(f"Output: {output_path}")
+    return 0
+
+
+def handle_chat_json(argv: Sequence[str]) -> int:
+    text = " ".join(argv).strip()
+    result = run_finance_chat_request(text)
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+def _option_value(argv: Sequence[str], name: str) -> str | None:
+    if name not in argv:
+        return None
+    index = argv.index(name)
+    if index + 1 >= len(argv):
+        raise FinanceError(f"Missing value for {name}.")
+    return argv[index + 1]
+
+
+def handle_export_xlsx_json(argv: Sequence[str]) -> int:
+    try:
+        start_raw = _option_value(argv, "--start-date")
+        end_raw = _option_value(argv, "--end-date")
+        if not start_raw or not end_raw:
+            raise FinanceError("Both --start-date and --end-date are required.")
+        start_date = date.fromisoformat(start_raw)
+        end_date = date.fromisoformat(end_raw)
+        transaction_type = _option_value(argv, "--type")
+        category = _option_value(argv, "--category")
+        output_path = export_transactions_to_xlsx(
+            start_date=start_date,
+            end_date=end_date,
+            transaction_type=transaction_type,
+            category=category,
+        )
+        count = len(list_transactions(TransactionFilter(
+            start_date=start_date,
+            end_date=end_date,
+            type=transaction_type,  # type: ignore[arg-type]
+            category=category,
+            status="posted",
+            limit=100_000,
+        )))
+        result = {
+            "ok": True,
+            "path": str(output_path),
+            "fileName": output_path.name,
+            "count": count,
+        }
+    except Exception as exc:
+        result = {"ok": False, "error": str(exc)}
+    print(json.dumps(result, ensure_ascii=False))
     return 0
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -359,6 +421,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     
     if command == "export":
         return handle_export(argv[1:])
+
+    if command == "chat-json":
+        return handle_chat_json(argv[1:])
+
+    if command == "export-xlsx-json":
+        return handle_export_xlsx_json(argv[1:])
 
     print(f"Unknown finance command: {command}")
     print("Run `reins finance --help` for available commands.")

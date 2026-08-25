@@ -649,6 +649,40 @@ def _apply_capability_toolsets(enabled: list[str] | None, capabilities: dict[str
     return sorted(next_enabled)
 
 
+def _apply_required_reins_toolsets(enabled: list[str] | None) -> list[str] | None:
+    if enabled is None:
+        return None
+    required = {
+        value.strip()
+        for value in os.environ.get("REINS_REQUIRED_TOOLSETS", "").split(",")
+        if value.strip()
+    }
+    if not required:
+        return enabled
+
+    available: set[str] = set()
+    try:
+        from hermes_cli.plugins import discover_plugins, get_plugin_toolsets
+
+        discover_plugins()
+        available = {str(key) for key, _label, _description in get_plugin_toolsets()}
+    except Exception as exc:
+        print(
+            f"[reins-bridge] plugin discovery failed: {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
+
+    missing = sorted(required - available)
+    if missing:
+        print(
+            f"[reins-bridge] required toolsets unavailable: {','.join(missing)}",
+            file=sys.stderr,
+            flush=True,
+        )
+    return sorted(set(enabled) | (required & available))
+
+
 def _load_enabled_toolsets(capabilities: dict[str, Any] | None = None) -> list[str] | None:
     _ensure_agent_imports()
     raw = os.environ.get("HERMES_BRIDGE_TOOLSETS", "").strip()
@@ -656,7 +690,9 @@ def _load_enabled_toolsets(capabilities: dict[str, Any] | None = None) -> list[s
         values = [part.strip() for part in raw.split(",") if part.strip()]
         if any(value in {"all", "*"} for value in values):
             return None
-        return _apply_capability_toolsets(values, capabilities)
+        return _apply_required_reins_toolsets(
+            _apply_capability_toolsets(values, capabilities)
+        )
 
     try:
         from hermes_cli.config import load_config
@@ -675,10 +711,14 @@ def _load_enabled_toolsets(capabilities: dict[str, Any] | None = None) -> list[s
                     pass
             if not resolved_tools:
                 enabled = sorted(_get_platform_tools(cfg, "cli", include_default_mcp_servers=True))
-        return _apply_capability_toolsets(enabled, capabilities)
+        return _apply_required_reins_toolsets(
+            _apply_capability_toolsets(enabled, capabilities)
+        )
     except Exception:
         if capabilities is not None:
-            return _apply_capability_toolsets([], capabilities)
+            return _apply_required_reins_toolsets(
+                _apply_capability_toolsets([], capabilities)
+            )
         return None
 
 
