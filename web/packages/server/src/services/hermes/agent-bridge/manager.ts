@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join, resolve } from 'path'
 import { logger } from '../../logger'
 import { detectHermesHome, getHermesBin } from '../hermes-path'
 import { DEFAULT_AGENT_BRIDGE_ENDPOINT } from './client'
+import { ensureReinsWorkspaceSync, resolveReinsWorkspaceRoot } from '../../reins/workspace-path'
 
 const DEFAULT_AGENT_BRIDGE_STARTUP_TIMEOUT_MS = 120000
 const DEFAULT_AGENT_BRIDGE_RESTART_DELAY_MS = 1000
@@ -48,11 +49,18 @@ function envPositiveInt(name: string): number | undefined {
   return Number.isFinite(value) && value > 0 ? value : undefined
 }
 
-export function buildAgentBridgeProcessEnv(endpoint: string, hermesHome: string | undefined, agentRoot: string | undefined): NodeJS.ProcessEnv {
+export function buildAgentBridgeProcessEnv(
+  endpoint: string,
+  hermesHome: string | undefined,
+  agentRoot: string | undefined,
+  workspaceRoot = resolveReinsWorkspaceRoot(),
+): NodeJS.ProcessEnv {
   return {
     ...process.env,
     HERMES_AGENT_BRIDGE_ENDPOINT: endpoint,
     HERMES_HOME: hermesHome,
+    REINS_WORKSPACE_ROOT: workspaceRoot,
+    TERMINAL_CWD: workspaceRoot,
     HERMES_OPENROUTER_APP_REFERER: process.env.HERMES_OPENROUTER_APP_REFERER || OPENROUTER_WEB_UI_ATTRIBUTION_ENV.HERMES_OPENROUTER_APP_REFERER,
     HERMES_OPENROUTER_APP_TITLE: process.env.HERMES_OPENROUTER_APP_TITLE || OPENROUTER_WEB_UI_ATTRIBUTION_ENV.HERMES_OPENROUTER_APP_TITLE,
     HERMES_OPENROUTER_APP_CATEGORIES: process.env.HERMES_OPENROUTER_APP_CATEGORIES || OPENROUTER_WEB_UI_ATTRIBUTION_ENV.HERMES_OPENROUTER_APP_CATEGORIES,
@@ -375,7 +383,8 @@ export class AgentBridgeManager {
     if (agentRoot) args.push('--agent-root', agentRoot)
     if (hermesHome) args.push('--hermes-home', hermesHome)
 
-    const env = buildAgentBridgeProcessEnv(this.endpoint, hermesHome, agentRoot)
+    const workspaceRoot = ensureReinsWorkspaceSync()
+    const env = buildAgentBridgeProcessEnv(this.endpoint, hermesHome, agentRoot, workspaceRoot)
 
     logger.info('[agent-bridge] starting: %s %s', command.command, args.join(' '))
     const child = spawn(command.command, args, {

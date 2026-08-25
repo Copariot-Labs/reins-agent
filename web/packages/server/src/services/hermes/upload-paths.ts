@@ -1,17 +1,10 @@
-import { join, resolve } from 'path'
+import { resolve } from 'path'
 import { config } from '../../config'
 import { isPathWithin } from './hermes-path'
 
-function safeProfileSegment(profile: string): string {
-  const name = (profile || 'default').trim() || 'default'
-  if (name.includes('/') || name.includes('\\') || name.includes('..')) {
-    throw Object.assign(new Error('Invalid profile name'), { code: 'invalid_profile' })
-  }
-  return name
-}
-
 export function getProfileUploadDir(profile: string): string {
-  return resolve(join(config.uploadDir, safeProfileSegment(profile)))
+  void profile
+  return resolve(config.uploadDir)
 }
 
 export function isInProfileUploadDir(filePath: string, profile: string): boolean {

@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { DatabaseSync } from 'node:sqlite';
 import { resolveReinsHome } from './reins-path';
+import { reinsWorkspaceDir } from '../reins/workspace-path';
 
 export type FinanceTransactionType = 'income' | 'expense';
 
@@ -687,7 +688,7 @@ function transactionsToCsv(transactions: FinanceTransaction[]): string {
 export async function exportFinanceTransactions(
   query: FinanceQuery,
 ): Promise<{ path: string; fileName: string; count: number }> {
-  const exportDir = join(getFinanceHome(), 'export');
+  const exportDir = join(reinsWorkspaceDir('Generated'), 'Finance');
   await mkdir(exportDir, { recursive: true });
 
   const transactions = listFinanceTransactions({

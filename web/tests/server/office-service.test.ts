@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   cancelOfficeOperation,
   friendlyOfficeOperationError,
+  getOfficeOperation,
   normalizeOfficeCreateRequest,
+  shouldAskForOfficeClarification,
   startOfficeCreateOperation,
+  startOfficeRevisionOperation,
 } from '../../packages/server/src/services/reins/office'
 
 describe('Reins Office service', () => {
@@ -65,6 +68,41 @@ describe('Reins Office service', () => {
 
     expect(error.code).toBe('timeout')
     expect(error.suggestion_zh).toContain('原文件不会因超时而丢失')
+  })
+
+  it('asks for clarification only for usable planning failures', () => {
+    const invalidStructure = friendlyOfficeOperationError(
+      new Error('Reins did not return a valid structured Word revision'),
+      'revise',
+      'revision_planning',
+    )
+    const unavailableModel = friendlyOfficeOperationError(
+      new Error('Model provider connection unavailable'),
+      'revise',
+      'revision_planning',
+    )
+
+    expect(shouldAskForOfficeClarification(invalidStructure)).toBe(true)
+    expect(shouldAskForOfficeClarification(unavailableModel)).toBe(false)
+  })
+
+  it('pauses vague Office page revisions for user input before starting a worker', () => {
+    const started = startOfficeRevisionOperation('office-document-1', {
+      instruction: '修改这个文件',
+    })
+
+    expect(started.status).toBe('needs_input')
+    expect(started.error).toBeUndefined()
+    expect(started.clarification).toEqual(expect.objectContaining({
+      title_zh: '请补充具体修改要求',
+      message_zh: expect.stringContaining('当前文件会保持不变'),
+      example_zh: expect.stringContaining('第二部分'),
+    }))
+    expect(started.events.at(-1)).toEqual(expect.objectContaining({
+      stage: 'needs_input',
+      message_zh: '请补充具体修改要求',
+    }))
+    expect(getOfficeOperation(started.id)).toEqual(started)
   })
 
   it('cancels a queued Office page operation before its worker starts', async () => {

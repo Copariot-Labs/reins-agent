@@ -3,7 +3,9 @@ import { randomUUID } from 'crypto'
 import { once } from 'events'
 import { existsSync } from 'fs'
 import { delimiter, resolve } from 'path'
+import { officeRevisionNeedsClarification } from './office-clarification'
 import { resolveReinsHome } from './reins-path'
+import { resolveReinsWorkspaceRoot } from './workspace-path'
 
 export type OfficeFormat = 'docx' | 'xlsx' | 'pptx'
 export type OfficePresentationStyle = 'auto' | 'executive' | 'modern' | 'bold' | 'minimal'
@@ -59,7 +61,7 @@ export interface OfficeSkillDto {
 }
 
 export type OfficeOperationKind = 'create' | 'revise'
-export type OfficeOperationStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+export type OfficeOperationStatus = 'queued' | 'running' | 'needs_input' | 'completed' | 'failed' | 'cancelled'
 
 export interface OfficeProgressEventDto {
   stage: string
@@ -81,6 +83,15 @@ export interface OfficeOperationErrorDto {
   retryable: boolean
 }
 
+export interface OfficeOperationClarificationDto {
+  title_zh: string
+  title_en: string
+  message_zh: string
+  message_en: string
+  example_zh: string
+  example_en: string
+}
+
 export interface OfficeOperationDto {
   id: string
   kind: OfficeOperationKind
@@ -90,6 +101,7 @@ export interface OfficeOperationDto {
   updated_at: string
   events: OfficeProgressEventDto[]
   document?: OfficeDocumentDto
+  clarification?: OfficeOperationClarificationDto
   error?: OfficeOperationErrorDto
 }
 
@@ -328,6 +340,7 @@ async function runReinsOfficeJson(
       ...process.env,
       REINS_HOME: reinsHome,
       HERMES_HOME: process.env.HERMES_HOME?.trim() || reinsHome,
+      REINS_WORKSPACE_ROOT: resolveReinsWorkspaceRoot(),
       ...(invocation.pythonPath
         ? { PYTHONPATH: [invocation.pythonPath, process.env.PYTHONPATH].filter(Boolean).join(delimiter) }
         : {}),
@@ -592,6 +605,7 @@ function operationSnapshot(operation: OfficeOperationDto): OfficeOperationDto {
     ...operation,
     events: operation.events.map(event => ({ ...event })),
     ...(operation.document ? { document: { ...operation.document } } : {}),
+    ...(operation.clarification ? { clarification: { ...operation.clarification } } : {}),
     ...(operation.error ? { error: { ...operation.error } } : {}),
   }
 }
@@ -703,6 +717,12 @@ export function friendlyOfficeOperationError(
   }
 }
 
+export function shouldAskForOfficeClarification(error: OfficeOperationErrorDto): boolean {
+  if (error.code !== 'content_generation_failed') return false
+  const detail = error.technical_detail.toLowerCase()
+  return !/(?:timed out|connection|network|socket|api key|authentication|unauthorized|forbidden|quota|rate limit|model unavailable|provider unavailable)/.test(detail)
+}
+
 function createOperation(kind: OfficeOperationKind): OfficeOperationDto {
   pruneOfficeOperations()
   const timestamp = nowIso()
@@ -719,13 +739,47 @@ function createOperation(kind: OfficeOperationKind): OfficeOperationDto {
   return operation
 }
 
+function requestOperationClarification(operation: OfficeOperationDto) {
+  const revising = operation.kind === 'revise'
+  operation.status = 'needs_input'
+  operation.error = undefined
+  operation.clarification = revising
+    ? {
+        title_zh: '请补充具体修改要求',
+        title_en: 'Please provide specific revision details',
+        message_zh: '请说明要修改的部分、目标内容或样式，以及需要保留的内容。当前文件会保持不变。',
+        message_en: 'Describe which section to change, the desired content or style, and what must remain unchanged. The current file will be preserved.',
+        example_zh: '将标题改为红色，把第二部分扩写为三段，其他内容保持不变。',
+        example_en: 'Make the title red, expand section two to three paragraphs, and keep everything else unchanged.',
+      }
+    : {
+        title_zh: '请补充文件内容要求',
+        title_en: 'Please provide more document details',
+        message_zh: '请说明文件用途、必须包含的主要内容，以及期望的格式或风格。',
+        message_en: 'Describe the document purpose, the main content it must include, and the format or style you prefer.',
+        example_zh: '为社区居民制作防汛通知，包含准备事项、避险路线和联系人，语气正式简洁。',
+        example_en: 'Create a concise formal flood-safety notice for residents, including preparation steps, evacuation routes, and contacts.',
+      }
+  appendOperationProgress(operation, {
+    stage: 'needs_input',
+    percent: operation.percent,
+    message_zh: operation.clarification.title_zh,
+    message_en: operation.clarification.title_en,
+  })
+}
+
 function failOperation(operation: OfficeOperationDto, error: unknown) {
   if (operation.status === 'cancelled' || String((error as { code?: string })?.code || '') === 'worker_cancelled') {
     return
   }
   const lastStage = operation.events.at(-1)?.stage || ''
+  const friendly = friendlyOfficeOperationError(error, operation.kind, lastStage)
+  if (shouldAskForOfficeClarification(friendly)) {
+    requestOperationClarification(operation)
+    return
+  }
   operation.status = 'failed'
-  operation.error = friendlyOfficeOperationError(error, operation.kind, lastStage)
+  operation.error = friendly
   appendOperationProgress(operation, {
     stage: 'failed',
     percent: operation.percent,
@@ -761,6 +815,10 @@ export function startOfficeRevisionOperation(
   input: OfficeRevisionRequest,
 ): OfficeOperationDto {
   const operation = createOperation('revise')
+  if (officeRevisionNeedsClarification(input.instruction)) {
+    requestOperationClarification(operation)
+    return operationSnapshot(operation)
+  }
   const controller = new AbortController()
   officeOperationControllers.set(operation.id, controller)
   queueMicrotask(() => {

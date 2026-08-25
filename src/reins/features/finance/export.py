@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 
-from reins.features.finance.db import get_finance_dir
+from reins.compat.paths import reins_workspace_dir
 from reins.features.finance.errors import FinanceError
 from reins.features.finance.repository import list_transactions
 from reins.features.finance.reports import parse_month
@@ -31,7 +31,7 @@ CSV_COLUMNS = [
 
 
 def get_export_dir() -> Path:
-    export_dir = get_finance_dir() / "export"
+    export_dir = reins_workspace_dir("Generated") / "Finance"
     export_dir.mkdir(parents=True, exist_ok=True)
     return export_dir
 

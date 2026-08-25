@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { renameSession, setSessionWorkspace, batchDeleteSessions, exportSession } from "@/api/hermes/sessions";
+import { renameSession, batchDeleteSessions, exportSession } from "@/api/hermes/sessions";
 import { useChatStore, type Session } from "@/stores/hermes/chat";
 import { useAppStore } from "@/stores/hermes/app";
 import { useProfilesStore } from "@/stores/hermes/profiles";
@@ -19,7 +19,6 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { copyToClipboard } from "@/utils/clipboard";
-import FolderPicker from "./FolderPicker.vue";
 import ChatInput from "./ChatInput.vue";
 import MessageList from "./MessageList.vue";
 import SessionListItem from "./SessionListItem.vue";
@@ -474,8 +473,7 @@ const contextMenuOptions = computed(() => {
     label: t(contextSessionPinned.value ? "chat.unpin" : "chat.pin"),
     key: "pin",
   },
-  { label: t("chat.rename"), key: "rename" },
-  { label: t("chat.setWorkspace"), key: "workspace" }]
+  { label: t("chat.rename"), key: "rename" }]
 
   if (contextSession.value?.source === "cli") {
     options.push({ label: t("chat.setModel"), key: "model" })
@@ -553,13 +551,6 @@ async function handleContextMenuSelect(key: string) {
       loadingMsg?.destroy();
       message.error(t("chat.exportFailed"));
     }
-  } else if (key === "workspace") {
-    const session = chatStore.sessions.find(
-      (s) => s.id === contextSessionId.value,
-    );
-    workspaceSessionId.value = contextSessionId.value;
-    workspaceValue.value = session?.workspace || "";
-    showWorkspaceModal.value = true;
   } else if (key === "model") {
     await openSessionModelModal(contextSessionId.value);
   } else if (key === "rename") {
@@ -598,31 +589,6 @@ async function handleRenameConfirm() {
     message.error(t("chat.renameFailed"));
   }
   showRenameModal.value = false;
-}
-
-const showWorkspaceModal = ref(false);
-const workspaceValue = ref("");
-const workspaceSessionId = ref<string | null>(null);
-
-async function handleWorkspaceConfirm() {
-  if (!workspaceSessionId.value) return;
-  const ok = await setSessionWorkspace(
-    workspaceSessionId.value,
-    workspaceValue.value || null,
-  );
-  if (ok) {
-    const session = chatStore.sessions.find(
-      (s) => s.id === workspaceSessionId.value,
-    );
-    if (session) session.workspace = workspaceValue.value || null;
-    if (chatStore.activeSession?.id === workspaceSessionId.value) {
-      chatStore.activeSession.workspace = workspaceValue.value || null;
-    }
-    message.success(t("chat.workspaceSet"));
-  } else {
-    message.error(t("chat.workspaceSetFailed"));
-  }
-  showWorkspaceModal.value = false;
 }
 
 const showSessionModelModal = ref(false);
@@ -963,18 +929,6 @@ async function handleSessionModelCustomSubmit() {
     </NModal>
 
     <NModal
-      v-model:show="showWorkspaceModal"
-      preset="dialog"
-      :title="t('chat.setWorkspaceTitle')"
-      :positive-text="t('common.ok')"
-      :negative-text="t('common.cancel')"
-      style="width: 520px"
-      @positive-click="handleWorkspaceConfirm"
-    >
-      <FolderPicker v-model="workspaceValue" />
-    </NModal>
-
-    <NModal
       v-model:show="showSessionModelModal"
       preset="card"
       :title="t('chat.setModelTitle')"
@@ -1148,16 +1102,6 @@ async function handleSessionModelCustomSubmit() {
             </template>
           </NButton>
           <span class="header-session-title">{{ headerTitle }}</span>
-          <span
-            v-if="chatStore.activeSession?.workspace"
-            class="workspace-badge"
-            :title="chatStore.activeSession.workspace"
-            >📁
-            {{
-              chatStore.activeSession.workspace.split("/").pop() ||
-              chatStore.activeSession.workspace
-            }}</span
-          >
         </div>
         <div class="header-actions">
           <NTooltip trigger="hover">
@@ -2035,19 +1979,6 @@ async function handleSessionModelCustomSubmit() {
   }
 
   .work-welcome { top: 40%; }
-}
-
-.workspace-badge {
-  font-size: 11px;
-  color: $text-muted;
-  background: rgba(255, 255, 255, 0.05);
-  padding: 2px 8px;
-  border-radius: 4px;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: default;
 }
 
 // ─── Drawer button ─────────────────────────────────────────────

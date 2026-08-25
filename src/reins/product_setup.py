@@ -11,9 +11,14 @@ import yaml
 
 from reins.api.home import get_reins_home
 from reins.compat.branding import ensure_reins_branding
+from reins.compat.paths import ensure_reins_workspace
 from reins.features.finance.plugin_installer import install_hermes_plugin as install_finance_plugin
 from reins.features.office.officecli_client import officecli_status
-from reins.features.office.paths import office_backups_dir, office_documents_dir, office_previews_dir
+from reins.features.office.paths import (
+    migrate_legacy_office_documents,
+    office_backups_dir,
+    office_previews_dir,
+)
 from reins.features.wecom.plugin_installer import install_hermes_plugin as install_wecom_plugin
 from reins.features.wecom.ticket_api import TicketAPIConfig, ticket_api_doctor
 from reins.features.wecom.ticket_service import install_service, service_status
@@ -102,15 +107,16 @@ def _wecom_ready(doctor: dict[str, Any]) -> bool:
 def setup_product(*, enable_background_wecom: bool = False) -> dict[str, Any]:
     home = get_reins_home()
     home.mkdir(parents=True, exist_ok=True)
+    workspace = ensure_reins_workspace()
     for path in (
         home / "logs",
         home / "wecom",
         home / "finance",
-        office_documents_dir(),
         office_previews_dir(),
         office_backups_dir(),
     ):
         path.mkdir(parents=True, exist_ok=True)
+    migrated_office_documents = migrate_legacy_office_documents()
 
     finance_plugins = install_finance_plugin()
     wecom_plugins = install_wecom_plugin()
@@ -129,11 +135,15 @@ def setup_product(*, enable_background_wecom: bool = False) -> dict[str, Any]:
         "ok": True,
         "product": "Reins",
         "home": str(home),
+        "workspace": str(workspace),
         "finance": {
             "enabled": True,
             "plugins": [str(path) for path in finance_plugins],
         },
-        "office": officecli_status(),
+        "office": {
+            **officecli_status(),
+            "migrated_documents": migrated_office_documents,
+        },
         "wecom": {
             "enabled": True,
             "configured": wecom_ready,
@@ -153,6 +163,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print("Reins is ready.")
         print(f"Data: {result['home']}")
+        print(f"Workspace: {result['workspace']}")
         print(f"Finance: {'ready' if result['finance']['enabled'] else 'unavailable'}")
         print(f"Office: {'ready' if result['office'].get('available') else 'needs runtime'}")
         print(f"WeCom: {'ready' if result['wecom']['configured'] else 'needs configuration'}")

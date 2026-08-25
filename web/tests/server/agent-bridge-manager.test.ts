@@ -95,11 +95,13 @@ describe('agent bridge manager command resolution', () => {
 
   it('injects Web UI OpenRouter attribution into the bridge process env by default', async () => {
     const { buildAgentBridgeProcessEnv } = await import('../../packages/server/src/services/hermes/agent-bridge/manager')
-    const env = buildAgentBridgeProcessEnv('ipc:///tmp/test.sock', '/tmp/hermes-home', '/tmp/hermes-agent')
+    const env = buildAgentBridgeProcessEnv('ipc:///tmp/test.sock', '/tmp/hermes-home', '/tmp/hermes-agent', '/tmp/Reins Workspace')
 
     expect(env.HERMES_OPENROUTER_APP_REFERER).toBe('https://ekkolearnai.com')
     expect(env.HERMES_OPENROUTER_APP_TITLE).toBe('Hermes Web UI')
     expect(env.HERMES_OPENROUTER_APP_CATEGORIES).toBe('cli-agent,personal-agent')
+    expect(env.REINS_WORKSPACE_ROOT).toBe('/tmp/Reins Workspace')
+    expect(env.TERMINAL_CWD).toBe('/tmp/Reins Workspace')
   })
 
   it('keeps explicit OpenRouter attribution env values when starting the bridge', async () => {

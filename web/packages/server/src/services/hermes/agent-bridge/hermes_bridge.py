@@ -492,6 +492,7 @@ def _refresh_worker_profile_env() -> None:
     for key, value in values.items():
         os.environ[key] = value
     _refresh_terminal_env()
+    _apply_reins_workspace_cwd()
 
 
 @contextmanager
@@ -502,6 +503,7 @@ def _profile_env(profile: str | None):
     original = _apply_profile_env(profile)
     env_snapshot = _apply_profile_dotenv(profile)
     try:
+        _apply_reins_workspace_cwd()
         yield
     finally:
         _restore_profile_dotenv(env_snapshot)
@@ -571,6 +573,16 @@ def _refresh_terminal_env() -> None:
             file=sys.stderr,
             flush=True,
         )
+
+
+def _apply_reins_workspace_cwd() -> None:
+    """Keep user-facing file tools rooted in the native Reins workspace."""
+    configured = os.environ.get("REINS_WORKSPACE_ROOT", "").strip()
+    if not configured:
+        return
+    workspace = Path(os.path.expandvars(configured)).expanduser().resolve()
+    workspace.mkdir(parents=True, exist_ok=True)
+    os.environ["TERMINAL_CWD"] = str(workspace)
 
 
 def _resolve_model(cfg: dict[str, Any]) -> str:

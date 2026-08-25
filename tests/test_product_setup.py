@@ -16,6 +16,7 @@ class ProductSetupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory) / "reins"
             profile = home / "profiles" / "office-team"
+            workspace = Path(directory) / "Reins Workspace"
             profile.mkdir(parents=True)
             (profile / "config.yaml").write_text(
                 "plugins:\n  disabled:\n    - reins-finance\n    - reins-wecom\n",
@@ -31,7 +32,11 @@ class ProductSetupTests(unittest.TestCase):
 
             with patch.dict(
                 os.environ,
-                {"REINS_HOME": str(home), "HERMES_HOME": str(home)},
+                {
+                    "REINS_HOME": str(home),
+                    "HERMES_HOME": str(home),
+                    "REINS_WORKSPACE_ROOT": str(workspace),
+                },
                 clear=True,
             ):
                 with patch(
@@ -47,6 +52,9 @@ class ProductSetupTests(unittest.TestCase):
             self.assertTrue(result["finance"]["enabled"])
             self.assertTrue(result["office"]["available"])
             self.assertTrue(result["wecom"]["enabled"])
+            self.assertEqual(result["workspace"], str(workspace.resolve()))
+            for folder in ("Inbox", "Word", "Excel", "PowerPoint", "Generated", "Projects"):
+                self.assertTrue((workspace / folder).is_dir())
             for config_path in (home / "config.yaml", profile / "config.yaml"):
                 config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
                 plugins = config["plugins"]

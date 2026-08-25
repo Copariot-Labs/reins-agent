@@ -100,6 +100,22 @@ Core paths:
 
 `reins` sets `HERMES_HOME` to `REINS_HOME` so Hermes data stays inside the Reins product home. `REINS_HOME` and `HERMES_HOME` both support absolute paths, `~`, `$VAR`, `${VAR}`, and Windows `%VAR%` expansion.
 
+Reins also creates one user-owned workspace that can be opened with Finder or Windows File Explorer:
+
+```text
+macOS/Linux: ~/Documents/Reins Workspace
+Windows:     %USERPROFILE%\Documents\Reins Workspace
+
+Inbox/
+Word/
+Excel/
+PowerPoint/
+Generated/
+Projects/
+```
+
+Office files, chat uploads, agent-created files, and exports use this workspace. Users can add or edit files there directly, and Reins reads the current filesystem on the next request. Set `REINS_WORKSPACE_ROOT` to override the default location. Office indexes, previews, backups, databases, and application state remain under `REINS_HOME`.
+
 ## CLI Basics
 
 ```bash

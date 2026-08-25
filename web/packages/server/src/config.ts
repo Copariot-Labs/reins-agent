@@ -1,5 +1,6 @@
 import { join, resolve } from 'path'
 import { homedir } from 'os'
+import { reinsWorkspaceDir, resolveReinsWorkspaceRoot } from './services/reins/workspace-path'
 
 /**
  * Web UI environment variables.
@@ -13,7 +14,8 @@ import { homedir } from 'os'
  * - HERMES_WEB_UI_HOME: Web UI data home for auth token, credentials, logs, DB, and default uploads.
  * - HERMES_WEBUI_STATE_DIR: Compatibility alias for HERMES_WEB_UI_HOME.
  *   Default: join(homedir(), '.hermes-web-ui').
- * - UPLOAD_DIR: Upload directory override. Default: join(HERMES_WEB_UI_HOME, 'upload').
+ * - REINS_WORKSPACE_ROOT: Native user workspace. Default: ~/Documents/Reins Workspace.
+ * - UPLOAD_DIR: Upload directory override. Default: REINS_WORKSPACE_ROOT/Inbox.
  *
  * Auth:
  * - AUTH_TOKEN: Explicit bearer token. If unset, Web UI stores an auto-generated token under HERMES_WEB_UI_HOME.
@@ -51,13 +53,15 @@ export function getDataDir(
 }
 
 const appHome = getWebUiHome()
+const workspaceRoot = resolveReinsWorkspaceRoot()
 
 export const config = {
   port: parseInt(process.env.PORT || '8648', 10),
   // Default to IPv4 for stable WSL/Windows browser access. Use BIND_HOST=:: explicitly for IPv6.
   host: getListenHost(),
   appHome,
-  uploadDir: process.env.UPLOAD_DIR || join(appHome, 'upload'),
+  workspaceRoot,
+  uploadDir: process.env.UPLOAD_DIR || reinsWorkspaceDir('Inbox', workspaceRoot),
   // Installed resources may be read-only. Desktop databases belong in the
   // current user's private application-data directory.
   dataDir: getDataDir(process.env, appHome),

@@ -1,10 +1,37 @@
-import { randomBytes } from 'crypto'
 import { mkdir, writeFile } from 'fs/promises'
-import { join } from 'path'
+import { basename, extname, join } from 'path'
 import { getActiveProfileName } from '../services/hermes/hermes-profile'
 import { getProfileUploadDir } from '../services/hermes/upload-paths'
 
 const MAX_UPLOAD_SIZE = 50 * 1024 * 1024 // 50MB
+
+function safeUploadName(value: string): string {
+  const fileName = basename(String(value || '').replace(/\\/g, '/'))
+  const cleaned = fileName
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '-')
+    .replace(/[. ]+$/g, '')
+    .trim()
+  return cleaned || 'upload'
+}
+
+async function writeUniqueUpload(uploadDir: string, originalName: string, data: Buffer): Promise<string> {
+  const safeName = safeUploadName(originalName)
+  const extension = extname(safeName)
+  const stem = basename(safeName, extension)
+  let counter = 1
+
+  while (true) {
+    const savedName = counter === 1 ? safeName : `${stem}-${counter}${extension}`
+    const savedPath = join(uploadDir, savedName)
+    try {
+      await writeFile(savedPath, data, { flag: 'wx' })
+      return savedPath
+    } catch (error: any) {
+      if (error?.code !== 'EEXIST') throw error
+      counter += 1
+    }
+  }
+}
 
 function requestedProfile(ctx: any): string {
   return ctx.state?.profile?.name || getActiveProfileName() || 'default'
@@ -48,10 +75,7 @@ export async function handleUpload(ctx: any) {
       if (!filenameMatch) continue
       filename = filenameMatch[1]
     }
-    const ext = filename.includes('.') ? '.' + filename.split('.').pop() : ''
-    const savedName = randomBytes(8).toString('hex') + ext
-    const savedPath = join(uploadDir, savedName)
-    await writeFile(savedPath, data)
+    const savedPath = await writeUniqueUpload(uploadDir, filename, data)
     results.push({ name: filename, path: savedPath })
   }
   ctx.body = { files: results }

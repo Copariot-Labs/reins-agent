@@ -388,7 +388,7 @@ inside the finished document.
     revision = {
         "revision": record.revision_count + 1,
         "instruction": instruction,
-        "summary": f"Updated structured Word content: {instruction[:240]}",
+        "summary": f"更新内容: {instruction[:240]}",
         "command_count": client.command_count,
         "validation": "OfficeCLI validation passed",
         "issues": {},
@@ -498,7 +498,7 @@ inside the finished workbook.
     revision = {
         "revision": record.revision_count + 1,
         "instruction": instruction,
-        "summary": f"Updated structured Excel workbook: {instruction[:240]}",
+        "summary": f"更新内容: {instruction[:240]}",
         "command_count": client.command_count,
         "validation": "OfficeCLI validation passed",
         "issues": {},

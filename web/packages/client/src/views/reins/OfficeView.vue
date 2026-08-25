@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -9,6 +9,7 @@ import {
   NSpin,
   NTag,
   useMessage,
+  type InputInst,
 } from 'naive-ui'
 import {
   cancelOfficeOperation,
@@ -58,6 +59,7 @@ const previewVersion = ref(0)
 const previewHtml = ref('')
 const previewError = ref('')
 const activeOperation = ref<OfficeOperation | null>(null)
+const promptInputRef = ref<InputInst | null>(null)
 const operationTransportError = ref('')
 const cancelingOperation = ref(false)
 const status = ref<OfficeStatus | null>(null)
@@ -114,6 +116,7 @@ const copy = computed(() => isChinese.value
       activity: '处理过程',
       queued: '等待开始',
       running: '处理中',
+      needs_input: '需要补充信息',
       completed: '已完成',
       failed: '处理失败',
       cancelled: '已取消',
@@ -122,6 +125,7 @@ const copy = computed(() => isChinese.value
       cancelFailed: '取消任务失败',
       waitingForProgress: '正在连接 Office 处理任务',
       suggestion: '建议',
+      clarificationExample: '例如',
       technicalDetail: '错误详情',
       previewFailed: '预览生成失败',
       retry: '重试',
@@ -172,6 +176,7 @@ const copy = computed(() => isChinese.value
       activity: 'Activity',
       queued: 'Waiting',
       running: 'In progress',
+      needs_input: 'More information needed',
       completed: 'Completed',
       failed: 'Failed',
       cancelled: 'Cancelled',
@@ -180,6 +185,7 @@ const copy = computed(() => isChinese.value
       cancelFailed: 'Failed to cancel task',
       waitingForProgress: 'Connecting to the Office task',
       suggestion: 'Suggestion',
+      clarificationExample: 'Example',
       technicalDetail: 'Error detail',
       previewFailed: 'Preview failed',
       retry: 'Retry',
@@ -254,6 +260,19 @@ function localizedOperationError(field: 'title' | 'message' | 'suggestion'): str
   return isChinese.value
     ? error[`${field}_zh`]
     : error[`${field}_en`]
+}
+
+function localizedOperationClarification(field: 'title' | 'message' | 'example'): string {
+  const clarification = activeOperation.value?.clarification
+  if (!clarification) return ''
+  return isChinese.value
+    ? clarification[`${field}_zh`]
+    : clarification[`${field}_en`]
+}
+
+async function focusPromptInput() {
+  await nextTick()
+  promptInputRef.value?.focus()
 }
 
 function localizedSkillValue(skill: OfficeSkill | null, field: 'label' | 'description' | 'placeholder'): string {
@@ -376,6 +395,10 @@ async function waitForOfficeOperation(initial: OfficeOperation): Promise<OfficeD
     message.error(localizedOperationError('title') || (operation.kind === 'create'
       ? copy.value.createFailed
       : copy.value.reviseFailed))
+    return null
+  }
+  if (operation.status === 'needs_input') {
+    await focusPromptInput()
     return null
   }
   if (operation.status === 'cancelled') return null
@@ -662,6 +685,7 @@ onBeforeUnmount(() => {
             <label class="field instruction-field">
               <span>{{ copy.workflowInput }}</span>
               <NInput
+                ref="promptInputRef"
                 v-model:value="prompt"
                 type="textarea"
                 :placeholder="localizedSkillValue(selectedSkill, 'placeholder')"
@@ -701,6 +725,7 @@ onBeforeUnmount(() => {
                   :class="{
                     done: activeOperation.status === 'completed' || index < activeOperation.events.length - 1,
                     current: activeOperation.status === 'running' && index === activeOperation.events.length - 1,
+                    needsInput: event.stage === 'needs_input',
                     failed: event.stage === 'failed',
                     cancelled: event.stage === 'cancelled',
                   }"
@@ -711,7 +736,12 @@ onBeforeUnmount(() => {
                 </li>
               </ol>
               <p v-else-if="activeOperation" class="activity-waiting">{{ copy.waitingForProgress }}</p>
-              <div v-if="activeOperation?.error" class="operation-error">
+              <div v-if="activeOperation?.clarification" class="operation-clarification" role="status">
+                <strong>{{ localizedOperationClarification('title') }}</strong>
+                <p>{{ localizedOperationClarification('message') }}</p>
+                <p><b>{{ copy.clarificationExample }}:</b> {{ localizedOperationClarification('example') }}</p>
+              </div>
+              <div v-else-if="activeOperation?.error" class="operation-error">
                 <strong>{{ localizedOperationError('title') }}</strong>
                 <p>{{ localizedOperationError('message') }}</p>
                 <p><b>{{ copy.suggestion }}:</b> {{ localizedOperationError('suggestion') }}</p>
@@ -820,6 +850,7 @@ onBeforeUnmount(() => {
             <label class="field instruction-field">
               <span>{{ copy.workflowInput }}</span>
               <NInput
+                ref="promptInputRef"
                 v-model:value="prompt"
                 type="textarea"
                 :placeholder="copy.revisePlaceholder"
@@ -858,6 +889,7 @@ onBeforeUnmount(() => {
                   :class="{
                     done: activeOperation.status === 'completed' || index < activeOperation.events.length - 1,
                     current: activeOperation.status === 'running' && index === activeOperation.events.length - 1,
+                    needsInput: event.stage === 'needs_input',
                     failed: event.stage === 'failed',
                     cancelled: event.stage === 'cancelled',
                   }"
@@ -868,7 +900,12 @@ onBeforeUnmount(() => {
                 </li>
               </ol>
               <p v-else-if="activeOperation" class="activity-waiting">{{ copy.waitingForProgress }}</p>
-              <div v-if="activeOperation?.error" class="operation-error">
+              <div v-if="activeOperation?.clarification" class="operation-clarification" role="status">
+                <strong>{{ localizedOperationClarification('title') }}</strong>
+                <p>{{ localizedOperationClarification('message') }}</p>
+                <p><b>{{ copy.clarificationExample }}:</b> {{ localizedOperationClarification('example') }}</p>
+              </div>
+              <div v-else-if="activeOperation?.error" class="operation-error">
                 <strong>{{ localizedOperationError('title') }}</strong>
                 <p>{{ localizedOperationError('message') }}</p>
                 <p><b>{{ copy.suggestion }}:</b> {{ localizedOperationError('suggestion') }}</p>
@@ -1317,6 +1354,7 @@ onBeforeUnmount(() => {
 }
 
 .activity-status.running { color: #1d4ed8; }
+.activity-status.needs_input { color: #a16207; }
 .activity-status.completed { color: #047857; }
 .activity-status.failed { color: #b91c1c; }
 .activity-status.cancelled { color: #64748b; }
@@ -1370,6 +1408,7 @@ onBeforeUnmount(() => {
 
 .activity-list li.done,
 .activity-list li.current { color: $text-secondary; }
+.activity-list li.needsInput { color: #854d0e; }
 .activity-list li.failed { color: #b91c1c; }
 .activity-list li.cancelled { color: #64748b; }
 
@@ -1391,6 +1430,11 @@ onBeforeUnmount(() => {
 .activity-list li.current .activity-dot {
   border-color: #2563eb;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
+}
+
+.activity-list li.needsInput .activity-dot {
+  border-color: #ca8a04;
+  background: #facc15;
 }
 
 .activity-list li.failed .activity-dot {
@@ -1415,14 +1459,26 @@ onBeforeUnmount(() => {
   font-size: 11px;
 }
 
-.operation-error {
+.operation-error,
+.operation-clarification {
   margin-top: 12px;
   padding: 11px 12px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.operation-clarification {
+  border-left: 3px solid #ca8a04;
+  background: rgba(254, 249, 195, .5);
+  color: #713f12;
+}
+
+.operation-clarification p { margin: 4px 0 0; }
+
+.operation-error {
   border-left: 3px solid #dc2626;
   background: rgba(254, 226, 226, .42);
   color: #991b1b;
-  font-size: 11px;
-  line-height: 1.5;
 }
 
 .operation-error p { margin: 4px 0 0; }

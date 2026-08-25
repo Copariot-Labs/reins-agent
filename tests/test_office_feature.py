@@ -4,6 +4,8 @@ from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 import reins.features.office.service as office_service
 from reins.features.office.editor import (
     OfficeRevisionError,
@@ -30,6 +32,11 @@ from reins.features.office.workflows import (
     get_office_workflow,
     list_office_workflows,
 )
+
+
+@pytest.fixture(autouse=True)
+def configure_reins_workspace(tmp_path, monkeypatch):
+    monkeypatch.setenv("REINS_WORKSPACE_ROOT", str(tmp_path / "Reins Workspace"))
 
 
 class FakeOfficeCliClient:
@@ -440,7 +447,7 @@ def test_create_office_document_registers_separate_office_record(tmp_path, monke
     )
 
     assert record.kind == "docx"
-    assert record.path.startswith(str((tmp_path / "office" / "documents").resolve()))
+    assert record.path.startswith(str((tmp_path / "Reins Workspace" / "Word").resolve()))
     assert Path(record.path).exists()
     assert record.generator == "fallback"
 

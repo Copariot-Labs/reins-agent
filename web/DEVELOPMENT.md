@@ -27,6 +27,7 @@ npm run build
 - Server routes should stay thin. Put request handling in controllers and reusable behavior in services.
 - The chat runtime is Socket.IO based and lives under `packages/server/src/services/hermes/run-chat`.
 - Web UI state lives under `HERMES_WEB_UI_HOME` or `HERMES_WEBUI_STATE_DIR`, defaulting to `~/.hermes-web-ui`.
+- User files live under `REINS_WORKSPACE_ROOT`, defaulting to `~/Documents/Reins Workspace`; chat uploads use its `Inbox` folder.
 
 ## Coding Rules
 

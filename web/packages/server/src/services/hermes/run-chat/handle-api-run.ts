@@ -24,6 +24,7 @@ import { handleMessage } from './message-format'
 import { countTokens, SUMMARY_PREFIX } from '../../../lib/context-compressor'
 import { getCompressionSnapshot } from '../../../db/hermes/compression-snapshot'
 import type { ContentBlock, SessionState, ChatRunSource } from './types'
+import { reinsWorkspaceInstructions } from '../../reins/workspace-path'
 
 export function resolveRunSource(_source?: string, _sessionId?: string): ChatRunSource {
   return 'cli'
@@ -98,12 +99,7 @@ export async function handleApiRun(
 
   // Keep request-specific context before the authoritative Reins identity.
   const customInstructions: string[] = []
-  if (session_id) {
-    const sessionRow = getSession(session_id)
-    if (sessionRow?.workspace) {
-      customInstructions.push(`[Current working directory: ${sessionRow.workspace}]`)
-    }
-  }
+  customInstructions.push(reinsWorkspaceInstructions())
   if (instructions) customInstructions.push(instructions)
   customInstructions.push(getSystemPrompt())
   const fullInstructions = customInstructions.join('\n')

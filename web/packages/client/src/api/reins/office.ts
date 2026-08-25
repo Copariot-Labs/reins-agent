@@ -57,7 +57,7 @@ export interface OfficeStatus {
   documents: number
 }
 
-export type OfficeOperationStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+export type OfficeOperationStatus = 'queued' | 'running' | 'needs_input' | 'completed' | 'failed' | 'cancelled'
 
 export interface OfficeProgressEvent {
   stage: string
@@ -79,6 +79,15 @@ export interface OfficeOperationError {
   retryable: boolean
 }
 
+export interface OfficeOperationClarification {
+  title_zh: string
+  title_en: string
+  message_zh: string
+  message_en: string
+  example_zh: string
+  example_en: string
+}
+
 export interface OfficeOperation {
   id: string
   kind: 'create' | 'revise'
@@ -88,6 +97,7 @@ export interface OfficeOperation {
   updated_at: string
   events: OfficeProgressEvent[]
   document?: OfficeDocument
+  clarification?: OfficeOperationClarification
   error?: OfficeOperationError
 }
 

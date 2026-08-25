@@ -30,8 +30,12 @@ import type { ChatCapabilities, ContentBlock, QueuedRun, SessionState } from './
 import type { ChatMessage } from '../../../lib/context-compressor'
 import { resolveBridgeRunModelConfig, type RunModelGroup } from './model-config'
 import { filterBridgeToolCallMarkupDelta, flushPendingToolCallMarkup } from './bridge-delta'
+import { reinsWorkspaceInstructions } from '../../reins/workspace-path'
 import {
   resolveOfficeChatRequest,
+  resolveIndexedOfficeRevisionDocument,
+  officeClarificationPrompt,
+  officeRevisionNeedsClarification,
   runOfficeChatRequest,
   hasOfficeRevisionIntent,
   OFFICE_CHAT_TOOL_NAMES,
@@ -43,6 +47,8 @@ import {
 } from '../../reins/office-chat'
 import {
   friendlyOfficeOperationError,
+  listOfficeDocuments,
+  shouldAskForOfficeClarification,
   type OfficeWorkerProgress,
 } from '../../reins/office'
 import { chatCapabilitiesInstructions, chatCapabilitiesKey, normalizeChatCapabilities, toBridgeCapabilities } from './capabilities'
@@ -264,7 +270,7 @@ export async function handleBridgeRun(
   }
   const runContext = [
     `[Current Reins profile: ${profile}]`,
-    sessionRow?.workspace ? `[Current working directory: ${sessionRow.workspace}]` : '',
+    reinsWorkspaceInstructions(),
     workToolInstruction(data.work_tool),
     ...chatCapabilitiesInstructions(normalizedCapabilities),
     ...(weComWorkflow?.instructions || []),
@@ -686,6 +692,26 @@ async function maybeHandleOfficeChatRun(args: {
         [...args.state.messages, persistedOfficeMessage],
       )
     }
+    if (request?.operation !== 'revise') {
+      try {
+        const indexedDocuments = await listOfficeDocuments(100)
+        const indexedDocument = resolveIndexedOfficeRevisionDocument(
+          args.input,
+          indexedDocuments,
+          args.workTool,
+        )
+        if (indexedDocument) {
+          request = { operation: 'revise', document: indexedDocument }
+          logger.info({
+            sessionId: args.sessionId,
+            documentId: indexedDocument.id,
+            fileName: indexedDocument.file_name,
+          }, '[chat-run-socket] recovered Office revision target from the shared index')
+        }
+      } catch (error) {
+        logger.warn(error, '[chat-run-socket] failed to recover Office revision target from the shared index')
+      }
+    }
   }
   if (!request) return false
 
@@ -764,13 +790,22 @@ async function maybeHandleOfficeChatRun(args: {
     args.emit('agent.event', activityPayload)
   }
   try {
-    result = await runOfficeChatRequest(
-      args.input,
-      request,
-      args.officeSkillId,
-      reportProgress,
-      abortController.signal,
-    )
+    result = request.operation === 'revise' && officeRevisionNeedsClarification(args.input)
+      ? {
+          handled: true,
+          message: officeClarificationPrompt(request, args.input),
+          exit_code: 1,
+          document: request.document,
+          operation: 'revise',
+          needs_clarification: true,
+        }
+      : await runOfficeChatRequest(
+          args.input,
+          request,
+          args.officeSkillId,
+          reportProgress,
+          abortController.signal,
+        )
     if (abortController.signal.aborted) {
       finishCancelledOfficeChatTool(args, {
         runId,
@@ -794,13 +829,25 @@ async function maybeHandleOfficeChatRun(args: {
       request.operation === 'revise' ? 'revise' : 'create',
       lastProgressStage,
     )
-    result = {
-      handled: true,
-      message: useChineseProgress
-        ? `${friendly.title_zh}。${friendly.message_zh} ${friendly.suggestion_zh}`
-        : `${friendly.title_en}. ${friendly.message_en} ${friendly.suggestion_en}`,
-      exit_code: 1,
-      document: null,
+    if (shouldAskForOfficeClarification(friendly)) {
+      result = {
+        handled: true,
+        message: officeClarificationPrompt(request, args.input),
+        exit_code: 1,
+        document: request.operation === 'revise' ? request.document : null,
+        operation: request.operation,
+        needs_clarification: true,
+      }
+    } else {
+      result = {
+        handled: true,
+        message: useChineseProgress
+          ? `${friendly.title_zh}。${friendly.message_zh} ${friendly.suggestion_zh}`
+          : `${friendly.title_en}. ${friendly.message_en} ${friendly.suggestion_en}`,
+        exit_code: 1,
+        document: null,
+        operation: request.operation,
+      }
     }
   } finally {
     resolveAbortCompletion()
@@ -865,7 +912,8 @@ async function finishOfficeChatRun(args: {
   socket: Socket
   dequeueNextQueuedRun: (socket: Socket, sessionId: string, fallbackProfile?: string) => void
 }, result: OfficeChatResult, runInfo: { runId: string; toolCallId: string; toolName: string }): Promise<void> {
-  const failed = result.exit_code !== 0
+  const needsClarification = result.needs_clarification === true
+  const failed = result.exit_code !== 0 && !needsClarification
   let output = failed ? (result.message || '') : formatOfficeAssistantMessage(result)
 
   const completedTool = recordBridgeToolCompleted(
@@ -887,6 +935,7 @@ async function finishOfficeChatRun(args: {
     name: runInfo.toolName,
     output: completedTool.output,
     office_document: result.document,
+    needs_clarification: needsClarification || undefined,
     duration: completedTool.duration,
     error: failed || undefined,
   }
@@ -962,6 +1011,7 @@ async function finishOfficeChatRun(args: {
       output,
       result: {
         office_document: result.document,
+        needs_clarification: needsClarification || undefined,
       },
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
@@ -982,6 +1032,7 @@ async function finishOfficeChatRun(args: {
 }
 
 function formatOfficeAssistantMessage(result: OfficeChatResult): string {
+  if (result.needs_clarification) return result.message
   const document = result.document
   const title = document?.title.trim() || 'Office Document'
   const kind = document?.kind.toUpperCase() || 'OFFICE'
@@ -1018,7 +1069,8 @@ function officeToolArguments(
 
 function officeToolResult(result: OfficeChatResult, failed: boolean): string {
   return JSON.stringify({
-    ok: !failed,
+    ok: !failed && !result.needs_clarification,
+    needs_clarification: result.needs_clarification || undefined,
     message: result.message,
     office_document: result.document,
   }, null, 2)

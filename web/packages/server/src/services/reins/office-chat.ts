@@ -5,6 +5,7 @@ import {
   type OfficeFormat,
   type OfficeWorkerProgress,
 } from './office'
+export { officeRevisionNeedsClarification } from './office-clarification'
 
 export type OfficeChatWorkTool =
   | 'document'
@@ -19,6 +20,7 @@ export interface OfficeChatResult {
   exit_code: number
   document: OfficeDocumentDto | null
   operation?: 'create' | 'revise'
+  needs_clarification?: boolean
 }
 
 export type OfficeChatRequest =
@@ -62,6 +64,65 @@ function selectedFormat(workTool?: OfficeChatWorkTool): OfficeFormat | null {
   return null
 }
 
+function normalizedReference(value: unknown): string {
+  return String(value || '').trim().replace(/\\/g, '/').toLocaleLowerCase()
+}
+
+function documentTimestamp(document: OfficeDocumentDto): number {
+  const parsed = Date.parse(document.updated_at || document.created_at || '')
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+export function resolveIndexedOfficeRevisionDocument(
+  message: string,
+  documents: OfficeDocumentDto[],
+  workTool?: OfficeChatWorkTool,
+): OfficeDocumentDto | null {
+  if (!hasOfficeRevisionIntent(message)) return null
+  const selected = selectedFormat(workTool)
+  const candidates = documents.filter(document => !selected || document.kind === selected)
+  if (candidates.length === 0) return null
+
+  const reference = normalizedReference(message)
+  const ranked = candidates.map(document => {
+    const id = normalizedReference(document.id)
+    const path = normalizedReference(document.path)
+    const fileName = normalizedReference(document.file_name)
+    const title = normalizedReference(document.title)
+    let score = 0
+    if (id && reference.includes(id)) score = Math.max(score, 100)
+    if (path && reference.includes(path)) score = Math.max(score, 90)
+    if (fileName && reference.includes(fileName)) score = Math.max(score, 80)
+    if (title && title.length >= 3 && reference.includes(title)) score = Math.max(score, 70)
+    return { document, score }
+  }).sort((left, right) => (
+    right.score - left.score
+    || documentTimestamp(right.document) - documentTimestamp(left.document)
+  ))
+
+  if (ranked[0].score > 0) return ranked[0].document
+
+  // An explicit unmatched Office filename should never silently revise another file.
+  if (/[^\s/\\]+\.(?:docx|xlsx|pptx)\b/i.test(message)) return null
+  return ranked[0].document
+}
+
+export function officeClarificationPrompt(
+  request: OfficeChatRequest,
+  userMessage: string,
+): string {
+  const useChinese = /[\u3400-\u9fff]/.test(userMessage)
+  if (request.operation === 'revise') {
+    const title = request.document.title || request.document.file_name
+    return useChinese
+      ? `为了准确修改《${title}》，请再告诉我：要修改哪个部分、希望改成什么内容或样式，以及哪些内容必须保持不变。例如：“把标题改为红色，将第二部分扩写为三段，其他内容保持不变。”`
+      : `To revise “${title}” accurately, please tell me which section to change, what content or style you want, and what must remain unchanged. For example: “Make the title red, expand section two to three paragraphs, and keep everything else unchanged.”`
+  }
+  return useChinese
+    ? '为了生成可直接使用的文件，请再告诉我文件用途、必须包含的主要内容，以及期望的格式或风格。'
+    : 'To create a usable file, please provide its purpose, the main content it must include, and the format or style you prefer.'
+}
+
 export function inferOfficeChatFormat(
   message: string,
   workTool?: OfficeChatWorkTool,
@@ -99,6 +160,27 @@ function officeDocumentFromToolContent(content: string | undefined): OfficeDocum
   } catch {
     return null
   }
+}
+
+function pendingOfficeClarificationDocument(
+  messages: OfficeChatHistoryMessage[],
+): OfficeDocumentDto | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message.role !== 'tool' || !OFFICE_TOOL_NAMES.has(String(message.tool_name || ''))) continue
+    try {
+      const parsed = JSON.parse(message.content || '') as {
+        needs_clarification?: boolean
+        office_document?: OfficeDocumentDto | null
+      }
+      return parsed.needs_clarification && parsed.office_document?.id
+        ? parsed.office_document
+        : null
+    } catch {
+      return null
+    }
+  }
+  return null
 }
 
 export function latestOfficeChatDocument(
@@ -148,6 +230,17 @@ export function resolveOfficeChatRequest(
   messages: OfficeChatHistoryMessage[] = [],
 ): OfficeChatRequest | null {
   const document = latestOfficeChatDocument(messages)
+  const clarificationDocument = pendingOfficeClarificationDocument(messages)
+  const cancelledClarification = /^(?:cancel|never mind|nevermind|stop|不用了?|取消|算了|停止)[.!。！\s]*$/i.test(message.trim())
+  if (
+    clarificationDocument
+    && !cancelledClarification
+    && !NEW_OFFICE_FILE_PATTERN.test(message)
+    && !CHINESE_NEW_OFFICE_FILE_PATTERN.test(message)
+    && (!selectedFormat(workTool) || selectedFormat(workTool) === clarificationDocument.kind)
+  ) {
+    return { operation: 'revise', document: clarificationDocument }
+  }
   if (mayNeedOfficeRevision(message, document, workTool) && document) {
     return { operation: 'revise', document }
   }

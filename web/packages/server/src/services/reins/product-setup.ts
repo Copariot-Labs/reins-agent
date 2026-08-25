@@ -2,6 +2,7 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { logger } from '../logger'
 import { resolveReinsHome } from './reins-path'
+import { resolveReinsWorkspaceRoot } from './workspace-path'
 
 const execFileAsync = promisify(execFile)
 
@@ -18,6 +19,7 @@ export async function ensureReinsProductReady(): Promise<Record<string, unknown>
         ...process.env,
         REINS_HOME: resolveReinsHome(),
         HERMES_HOME: resolveReinsHome(),
+        REINS_WORKSPACE_ROOT: resolveReinsWorkspaceRoot(),
       },
       encoding: 'utf8',
       maxBuffer: 4 * 1024 * 1024,

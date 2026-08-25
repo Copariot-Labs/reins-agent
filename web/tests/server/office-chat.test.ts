@@ -139,4 +139,92 @@ describe('Reins Office chat routing', () => {
 
     expect(request).toEqual({ operation: 'revise', document: existingDocument })
   })
+
+  it('recovers a workspace document by its path when chat history has no Office tool', async () => {
+    const workspaceDocument = {
+      ...existingDocument,
+      id: 'workspace-doc-1',
+      title: '社区防汛方案',
+      path: '/Users/mei/Documents/Reins Workspace/Word/社区防汛方案.docx',
+      file_name: '社区防汛方案.docx',
+    }
+    const { resolveIndexedOfficeRevisionDocument } = await import('../../packages/server/src/services/reins/office-chat')
+
+    expect(resolveIndexedOfficeRevisionDocument(
+      '请修改这个文件的标题颜色：[Attached file: 社区防汛方案.docx; local path: /Users/mei/Documents/Reins Workspace/Word/社区防汛方案.docx]',
+      [existingDocument, workspaceDocument],
+    )).toEqual(workspaceDocument)
+  })
+
+  it('uses the latest indexed document for a generic Office revision follow-up', async () => {
+    const latestDocument = {
+      ...existingDocument,
+      id: 'latest-doc',
+      path: '/Users/mei/Documents/Reins Workspace/PowerPoint/latest.pptx',
+      file_name: 'latest.pptx',
+      updated_at: '2026-08-25T08:00:00Z',
+    }
+    const { resolveIndexedOfficeRevisionDocument } = await import('../../packages/server/src/services/reins/office-chat')
+
+    expect(resolveIndexedOfficeRevisionDocument(
+      'modify the design and use a warmer color palette',
+      [existingDocument, latestDocument],
+      'slides',
+    )).toEqual(latestDocument)
+  })
+
+  it('does not revise a different document when an explicit filename is unmatched', async () => {
+    const { resolveIndexedOfficeRevisionDocument } = await import('../../packages/server/src/services/reins/office-chat')
+
+    expect(resolveIndexedOfficeRevisionDocument(
+      'modify missing-report.docx and add more details',
+      [existingDocument],
+    )).toBeNull()
+  })
+
+  it('asks a focused Chinese clarification question without exposing an error', async () => {
+    const { officeClarificationPrompt } = await import('../../packages/server/src/services/reins/office-chat')
+
+    const prompt = officeClarificationPrompt(
+      { operation: 'revise', document: existingDocument },
+      '修改这个文档',
+    )
+
+    expect(prompt).toContain('要修改哪个部分')
+    expect(prompt).toContain('哪些内容必须保持不变')
+    expect(prompt).not.toContain('失败')
+    expect(prompt).not.toContain('OfficeCLI')
+  })
+
+  it('continues the pending Office revision when the user supplies clarification', async () => {
+    const clarificationToolMessage = {
+      role: 'tool',
+      tool_name: 'reins_office_revise',
+      content: JSON.stringify({
+        ok: false,
+        needs_clarification: true,
+        office_document: existingDocument,
+      }),
+    }
+    const { resolveOfficeChatRequest } = await import('../../packages/server/src/services/reins/office-chat')
+
+    expect(resolveOfficeChatRequest(
+      '标题和第二部分，标题改成红色，其他内容保持不变',
+      undefined,
+      [clarificationToolMessage],
+    )).toEqual({ operation: 'revise', document: existingDocument })
+    expect(resolveOfficeChatRequest(
+      '取消',
+      undefined,
+      [clarificationToolMessage],
+    )).toBeNull()
+  })
+
+  it('detects vague revision commands before starting the Office worker', async () => {
+    const { officeRevisionNeedsClarification } = await import('../../packages/server/src/services/reins/office-chat')
+
+    expect(officeRevisionNeedsClarification('修改这个文件')).toBe(true)
+    expect(officeRevisionNeedsClarification('Please improve this document')).toBe(true)
+    expect(officeRevisionNeedsClarification('把标题改成红色，第二部分增加两个案例')).toBe(false)
+  })
 })
