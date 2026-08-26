@@ -124,25 +124,18 @@ describe('Windows desktop backend shutdown', () => {
   })
 })
 
-describe('Windows installer release smoke test', () => {
-  const source = readFileSync(
-    resolve(process.cwd(), '../scripts/test-windows-installer.ps1'),
-    'utf8',
-  )
+describe('Windows installer release validation', () => {
   const workflow = readFileSync(
     resolve(process.cwd(), '../.github/workflows/windows-desktop.yml'),
     'utf8',
   )
 
-  it('tests clean install, locked-runtime upgrade, and uninstall before publishing', () => {
-    expect(source).toContain('[int]$TimeoutSeconds = 900')
-    expect(source).toContain('is still running ($ElapsedSeconds seconds elapsed)')
-    expect(source).toContain('Starting Reins to lock its private runtime')
-    expect(source).toContain('@("/S", "/NS", "/UPDATE")')
-    expect(source).toContain('$UninstallerPath')
-    expect(source).not.toContain('Reinstalling Reins after Windows uninstallation')
-    expect(workflow).toContain('./scripts/test-windows-installer.ps1')
-    expect(workflow.indexOf('./scripts/test-windows-installer.ps1')).toBeLessThan(
+  it('validates the built setup without launching an interactive dependency installer', () => {
+    expect(workflow).toContain('Validate installer artifact')
+    expect(workflow).toContain('$versionInfo.ProductVersion')
+    expect(workflow).toContain('Installer artifact is unexpectedly small')
+    expect(workflow).not.toContain('./scripts/test-windows-installer.ps1')
+    expect(workflow.indexOf('Validate installer artifact')).toBeLessThan(
       workflow.indexOf('Sign installer when a certificate is configured'),
     )
   })

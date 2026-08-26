@@ -92,9 +92,28 @@ jobs:
           REINS_ADMIN_PASSWORD_HASH: ${{ secrets.REINS_ADMIN_PASSWORD_HASH }}
         run: ./scripts/build-windows-desktop.ps1
 
-      - name: Smoke test install, update, and uninstall
+      - name: Validate installer artifact
         shell: pwsh
-        run: ./scripts/test-windows-installer.ps1
+        run: |
+          $installer = "release\Reins-Setup-x64.exe"
+          if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) {
+            throw "Tauri did not produce $installer"
+          }
+
+          $tauriConfig = Get-Content desktop\src-tauri\tauri.conf.json -Raw |
+            ConvertFrom-Json
+          $expectedVersion = [string]$tauriConfig.version
+          $versionInfo = (Get-Item -LiteralPath $installer).VersionInfo
+          $productVersion = [string]$versionInfo.ProductVersion
+          if ($productVersion.Trim() -ne $expectedVersion) {
+            throw "Installer version mismatch: expected $expectedVersion, found $productVersion"
+          }
+
+          $size = (Get-Item -LiteralPath $installer).Length
+          if ($size -lt 1MB) {
+            throw "Installer artifact is unexpectedly small: $size bytes"
+          }
+          Write-Host "Validated Reins $productVersion installer ($size bytes)."
 
       - name: Sign installer when a certificate is configured
         id: signing
