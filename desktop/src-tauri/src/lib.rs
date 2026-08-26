@@ -295,6 +295,40 @@ fn stop_backend(state: &BackendProcess) {
 
     println!("Stopping Reins backend (PID {})...", backend.id());
 
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+
+        let pid = backend.id().to_string();
+        let mut taskkill = Command::new("taskkill.exe");
+        taskkill
+            .args(["/PID", pid.as_str(), "/T", "/F"])
+            .creation_flags(0x08000000);
+
+        match taskkill.status() {
+            Ok(status) if status.success() => {}
+            Ok(status) => {
+                eprintln!(
+                    "Failed to stop the Reins backend process tree (status {}). Falling back to direct termination.",
+                    status
+                );
+                if let Err(error) = backend.kill() {
+                    eprintln!("Failed to stop Reins backend: {}", error);
+                }
+            }
+            Err(error) => {
+                eprintln!(
+                    "Failed to launch taskkill for the Reins backend process tree: {}",
+                    error
+                );
+                if let Err(error) = backend.kill() {
+                    eprintln!("Failed to stop Reins backend: {}", error);
+                }
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
     if let Err(error) = backend.kill() {
         eprintln!("Failed to stop Reins backend: {}", error);
     }
