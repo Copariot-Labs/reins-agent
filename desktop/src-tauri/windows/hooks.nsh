@@ -87,22 +87,23 @@ FunctionEnd
   Pop $0
   Sleep 500
 
-  ; Catch orphaned private node.exe or python.exe processes by executable path.
-  ; Search only inside the bundled runtime. The installer and uninstaller also
-  ; run from the Reins installation directory and must never match this sweep.
-  ; Repeat until the runtime is fully drained because a terminating parent can
-  ; briefly leave children behind. Never terminate unrelated Node or Python
-  ; processes belonging to other software.
-  nsExec::ExecToLog `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "& { $$runtime = [IO.Path]::GetFullPath((Join-Path (Join-Path $$env:LOCALAPPDATA Reins) runtime)); $$prefix = $$runtime.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar; $$deadline = [DateTime]::UtcNow.AddSeconds(20); do { $$processes = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith($$prefix, [StringComparison]::OrdinalIgnoreCase) }); if ($$processes.Count -eq 0) { Start-Sleep -Milliseconds 750; $$processes = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith($$prefix, [StringComparison]::OrdinalIgnoreCase) }); if ($$processes.Count -eq 0) { exit 0 } }; $$processes | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }; Start-Sleep -Milliseconds 500 } while ([DateTime]::UtcNow -lt $$deadline); $$remaining = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith($$prefix, [StringComparison]::OrdinalIgnoreCase) }); if ($$remaining.Count -eq 0) { exit 0 }; $$remaining | ForEach-Object { Write-Output ('Still active: PID ' + $$_.ProcessId + ' ' + $$_.ExecutablePath) }; $$marker = [IO.Path]::Combine('$PLUGINSDIR', 'reins-poller-was-enabled'); if (Test-Path -LiteralPath $$marker) { $$task = Get-ScheduledTask -TaskName 'Reins WeCom Ticket Poller' -ErrorAction SilentlyContinue; if ($$null -ne $$task) { Enable-ScheduledTask -InputObject $$task -ErrorAction SilentlyContinue | Out-Null; Start-ScheduledTask -InputObject $$task -ErrorAction SilentlyContinue } }; Write-Error 'Reins runtime processes are still active.'; exit 32 }"`
+  ; Catch orphaned private Node or Python processes by executable path. Keep
+  ; this command below NSIS's 1024-character string limit; a longer command is
+  ; silently truncated and reaches PowerShell as invalid syntax.
+  nsExec::ExecToLog `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "& { $$r=[IO.Path]::GetFullPath((Join-Path $$env:LOCALAPPDATA 'Reins\runtime')).TrimEnd('\')+'\'; function q { @(Get-CimInstance Win32_Process -EA SilentlyContinue | ? { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith($$r,[StringComparison]::OrdinalIgnoreCase) }) }; $$d=[DateTime]::UtcNow.AddSeconds(20); while ([DateTime]::UtcNow -lt $$d) { $$p=@(q); if (!$$p.Count) { exit 0 }; $$p | % { Stop-Process -Id $$_.ProcessId -Force -EA SilentlyContinue }; Start-Sleep -Milliseconds 500 }; $$p=@(q); if (!$$p.Count) { exit 0 }; $$p | % { Write-Output ('Still active: PID '+$$_.ProcessId+' '+$$_.ExecutablePath) }; exit 32 }"`
   Pop $0
 !macroend
 
 !macro NSIS_HOOK_PREINSTALL
   !insertmacro REINS_STOP_RUNTIME_PROCESSES
-  StrCmp $0 "0" +3 0
+  StrCmp $0 "0" reins_preinstall_runtime_stopped
+  ; The poller was paused before the failed shutdown attempt. Restore its
+  ; previous state when installation cannot continue.
+  !insertmacro REINS_RESUME_BACKGROUND_TASK
   MessageBox MB_OK|MB_ICONSTOP "Reins could not stop its private runtime after 20 seconds. Close Reins and try this installer again. You do not need to uninstall Reins or restart Windows."
   Abort
 
+  reins_preinstall_runtime_stopped:
   ; Reins 0.1.0 accidentally removed inherited permissions from its own
   ; current-user installation directory. Repair that directory before an
   ; upgrade copies the new application files.

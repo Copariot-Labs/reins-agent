@@ -41,17 +41,21 @@ jobs:
             throw "WINDOWS_SIGNING_PFX_BASE64 and WINDOWS_SIGNING_PFX_PASSWORD must be configured together."
           }
 
+          $packageVersion = (Get-Content desktop\package.json -Raw | ConvertFrom-Json).version
+          $tauriVersion = (Get-Content desktop\src-tauri\tauri.conf.json -Raw | ConvertFrom-Json).version
+          $cargoManifest = Get-Content desktop\src-tauri\Cargo.toml -Raw
+          $cargoVersion = [regex]::Match($cargoManifest, '(?ms)^\[package\].*?^version\s*=\s*"([^"]+)"').Groups[1].Value
+          $versions = @($packageVersion, $tauriVersion, $cargoVersion)
+          if ($versions | Where-Object { $_ -ne $tauriVersion }) {
+            throw "Desktop versions do not match: package=$packageVersion, tauri=$tauriVersion, cargo=$cargoVersion."
+          }
+
           if ("${{ github.ref }}" -like "refs/tags/desktop-v*") {
             $version = "${{ github.ref_name }}" -replace '^desktop-v', ''
             if ($version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?$') {
               throw "Release tag must use desktop-vMAJOR.MINOR.PATCH, optionally followed by a prerelease suffix."
             }
 
-            $packageVersion = (Get-Content desktop\package.json -Raw | ConvertFrom-Json).version
-            $tauriVersion = (Get-Content desktop\src-tauri\tauri.conf.json -Raw | ConvertFrom-Json).version
-            $cargoManifest = Get-Content desktop\src-tauri\Cargo.toml -Raw
-            $cargoVersion = [regex]::Match($cargoManifest, '(?ms)^\[package\].*?^version\s*=\s*"([^"]+)"').Groups[1].Value
-            $versions = @($packageVersion, $tauriVersion, $cargoVersion)
             if ($versions | Where-Object { $_ -ne $version }) {
               throw "Tag ${{ github.ref_name }} does not match the desktop versions: package=$packageVersion, tauri=$tauriVersion, cargo=$cargoVersion."
             }
@@ -164,16 +168,25 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish tagged installer to GitHub Releases
-        if: startsWith(github.ref, 'refs/tags/desktop-v')
+      - name: Publish installer to GitHub Releases
+        if: startsWith(github.ref, 'refs/tags/desktop-v') || github.event_name == 'workflow_dispatch'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "${{ github.ref_name }}"
           $repository = $env:GITHUB_REPOSITORY
           $installer = "release\Reins-Setup-x64.exe"
           $checksum = "release\Reins-Setup-x64.exe.sha256"
+          $isTagBuild = "${{ startsWith(github.ref, 'refs/tags/desktop-v') }}" -eq "true"
+          if ($isTagBuild) {
+            $tag = "${{ github.ref_name }}"
+          }
+          else {
+            $version = (Get-Content desktop\src-tauri\tauri.conf.json -Raw | ConvertFrom-Json).version
+            $tag = "desktop-v$version"
+          }
+          $version = $tag -replace '^desktop-v', ''
+
           $releases = gh release list --repo $repository --limit 100 --json tagName | ConvertFrom-Json
           $releaseExists = $null -ne ($releases | Where-Object { $_.tagName -eq $tag })
 
@@ -181,14 +194,18 @@ jobs:
             gh release upload $tag $installer $checksum --repo $repository --clobber
           }
           else {
-            $version = $tag -replace '^desktop-v', ''
             $arguments = @(
               "release", "create", $tag, $installer, $checksum,
               "--repo", $repository,
-              "--verify-tag",
               "--title", "Reins Desktop $version",
               "--generate-notes"
             )
+            if ($isTagBuild) {
+              $arguments += "--verify-tag"
+            }
+            else {
+              $arguments += @("--target", $env:GITHUB_SHA)
+            }
             if ($tag -match '(?i)-(alpha|beta|rc)([.-]|$)' -or "${{ steps.signing.outputs.signed }}" -ne "true") {
               $arguments += "--prerelease"
             }

@@ -60,11 +60,18 @@ describe('Windows installer maintenance hooks', () => {
   })
 
   it('terminates orphaned private runtimes by install path only', () => {
+    const runtimeCommand = source
+      .split('\n')
+      .find(line => line.includes('function q'))
+
     expect(source).toContain('Get-CimInstance Win32_Process')
-    expect(source).toContain('Join-Path (Join-Path $$env:LOCALAPPDATA Reins) runtime')
-    expect(source).toContain('StartsWith($$prefix')
+    expect(source).toContain("Join-Path $$env:LOCALAPPDATA 'Reins\\runtime'")
+    expect(source).toContain('StartsWith($$r')
     expect(source).toContain('AddSeconds(20)')
-    expect(source).toContain('do { $$processes = @(')
+    expect(source).toContain('function q')
+    expect(source).toContain('while ([DateTime]::UtcNow -lt $$d)')
+    expect(runtimeCommand).toBeDefined()
+    expect(runtimeCommand!.length).toBeLessThan(1024)
     expect(source).not.toContain(
       '$$root = [IO.Path]::GetFullPath((Join-Path $$env:LOCALAPPDATA Reins))',
     )
@@ -107,7 +114,10 @@ describe('Windows installer maintenance hooks', () => {
       source.indexOf('!macro NSIS_HOOK_POSTINSTALL'),
     )
 
-    expect(preinstall).toContain('StrCmp $0 "0" +3 0')
+    expect(preinstall).toContain(
+      'StrCmp $0 "0" reins_preinstall_runtime_stopped',
+    )
+    expect(preinstall).toContain('!insertmacro REINS_RESUME_BACKGROUND_TASK')
     expect(preinstall).toContain('Abort')
   })
 })
@@ -138,5 +148,12 @@ describe('Windows installer release validation', () => {
     expect(workflow.indexOf('Validate installer artifact')).toBeLessThan(
       workflow.indexOf('Sign installer when a certificate is configured'),
     )
+  })
+
+  it('publishes manual and tagged builds to GitHub Releases', () => {
+    expect(workflow).toContain('Publish installer to GitHub Releases')
+    expect(workflow).toContain("github.event_name == 'workflow_dispatch'")
+    expect(workflow).toContain('$tag = "desktop-v$version"')
+    expect(workflow).toContain('@("--target", $env:GITHUB_SHA)')
   })
 })
