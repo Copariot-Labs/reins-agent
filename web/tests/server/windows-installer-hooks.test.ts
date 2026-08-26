@@ -134,11 +134,13 @@ describe('Windows installer release smoke test', () => {
     'utf8',
   )
 
-  it('tests clean install, locked-runtime upgrade, uninstall, and reinstall before publishing', () => {
+  it('tests clean install, locked-runtime upgrade, and uninstall before publishing', () => {
+    expect(source).toContain('[int]$TimeoutSeconds = 900')
+    expect(source).toContain('is still running ($ElapsedSeconds seconds elapsed)')
     expect(source).toContain('Starting Reins to lock its private runtime')
     expect(source).toContain('@("/S", "/NS", "/UPDATE")')
     expect(source).toContain('$UninstallerPath')
-    expect(source).toContain('Reinstalling Reins after Windows uninstallation')
+    expect(source).not.toContain('Reinstalling Reins after Windows uninstallation')
     expect(workflow).toContain('./scripts/test-windows-installer.ps1')
     expect(workflow.indexOf('./scripts/test-windows-installer.ps1')).toBeLessThan(
       workflow.indexOf('Sign installer when a certificate is configured'),

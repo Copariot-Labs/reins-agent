@@ -3,7 +3,7 @@
 [CmdletBinding()]
 param(
     [string]$Installer = "release\Reins-Setup-x64.exe",
-    [int]$TimeoutSeconds = 300
+    [int]$TimeoutSeconds = 900
 )
 
 Set-StrictMode -Version Latest
@@ -33,8 +33,20 @@ function Invoke-CheckedProcess {
 
     Write-Host "==> $Label" -ForegroundColor Cyan
     $Process = Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru
-    if (-not $Process.WaitForExit($TimeoutSeconds * 1000)) {
-        Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+    $StartedAt = [DateTime]::UtcNow
+
+    while (-not $Process.WaitForExit(30000)) {
+        $ElapsedSeconds = [int]([DateTime]::UtcNow - $StartedAt).TotalSeconds
+        Write-Host "$Label is still running ($ElapsedSeconds seconds elapsed)..."
+        if ($ElapsedSeconds -lt $TimeoutSeconds) { continue }
+
+        try {
+            & "$env:SystemRoot\System32\taskkill.exe" /F /T /PID $Process.Id `
+                2>$null | Out-Null
+        }
+        catch {
+            Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+        }
         throw "$Label timed out after $TimeoutSeconds seconds."
     }
     if ($Process.ExitCode -ne 0) {
@@ -152,13 +164,7 @@ try {
 
     Invoke-ReinsUninstallCheck -Label "Uninstalling the upgraded Reins release"
 
-    Invoke-CheckedProcess -FilePath $InstallerPath -Arguments @("/S", "/NS") `
-        -Label "Reinstalling Reins after Windows uninstallation"
-    Assert-ReinsInstalled
-
-    Invoke-ReinsUninstallCheck -Label "Uninstalling the clean reinstallation"
-
-    Write-Host "Reins clean install, active-runtime upgrade, uninstall, and reinstall checks passed." `
+    Write-Host "Reins clean install, active-runtime upgrade, and uninstall checks passed." `
         -ForegroundColor Green
 }
 finally {

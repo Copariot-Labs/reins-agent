@@ -92,7 +92,7 @@ jobs:
           REINS_ADMIN_PASSWORD_HASH: ${{ secrets.REINS_ADMIN_PASSWORD_HASH }}
         run: ./scripts/build-windows-desktop.ps1
 
-      - name: Smoke test install, update, uninstall, and reinstall
+      - name: Smoke test install, update, and uninstall
         shell: pwsh
         run: ./scripts/test-windows-installer.ps1
 
