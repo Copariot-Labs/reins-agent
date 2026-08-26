@@ -4,6 +4,9 @@
 ; Present interactive upgrades as a same-version maintenance install instead;
 ; Tauri then defaults to replacing the application in place. The normal
 ; install section still writes the real new DisplayVersion after it succeeds.
+!define MUI_CUSTOMFUNCTION_GUIINIT ReinsUpgradeRecoveryGuiInit
+!define MUI_CUSTOMFUNCTION_ABORT ReinsUpgradeRecoveryAbort
+
 !macro REINS_RESTORE_UPGRADE_VERSION
   ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Reins" "ReinsUpgradeRecoveryVersion"
   StrCmp $0 "" +2 0
@@ -11,7 +14,7 @@
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Reins" "ReinsUpgradeRecoveryVersion"
 !macroend
 
-Function .onGUIInit
+Function ReinsUpgradeRecoveryGuiInit
   ; Recover the real installed version if an earlier repair was cancelled or
   ; interrupted before the installer could run its normal completion hooks.
   !insertmacro REINS_RESTORE_UPGRADE_VERSION
@@ -38,7 +41,7 @@ Function .onGUIInit
   reins_upgrade_recovery_done:
 FunctionEnd
 
-Function .onUserAbort
+Function ReinsUpgradeRecoveryAbort
   !insertmacro REINS_RESTORE_UPGRADE_VERSION
 FunctionEnd
 

@@ -34,15 +34,23 @@ describe('Windows installer maintenance hooks', () => {
 
   it('routes an interactive version upgrade around the broken legacy uninstaller', () => {
     const guiInit = source.slice(
-      source.indexOf('Function .onGUIInit'),
+      source.indexOf('Function ReinsUpgradeRecoveryGuiInit'),
       source.indexOf('!macro REINS_PAUSE_BACKGROUND_TASK'),
     )
 
+    expect(source).toContain(
+      '!define MUI_CUSTOMFUNCTION_GUIINIT ReinsUpgradeRecoveryGuiInit',
+    )
+    expect(source).toContain(
+      '!define MUI_CUSTOMFUNCTION_ABORT ReinsUpgradeRecoveryAbort',
+    )
+    expect(source).not.toContain('Function .onGUIInit')
+    expect(source).not.toContain('Function .onUserAbort')
     expect(guiInit).toContain('${GetFileVersion} "$EXEPATH" $0')
     expect(guiInit).toContain('${VersionCompare} "$0" "$1" $2')
     expect(guiInit).toContain('StrCmp $1 "0.1.9"')
     expect(source).toContain('!macro REINS_RESTORE_UPGRADE_VERSION')
-    expect(source).toContain('Function .onUserAbort')
+    expect(source).toContain('Function ReinsUpgradeRecoveryAbort')
     expect(source).toContain('Function .onInstFailed')
     expect(source).toContain('ReinsUpgradeRecoveryVersion')
     expect(guiInit).toContain(
