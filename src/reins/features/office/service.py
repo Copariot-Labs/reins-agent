@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import errno
 import json
+import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
+import time
 from typing import Any, Callable
 from uuid import uuid4
 
@@ -62,6 +66,97 @@ def _is_revision_timeout(error: Exception) -> bool:
     if isinstance(error, (subprocess.TimeoutExpired, TimeoutError)):
         return True
     return "timed out" in str(error).casefold()
+
+
+_REVISION_LANGUAGE_PATTERNS = (
+    ("zh", re.compile(
+        r"(?:\b(?:into|to)\s+(?:simplified\s+|traditional\s+)?(?:chinese|chinse|mandarin)\b"
+        r"|\b(?:chinese|chinse|mandarin)\s+(?:translation|version)\b"
+        r"|(?:翻译|译|转换|改).{0,40}(?:成|为)(?:简体中文|繁体中文|中文|汉语)"
+        r"|(?:需要|要|使用|用).{0,30}(?:简体中文|繁体中文|中文|汉语)(?:版|版本)?"
+        r"|(?:简体中文|繁体中文|中文)(?:版|版本|翻译))",
+        re.IGNORECASE,
+    )),
+    ("en", re.compile(
+        r"(?:\b(?:into|to)\s+english\b|\benglish\s+(?:translation|version)\b"
+        r"|(?:翻译|译|转换|改).{0,40}(?:成|为)(?:英文|英语)"
+        r"|(?:需要|要|使用|用).{0,30}(?:英文|英语)(?:版|版本)?"
+        r"|(?:英文|英语)(?:版|版本|翻译))",
+        re.IGNORECASE,
+    )),
+    ("ja", re.compile(
+        r"(?:\b(?:into|to)\s+japanese\b|\bjapanese\s+(?:translation|version)\b"
+        r"|(?:翻译|译|转换|改).{0,40}(?:成|为)(?:日文|日语))",
+        re.IGNORECASE,
+    )),
+    ("ko", re.compile(
+        r"(?:\b(?:into|to)\s+korean\b|\bkorean\s+(?:translation|version)\b"
+        r"|(?:翻译|译|转换|改).{0,40}(?:成|为)(?:韩文|韩语))",
+        re.IGNORECASE,
+    )),
+)
+
+
+def _revision_language(instruction: str, fallback: str) -> str:
+    matches: list[tuple[int, str]] = []
+    for language, pattern in _REVISION_LANGUAGE_PATTERNS:
+        matches.extend((match.start(), language) for match in pattern.finditer(instruction))
+    if matches:
+        return max(matches, key=lambda item: item[0])[1]
+    return str(fallback or "zh").strip() or "zh"
+
+
+_WINDOWS_REPLACE_RETRY_DELAYS = (0.12, 0.2, 0.35, 0.55, 0.9, 1.4, 2.1)
+
+
+def _is_windows_sharing_error(error: OSError) -> bool:
+    if os.name != "nt":
+        return False
+    return getattr(error, "winerror", None) in {5, 32, 33} or error.errno in {
+        errno.EACCES,
+        errno.EBUSY,
+    }
+
+
+def _atomic_replace(source: Path, destination: Path) -> None:
+    os.replace(source, destination)
+
+
+def _replace_revised_file(
+    temporary: Path,
+    source: Path,
+    *,
+    progress: OfficeProgressReporter | None = None,
+) -> None:
+    for attempt in range(len(_WINDOWS_REPLACE_RETRY_DELAYS) + 1):
+        try:
+            _atomic_replace(temporary, source)
+            return
+        except OSError as exc:
+            if not _is_windows_sharing_error(exc):
+                raise
+            if attempt >= len(_WINDOWS_REPLACE_RETRY_DELAYS):
+                raise OfficeServiceError(
+                    "The Office file is being used by another program. Close it in "
+                    "Microsoft Office or the File Explorer preview pane and try again; "
+                    "the original file was preserved."
+                ) from exc
+            if attempt == 0:
+                _report_progress(
+                    progress,
+                    "waiting_for_file",
+                    97,
+                    "Windows 正在释放文件占用，Reins 将自动重试",
+                    "Waiting for Windows to release the file before retrying",
+                )
+            time.sleep(_WINDOWS_REPLACE_RETRY_DELAYS[attempt])
+
+
+def _discard_temporary_file(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def _append_record(record: OfficeDocumentRecord) -> OfficeDocumentRecord:
@@ -266,11 +361,14 @@ def _revise_structured_presentation(
             client=client,
             progress=progress,
         )
-        temporary.replace(source)
+        _replace_revised_file(temporary, source, progress=progress)
     except Exception:
-        if temporary.exists():
-            temporary.unlink()
-        shutil.copy2(backup, source)
+        _discard_temporary_file(temporary)
+        if not source.exists():
+            try:
+                shutil.copy2(backup, source)
+            except OSError:
+                pass
         raise
 
     revision = {
@@ -330,6 +428,10 @@ def _revise_structured_word_document(
     current = record.metadata.get("content")
     if not isinstance(current, dict):
         raise OfficeServiceError("This Word document does not have editable Reins content metadata.")
+    revision_language = _revision_language(
+        instruction,
+        str(record.metadata.get("language") or "zh"),
+    )
 
     _report_progress(
         progress, "revision_planning", 24,
@@ -347,17 +449,18 @@ Current structured document content:
 Return the complete revised Word document content, not a patch. Preserve all
 unrelated facts, sections, tables, and design choices. Apply the instruction
 consistently everywhere it is relevant. Preserve the current design unless the
-user explicitly requests a visual change. Do not mention this revision process
-inside the finished document.
+user explicitly requests a visual change. When a design change is requested,
+Reins must choose a suitable complete design from the current content and the
+new instruction. The original creation skill is provenance, not a constraint on
+this revision. Do not mention this revision process inside the finished document.
 """.strip()
     revised_content = generate_office_content(
         prompt=revision_prompt,
         office_format="docx",
         title=record.title,
-        language=str(record.metadata.get("language") or "zh"),
+        language=revision_language,
         timeout=timeout,
         use_reins=True,
-        skill_id=str(record.metadata.get("workflow_id") or "") or None,
     )
     if revised_content.get("generator") != "reins":
         raise OfficeServiceError(
@@ -377,9 +480,9 @@ inside the finished document.
             client=client,
             progress=progress,
         )
-        temporary.replace(source)
+        _replace_revised_file(temporary, source, progress=progress)
     except Exception:
-        temporary.unlink(missing_ok=True)
+        _discard_temporary_file(temporary)
         raise
 
     metadata = dict(record.metadata)
@@ -397,6 +500,7 @@ inside the finished document.
     metadata.update(
         {
             "content": revised_content,
+            "language": revision_language,
             "document_kind": revised_content.get("document_kind"),
             "missing_fields": revised_content.get("missing_fields", []),
             "generator_error": revised_content.get("generator_error"),
@@ -438,6 +542,10 @@ def _revise_structured_excel_document(
     current = record.metadata.get("content")
     if not isinstance(current, dict) or not isinstance(current.get("sheets"), list):
         raise OfficeServiceError("This Excel workbook does not have editable Reins content metadata.")
+    revision_language = _revision_language(
+        instruction,
+        str(record.metadata.get("language") or "zh"),
+    )
 
     _report_progress(
         progress, "revision_planning", 24,
@@ -458,16 +566,16 @@ design choice. Apply the requested changes consistently to all relevant cells.
 If the user requests a design change, choose a suitable complete workbook
 design; otherwise preserve the current design. Keep long explanatory text
 concise enough for readable wrapped cells. Do not mention the revision process
-inside the finished workbook.
+inside the finished workbook. The original creation skill is provenance, not a
+constraint on this revision.
 """.strip()
     revised_content = generate_office_content(
         prompt=revision_prompt,
         office_format="xlsx",
         title=record.title,
-        language=str(record.metadata.get("language") or "zh"),
+        language=revision_language,
         timeout=timeout,
         use_reins=True,
-        skill_id=str(record.metadata.get("workflow_id") or "") or None,
     )
     if revised_content.get("generator") != "reins" or not revised_content.get("sheets"):
         raise OfficeServiceError(
@@ -487,9 +595,9 @@ inside the finished workbook.
             client=client,
             progress=progress,
         )
-        temporary.replace(source)
+        _replace_revised_file(temporary, source, progress=progress)
     except Exception:
-        temporary.unlink(missing_ok=True)
+        _discard_temporary_file(temporary)
         raise
 
     metadata = dict(record.metadata)
@@ -507,6 +615,7 @@ inside the finished workbook.
     metadata.update(
         {
             "content": revised_content,
+            "language": revision_language,
             "document_kind": revised_content.get("document_kind"),
             "missing_fields": revised_content.get("missing_fields", []),
             "generator_error": revised_content.get("generator_error"),

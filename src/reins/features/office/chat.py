@@ -25,15 +25,20 @@ class OfficeChatResult:
 
 
 CREATE_PATTERN = re.compile(
-    r"\b(create|make|generate|write|prepare|draft|build|compose|produce|design)\b",
+    r"\b(create|make|generate|write|prepare|draft|build|compose|produce|design|assemble|compile|format|export|save|convert)\b",
+    re.IGNORECASE,
+)
+CREATE_PHRASE_PATTERN = re.compile(
+    r"\b(?:put|pull)\s+together\b|\bturn\b.{0,80}\binto\b",
     re.IGNORECASE,
 )
 QUESTION_PATTERN = re.compile(
     r"^(how\s+to\s+|how\s+can\s+i\s+|what\s+is\s+|why\s+|can\s+you\s+explain\s+)",
     re.IGNORECASE,
 )
+CHINESE_QUESTION_PATTERN = re.compile(r"^(如何|怎么|怎样|为什么|什么是|请解释|请介绍)")
 DOCUMENT_PATTERN = re.compile(
-    r"\b(document|docx?|letter|application|report|proposal|summary|resume|cv|notice|program|plan|minutes|memo|policy|agreement|contract|statement|certificate|form|invoice|receipt|agenda)\b",
+    r"\b(document|docx?|word|letter|application|report|proposal|summary|resume|cv|notice|program|plan|minutes|memo|policy|agreement|contract|statement|certificate|form|invoice|receipt|agenda|briefing)\b",
     re.IGNORECASE,
 )
 SPREADSHEET_PATTERN = re.compile(
@@ -44,9 +49,9 @@ PRESENTATION_PATTERN = re.compile(
     r"\b(presentation|pptx?|slides?|slide deck|deck|powerpoint)\b",
     re.IGNORECASE,
 )
-CHINESE_CREATE_PATTERN = re.compile(r"创建|制作|生成|写一份|撰写|准备|起草|做一个")
-CHINESE_DOCUMENT_PATTERN = re.compile(r"文档|报告|通知|申请|合同|简历|计划|方案")
-CHINESE_SPREADSHEET_PATTERN = re.compile(r"表格|电子表格|工作簿")
+CHINESE_CREATE_PATTERN = re.compile(r"创建|制作|生成|写一份|撰写|编写|准备|起草|整理|汇总|输出|形成|保存|转换|导出|做一个|做一份|出一份")
+CHINESE_DOCUMENT_PATTERN = re.compile(r"文档|Word|报告|总结|简报|公文|通知|公告|倡议书|申请|合同|简历|计划|方案|会议记录|会议纪要|纪要", re.IGNORECASE)
+CHINESE_SPREADSHEET_PATTERN = re.compile(r"台账|清单|表格|电子表格|工作簿|Excel", re.IGNORECASE)
 CHINESE_PRESENTATION_PATTERN = re.compile(r"演示文稿|幻灯片|PPT", re.IGNORECASE)
 
 
@@ -63,10 +68,17 @@ def infer_office_format(message: str) -> str | None:
 
 def should_handle_office_chat(message: str) -> bool:
     text = str(message or "").strip()
-    if not text or text.startswith("/") or QUESTION_PATTERN.search(text):
+    if (
+        not text
+        or text.startswith("/")
+        or QUESTION_PATTERN.search(text)
+        or CHINESE_QUESTION_PATTERN.search(text)
+    ):
         return False
     has_create_intent = bool(
-        CREATE_PATTERN.search(text) or CHINESE_CREATE_PATTERN.search(text)
+        CREATE_PATTERN.search(text)
+        or CREATE_PHRASE_PATTERN.search(text)
+        or CHINESE_CREATE_PATTERN.search(text)
     )
     return has_create_intent and infer_office_format(text) is not None
 

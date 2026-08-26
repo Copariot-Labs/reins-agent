@@ -70,6 +70,19 @@ describe('Reins Office service', () => {
     expect(error.suggestion_zh).toContain('原文件不会因超时而丢失')
   })
 
+  it('explains how to release a Windows Office file lock', () => {
+    const error = friendlyOfficeOperationError(
+      new Error('[WinError 32] 另一个程序正在使用此文件，进程无法访问'),
+      'revise',
+      'file_ready',
+    )
+
+    expect(error.code).toBe('file_in_use')
+    expect(error.message_zh).toContain('原文件已保留')
+    expect(error.suggestion_zh).toContain('文件资源管理器预览窗格')
+    expect(error.suggestion_en).toContain('File Explorer preview pane')
+  })
+
   it('asks for clarification only for usable planning failures', () => {
     const invalidStructure = friendlyOfficeOperationError(
       new Error('Reins did not return a valid structured Word revision'),

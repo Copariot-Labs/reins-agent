@@ -81,6 +81,9 @@ def _run_mutation(client: OfficeCliClient, args: list[object], *, timeout: int =
     client.run(args, timeout=timeout, allowed_returncodes=(0, 2))
 
 
+_NO_AUTO_RESIDENT_ENV = {"OFFICECLI_NO_AUTO_RESIDENT": "1"}
+
+
 def _office_issue_count(output: str) -> int:
     text = str(output or "").strip()
     try:
@@ -1665,28 +1668,41 @@ def render_office_content(
         except Exception:
             pass
 
-    _report_render_progress(
-        progress, "validating", 90,
-        "正在验证文件结构和格式", "Validating file structure and formatting",
-    )
-    client.run(["validate", path], timeout=60, allowed_returncodes=(0, 2))
-    if normalized == "pptx":
+    try:
         _report_render_progress(
-            progress, "layout_check", 94,
-            "正在检查幻灯片布局问题", "Checking presentation layout issues",
+            progress, "validating", 90,
+            "正在验证文件结构和格式", "Validating file structure and formatting",
         )
-        issues = client.run(
-            ["view", path, "issues", "--json"],
-            timeout=90,
+        client.run(
+            ["validate", path],
+            timeout=60,
             allowed_returncodes=(0, 2),
-            env_overrides={"OFFICECLI_NO_AUTO_RESIDENT": "1"},
+            env_overrides=_NO_AUTO_RESIDENT_ENV,
         )
-        issue_count = _office_issue_count(issues.stdout or issues.stderr)
-        if issue_count:
-            raise OfficeRenderError(
-                f"Reins Office found {issue_count} presentation layout issue(s). "
-                "Shorten the requested slide copy or revise the presentation structure."
+        if normalized == "pptx":
+            _report_render_progress(
+                progress, "layout_check", 94,
+                "正在检查幻灯片布局问题", "Checking presentation layout issues",
             )
+            issues = client.run(
+                ["view", path, "issues", "--json"],
+                timeout=90,
+                allowed_returncodes=(0, 2),
+                env_overrides=_NO_AUTO_RESIDENT_ENV,
+            )
+            issue_count = _office_issue_count(issues.stdout or issues.stderr)
+            if issue_count:
+                raise OfficeRenderError(
+                    f"Reins Office found {issue_count} presentation layout issue(s). "
+                    "Shorten the requested slide copy or revise the presentation structure."
+                )
+    finally:
+        # Read-only OfficeCLI checks used to auto-start another resident after
+        # the editing session closed, leaving the generated file locked on Windows.
+        try:
+            _run_mutation(client, ["close", path], timeout=60)
+        except Exception:
+            pass
     _report_render_progress(
         progress, "file_ready", 97,
         "OfficeCLI 文件检查已通过", "OfficeCLI file checks passed",

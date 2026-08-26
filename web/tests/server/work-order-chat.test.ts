@@ -18,6 +18,7 @@ vi.mock('../../packages/server/src/services/hermes/work-orders', () => ({
 
 import {
   buildWorkOrderOfficePrompt,
+  isNativeWorkOrderExportRequest,
   mayNeedWorkOrderChat,
   reinsWorkOrderAgentInstructions,
 } from '../../packages/server/src/services/reins/work-order-chat'
@@ -71,6 +72,12 @@ describe('Reins Work Orders chat integration', () => {
     expect(mayNeedWorkOrderChat('查看工单 t_community_007 的详情')).toBe(true)
     expect(mayNeedWorkOrderChat('帮我设计工单页面')).toBe(false)
     expect(mayNeedWorkOrderChat('总结今天的工作')).toBe(false)
+  })
+
+  it('reserves native Excel exports for the Work Orders tool', () => {
+    expect(isNativeWorkOrderExportRequest('导出全部工单Excel台账')).toBe(true)
+    expect(isNativeWorkOrderExportRequest('Export pending work orders to Excel')).toBe(true)
+    expect(isNativeWorkOrderExportRequest('创建一份工单汇总 Word 报告')).toBe(false)
   })
 
   it('requires native tools and asks for missing update information', () => {

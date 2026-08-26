@@ -9,9 +9,13 @@ const mockSystemApi = vi.hoisted(() => ({
   addCustomProvider: vi.fn(),
   removeCustomProvider: vi.fn(),
 }))
+const mockClient = vi.hoisted(() => ({
+  hasApiKey: vi.fn(() => true),
+  isTauriDesktop: vi.fn(() => false),
+}))
 
 vi.mock('@/api/hermes/system', () => mockSystemApi)
-vi.mock('@/api/client', () => ({ hasApiKey: () => true }))
+vi.mock('@/api/client', () => mockClient)
 
 import { useAppStore } from '@/stores/hermes/app'
 import { useModelsStore } from '@/stores/hermes/models'
@@ -20,7 +24,43 @@ describe('Models Store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    mockClient.hasApiKey.mockReturnValue(true)
+    mockClient.isTauriDesktop.mockReturnValue(false)
     window.localStorage.clear()
+  })
+
+  it('loads provider presets on a fresh Windows desktop install without a browser API key', async () => {
+    mockClient.hasApiKey.mockReturnValue(false)
+    mockClient.isTauriDesktop.mockReturnValue(true)
+    const presetGroups = [{
+      provider: 'deepseek',
+      label: 'DeepSeek',
+      base_url: 'https://api.deepseek.com',
+      api_key: '',
+      models: ['deepseek-chat'],
+    }]
+    mockSystemApi.fetchAvailableModelsForProfile.mockResolvedValue({
+      default: '',
+      default_provider: '',
+      groups: [],
+      allProviders: presetGroups,
+    })
+
+    const modelsStore = useModelsStore()
+    await modelsStore.fetchProviders()
+
+    expect(mockSystemApi.fetchAvailableModelsForProfile).toHaveBeenCalledWith('default')
+    expect(modelsStore.allProviders).toEqual(presetGroups)
+  })
+
+  it('keeps unauthenticated browser requests behind the login guard', async () => {
+    mockClient.hasApiKey.mockReturnValue(false)
+    mockClient.isTauriDesktop.mockReturnValue(false)
+
+    const modelsStore = useModelsStore()
+    await modelsStore.fetchProviders()
+
+    expect(mockSystemApi.fetchAvailableModelsForProfile).not.toHaveBeenCalled()
   })
 
   it('keeps the sidebar model picker in sync after provider model visibility changes', async () => {

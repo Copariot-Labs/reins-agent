@@ -112,6 +112,12 @@ export interface OfficeWorkerProgress {
   message_en: string
 }
 
+export interface OfficeChatIntentDecision {
+  intent: 'revise' | 'create' | 'chat'
+  format?: OfficeFormat
+  confidence: number
+}
+
 const OFFICE_FORMATS = new Set<OfficeFormat>(['docx', 'xlsx', 'pptx'])
 const DEFAULT_TIMEOUT_MS = Number(process.env.REINS_OFFICE_WEB_TIMEOUT_MS || '') || 600_000
 const DEFAULT_REVISION_MODEL_TIMEOUT_SECONDS = Math.min(
@@ -530,6 +536,48 @@ export async function reviseOfficeDocument(
   return normalizeDocument(payload.document)
 }
 
+export async function classifyOfficeChatIntent(
+  message: string,
+  document: OfficeDocumentDto,
+): Promise<OfficeChatIntentDecision> {
+  const payload = await runReinsOfficeJson([
+    'office',
+    'route',
+    '--message',
+    requiredText(message, 'Office chat message', 30_000),
+    '--document-title',
+    requiredText(document.title || document.file_name, 'Office document title', 180),
+    '--document-kind',
+    document.kind,
+    '--timeout',
+    '45',
+    '--json',
+  ], { timeoutMs: 60_000 })
+  if (payload.ok === false || !payload.decision || typeof payload.decision !== 'object') {
+    throw serviceError(String(payload.error || 'Reins could not route the Office request.'), 'worker_error')
+  }
+
+  const decision = payload.decision as Record<string, unknown>
+  const rawIntent = String(decision.intent || 'chat').trim().toLowerCase()
+  const intent: OfficeChatIntentDecision['intent'] = (
+    rawIntent === 'revise' || rawIntent === 'create' ? rawIntent : 'chat'
+  )
+  const parsedConfidence = Number(decision.confidence || 0)
+  let format: OfficeFormat | undefined
+  if (intent === 'create' && decision.format) {
+    try {
+      format = normalizeFormat(decision.format)
+    } catch {}
+  }
+  return {
+    intent,
+    ...(intent === 'create' && format ? { format } : {}),
+    confidence: Number.isFinite(parsedConfidence)
+      ? Math.min(Math.max(parsedConfidence, 0), 1)
+      : 0,
+  }
+}
+
 export async function getOfficePreviewPath(documentId: string): Promise<string> {
   const id = requiredText(documentId, 'Office document id', 200)
   const payload = await runReinsOfficeJson([
@@ -662,6 +710,31 @@ export function friendlyOfficeOperationError(
       suggestion_en: 'Select an available file from Recent files and submit the revision again.',
       technical_detail: detail,
       retryable: false,
+    }
+  }
+
+  if (
+    normalized.includes('winerror 32')
+    || normalized.includes('sharing violation')
+    || normalized.includes('being used by another program')
+    || normalized.includes('used by another process')
+    || normalized.includes('file is open in another')
+    || normalized.includes('另一个程序正在使用此文件')
+  ) {
+    return {
+      code: 'file_in_use',
+      title_zh: '文件正在被占用',
+      title_en: 'Office file is in use',
+      message_zh: kind === 'revise'
+        ? 'Windows 暂时无法替换正在使用的文件，原文件已保留。'
+        : 'Windows 暂时无法写入正在使用的文件。',
+      message_en: kind === 'revise'
+        ? 'Windows could not replace the file while another program was using it. The original file was preserved.'
+        : 'Windows could not write the file while another program was using it.',
+      suggestion_zh: '请关闭 Microsoft Office 中的该文件，并关闭文件资源管理器预览窗格后重试。',
+      suggestion_en: 'Close the file in Microsoft Office and turn off the File Explorer preview pane, then try again.',
+      technical_detail: detail,
+      retryable: true,
     }
   }
 

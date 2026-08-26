@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import * as systemApi from '@/api/hermes/system'
 import type { AvailableModelGroup, CustomProvider } from '@/api/hermes/system'
-import { hasApiKey } from '@/api/client'
+import { hasApiKey, isTauriDesktop } from '@/api/client'
 import { useAppStore } from './app'
 import { useProfilesStore } from './profiles'
 
@@ -34,13 +34,16 @@ export const useModelsStore = defineStore('models', () => {
   )
 
   async function fetchProviders() {
-    if (!hasApiKey()) return
+    // The private desktop runtime authenticates local requests without storing a
+    // browser API key. Keep the web login guard, but always load bundled presets
+    // in Tauri, matching the main app model store.
+    if (!hasApiKey() && !isTauriDesktop()) return
     loading.value = true
     try {
       const profile = useProfilesStore().activeProfileName || 'default'
       const res = await systemApi.fetchAvailableModelsForProfile(profile)
-      providers.value = res.groups
-      allProviders.value = res.allProviders
+      providers.value = Array.isArray(res.groups) ? res.groups : []
+      allProviders.value = Array.isArray(res.allProviders) ? res.allProviders : []
       defaultModel.value = res.default
       defaultProvider.value = res.default_provider || ''
     } catch (err) {

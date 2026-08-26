@@ -37,7 +37,9 @@ const recordBridgeToolStartedMock = vi.fn()
 const recordBridgeToolCompletedMock = vi.fn()
 const resolveBridgeRunModelConfigMock = vi.fn()
 const resolveOfficeChatRequestMock = vi.fn()
+const resolveOfficeChatRequestWithBrainMock = vi.fn()
 const resolveIndexedOfficeRevisionDocumentMock = vi.fn()
+const latestOfficeChatDocumentMock = vi.fn()
 const officeClarificationPromptMock = vi.fn()
 const officeRevisionNeedsClarificationMock = vi.fn()
 const runOfficeChatRequestMock = vi.fn()
@@ -101,7 +103,10 @@ vi.mock('../../packages/server/src/services/hermes/run-chat/model-config', () =>
 
 vi.mock('../../packages/server/src/services/reins/office-chat', () => ({
   resolveOfficeChatRequest: resolveOfficeChatRequestMock,
+  resolveOfficeChatRequestWithBrain: resolveOfficeChatRequestWithBrainMock,
   resolveIndexedOfficeRevisionDocument: resolveIndexedOfficeRevisionDocumentMock,
+  latestOfficeChatDocument: latestOfficeChatDocumentMock,
+  reinsOfficeAgentInstructions: () => 'Office files must use Reins Office and bundled OfficeCLI only.',
   officeClarificationPrompt: officeClarificationPromptMock,
   officeRevisionNeedsClarification: officeRevisionNeedsClarificationMock,
   runOfficeChatRequest: runOfficeChatRequestMock,
@@ -159,7 +164,9 @@ describe('bridge run final context usage', () => {
     getSessionMock.mockReturnValue({ id: 'session-1', profile: 'default', model: '', provider: '' })
     resolveBridgeRunModelConfigMock.mockResolvedValue({ model: 'gpt-test', provider: 'openai' })
     resolveOfficeChatRequestMock.mockReturnValue(null)
+    resolveOfficeChatRequestWithBrainMock.mockResolvedValue(null)
     resolveIndexedOfficeRevisionDocumentMock.mockReturnValue(null)
+    latestOfficeChatDocumentMock.mockReturnValue(null)
     officeClarificationPromptMock.mockReturnValue('请告诉我要修改的部分、目标内容和需要保留的内容。')
     officeRevisionNeedsClarificationMock.mockReturnValue(false)
     runOfficeChatRequestMock.mockResolvedValue({ handled: false, message: '', exit_code: 0, document: null })
@@ -279,6 +286,7 @@ describe('bridge run final context usage', () => {
     expect(bridge.contextEstimate.mock.calls[0][2]).toContain('user-visible process text must be written in Simplified Chinese')
     expect(bridge.contextEstimate.mock.calls[0][2]).toContain('[Reins Finance workflow]')
     expect(bridge.contextEstimate.mock.calls[0][2]).toContain('finance_record_transaction')
+    expect(bridge.contextEstimate.mock.calls[0][2]).toContain('Office files must use Reins Office and bundled OfficeCLI only.')
     expect(bridge.contextEstimate.mock.calls[0][2]).toContain('X-Hermes-Profile')
     expect(state.contextTokens).toBe(12345)
     expect(emit).toHaveBeenCalledWith('usage.updated', expect.objectContaining({
@@ -291,6 +299,55 @@ describe('bridge run final context usage', () => {
       outputTokens: 7,
       contextTokens: 12345,
     }))
+  })
+
+  it.each([
+    ['Finance', '导出本月财务Excel'],
+    ['Work Orders', '导出全部工单Excel台账'],
+  ])('keeps native %s exports out of generic Office creation', async (_owner, input) => {
+    const emit = vi.fn()
+    const nsp = makeNamespace(emit)
+    const socket = makeSocket()
+    const state = makeState()
+    const sessionMap = new Map([['session-1', state]])
+    resolveOfficeChatRequestMock.mockReturnValue({ operation: 'create', format: 'xlsx' })
+    const bridge = {
+      chat: vi.fn().mockResolvedValue({ run_id: 'run-1', status: 'started' }),
+      contextEstimate: vi.fn().mockResolvedValue({
+        token_count: 100,
+        fixed_context_tokens: 90,
+        message_count: 1,
+        tool_count: 1,
+        system_prompt_chars: 13,
+      }),
+      streamOutput: vi.fn(async function* () {
+        yield { run_id: 'run-1', done: true, status: 'completed', output: 'done' }
+      }),
+    } as any
+
+    const { handleBridgeRun } = await import('../../packages/server/src/services/hermes/run-chat/handle-bridge-run')
+    await handleBridgeRun(
+      nsp,
+      socket,
+      { input, session_id: 'session-1' },
+      'default',
+      sessionMap,
+      bridge,
+      false,
+      vi.fn(),
+      vi.fn(),
+    )
+
+    expect(resolveOfficeChatRequestMock).not.toHaveBeenCalled()
+    expect(runOfficeChatRequestMock).not.toHaveBeenCalled()
+    expect(bridge.chat).toHaveBeenCalledWith(
+      'session-1',
+      input,
+      expect.any(Array),
+      expect.any(String),
+      'default',
+      expect.any(Object),
+    )
   })
 
   it('prepares a connected visible browser before bridge chat runs', async () => {
@@ -834,6 +891,72 @@ describe('bridge run final context usage', () => {
         result: expect.stringContaining('"needs_clarification": true'),
       }),
     )
+    expect(bridge.chat).not.toHaveBeenCalled()
+  })
+
+  it('preserves the selected skill when Office creation needs clarification', async () => {
+    const emit = vi.fn()
+    const nsp = makeNamespace(emit)
+    const socket = makeSocket()
+    const state = makeState()
+    const sessionMap = new Map([['session-1', state]])
+    const officeRequest = { operation: 'create', format: 'docx' }
+    resolveOfficeChatRequestMock.mockReturnValueOnce(officeRequest)
+    runOfficeChatRequestMock.mockRejectedValueOnce(
+      new Error('Reins did not return valid structured meeting minutes'),
+    )
+    friendlyOfficeOperationErrorMock.mockReturnValueOnce({
+      code: 'content_generation_failed',
+      technical_detail: 'Reins did not return valid structured meeting minutes',
+    })
+    shouldAskForOfficeClarificationMock.mockReturnValueOnce(true)
+    recordBridgeToolStartedMock.mockReturnValueOnce({
+      id: 'office-tool-create-clarify-1',
+      name: 'reins_office_create',
+      arguments: '{}',
+    })
+    recordBridgeToolCompletedMock.mockReturnValueOnce({
+      id: 'office-tool-create-clarify-1',
+      output: '{"ok":false,"needs_clarification":true}',
+      duration: 0.2,
+    })
+    const bridge = {
+      chat: vi.fn(),
+      contextEstimate: vi.fn(),
+      streamOutput: vi.fn(),
+    } as any
+    const prompt = '整理8月社区两委联席会议纪要，议题包括防汛值班和停车治理。'
+
+    const { handleBridgeRun } = await import('../../packages/server/src/services/hermes/run-chat/handle-bridge-run')
+    await handleBridgeRun(
+      nsp,
+      socket,
+      {
+        input: prompt,
+        work_tool: 'document',
+        office_skill_id: 'community-meeting-minutes',
+        session_id: 'session-1',
+      },
+      'default',
+      sessionMap,
+      bridge,
+      false,
+      vi.fn(),
+      vi.fn(),
+    )
+
+    expect(recordBridgeToolCompletedMock).toHaveBeenCalledWith(
+      state,
+      'session-1',
+      expect.stringMatching(/^cli_run_/),
+      'reins_office_create',
+      expect.objectContaining({
+        is_error: false,
+        result: expect.stringContaining('"skill_id": "community-meeting-minutes"'),
+      }),
+    )
+    const completedArgs = recordBridgeToolCompletedMock.mock.calls.at(-1)?.[4]
+    expect(completedArgs.result).toContain(`"prompt": "${prompt}`)
     expect(bridge.chat).not.toHaveBeenCalled()
   })
 

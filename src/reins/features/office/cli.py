@@ -6,6 +6,7 @@ import sys
 from typing import Sequence
 
 from reins.features.office.content_writer import generate_office_content
+from reins.features.office.intent import classify_office_followup
 from reins.features.office.service import (
     OfficeServiceError,
     create_office_document,
@@ -125,6 +126,13 @@ def build_parser() -> argparse.ArgumentParser:
     preview.add_argument("--id", required=True, dest="document_id")
     preview.add_argument("--json", action="store_true", dest="json_output")
 
+    route = subparsers.add_parser("route", help=argparse.SUPPRESS)
+    route.add_argument("--message", required=True)
+    route.add_argument("--document-title", required=True)
+    route.add_argument("--document-kind", required=True)
+    route.add_argument("--timeout", type=int, default=45)
+    route.add_argument("--json", action="store_true", dest="json_output")
+
     return parser
 
 
@@ -171,6 +179,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             for workflow in workflows:
                 print(f"{workflow['format'].upper()}  {workflow['id']}  {workflow['label_zh']}")
+        return 0
+
+    if args.command == "route":
+        try:
+            decision = classify_office_followup(
+                message=args.message,
+                document_title=args.document_title,
+                document_kind=args.document_kind,
+                timeout=args.timeout,
+            )
+        except Exception as exc:
+            if args.json_output:
+                _print_json({"ok": False, "error": str(exc), "error_type": type(exc).__name__})
+            else:
+                print(f"Office routing failed: {exc}")
+            return 1
+        if args.json_output:
+            _print_json({"ok": True, "decision": decision})
+        else:
+            _print_json(decision)
         return 0
 
     if args.command == "content":

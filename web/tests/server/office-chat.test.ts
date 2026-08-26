@@ -72,6 +72,32 @@ describe('Reins Office chat routing', () => {
     expect(inferOfficeChatFormat('帮我制作一个下周工作计划表格')).toBe('xlsx')
   })
 
+  it('routes natural Office creation wording directly to OfficeCLI', async () => {
+    const { inferOfficeChatFormat, mayNeedOfficeChat } = await import('../../packages/server/src/services/reins/office-chat')
+
+    expect(mayNeedOfficeChat('整理8月社区两委联席会议纪要，议题包括防汛值班和停车治理。')).toBe(true)
+    expect(inferOfficeChatFormat('整理8月社区两委联席会议纪要')).toBe('docx')
+    expect(mayNeedOfficeChat('帮我出一份社区防汛工作简报')).toBe(true)
+    expect(inferOfficeChatFormat('帮我出一份社区防汛工作简报')).toBe('docx')
+    expect(mayNeedOfficeChat('Put together a Word briefing for the quarterly review')).toBe(true)
+    expect(inferOfficeChatFormat('Put together a Word briefing for the quarterly review')).toBe('docx')
+    expect(mayNeedOfficeChat('Convert this quarterly summary into a Word document')).toBe(true)
+    expect(mayNeedOfficeChat('将这份内容导出为PPT')).toBe(true)
+    expect(mayNeedOfficeChat('把这些想法整理一下')).toBe(false)
+    expect(mayNeedOfficeChat('what is a Word document?')).toBe(false)
+    expect(mayNeedOfficeChat('如何制作一个PPT？')).toBe(false)
+  })
+
+  it('forbids the general agent from building Office files another way', async () => {
+    const { reinsOfficeAgentInstructions } = await import('../../packages/server/src/services/reins/office-chat')
+
+    const instructions = reinsOfficeAgentInstructions()
+    expect(instructions).toContain('bundled OfficeCLI are the only allowed path')
+    expect(instructions).toContain('Never use terminal commands')
+    expect(instructions).toContain('package installation')
+    expect(instructions).toContain('ask only whether the user wants Word, Excel, or PPT')
+  })
+
   it('routes a follow-up revision to the same persisted Office document', async () => {
     const updatedDocument = {
       ...existingDocument,
@@ -138,6 +164,52 @@ describe('Reins Office chat routing', () => {
     )
 
     expect(request).toEqual({ operation: 'revise', document: existingDocument })
+  })
+
+  it('routes document translation follow-ups through the same Office document', async () => {
+    const { resolveOfficeChatRequest } = await import('../../packages/server/src/services/reins/office-chat')
+
+    expect(resolveOfficeChatRequest(
+      'translate this into chinese. i need chinse version',
+      undefined,
+      [officeToolMessage()],
+    )).toEqual({ operation: 'revise', document: existingDocument })
+    expect(resolveOfficeChatRequest(
+      '把这个文档翻译成中文版本',
+      undefined,
+      [officeToolMessage()],
+    )).toEqual({ operation: 'revise', document: existingDocument })
+  })
+
+  it('lets Reins semantically route uncommon Office follow-ups', async () => {
+    const { resolveOfficeChatRequestWithBrain } = await import('../../packages/server/src/services/reins/office-chat')
+    const classifier = vi.fn().mockResolvedValue({
+      intent: 'revise',
+      confidence: 0.88,
+    })
+
+    const request = await resolveOfficeChatRequestWithBrain(
+      'give the previous file a fresher voice',
+      undefined,
+      [officeToolMessage()],
+      classifier,
+    )
+
+    expect(classifier).toHaveBeenCalledWith('give the previous file a fresher voice', existingDocument)
+    expect(request).toEqual({ operation: 'revise', document: existingDocument })
+  })
+
+  it('keeps ordinary conversation out of Office when Reins selects chat', async () => {
+    const { resolveOfficeChatRequestWithBrain } = await import('../../packages/server/src/services/reins/office-chat')
+
+    const request = await resolveOfficeChatRequestWithBrain(
+      'what should I work on next?',
+      undefined,
+      [officeToolMessage()],
+      vi.fn().mockResolvedValue({ intent: 'chat', confidence: 0.94 }),
+    )
+
+    expect(request).toBeNull()
   })
 
   it('recovers a workspace document by its path when chat history has no Office tool', async () => {
@@ -218,6 +290,54 @@ describe('Reins Office chat routing', () => {
       undefined,
       [clarificationToolMessage],
     )).toBeNull()
+  })
+
+  it('continues a pending Office creation with the original fixed skill', async () => {
+    createOfficeDocumentMock.mockResolvedValue({ id: 'minutes-1', kind: 'docx' })
+    const clarificationToolMessage = {
+      role: 'tool',
+      tool_name: 'reins_office_create',
+      content: JSON.stringify({
+        ok: false,
+        needs_clarification: true,
+        pending_create: {
+          format: 'docx',
+          prompt: '整理8月社区两委联席会议纪要，议题包括防汛值班和停车治理。',
+          skill_id: 'community-meeting-minutes',
+        },
+      }),
+    }
+    const {
+      resolveOfficeChatRequest,
+      runOfficeChatRequest,
+    } = await import('../../packages/server/src/services/reins/office-chat')
+
+    const request = resolveOfficeChatRequest(
+      '用于正式归档，缺少的会议基本信息请标注待补充。',
+      undefined,
+      [clarificationToolMessage],
+    )
+
+    expect(request).toEqual({
+      operation: 'create',
+      format: 'docx',
+      original_prompt: '整理8月社区两委联席会议纪要，议题包括防汛值班和停车治理。',
+      skill_id: 'community-meeting-minutes',
+    })
+
+    await runOfficeChatRequest(
+      '用于正式归档，缺少的会议基本信息请标注待补充。',
+      request!,
+    )
+
+    expect(createOfficeDocumentMock).toHaveBeenCalledWith(expect.objectContaining({
+      format: 'docx',
+      skill_id: 'community-meeting-minutes',
+      language: 'zh',
+      prompt: expect.stringContaining('用户补充信息'),
+    }))
+    expect(createOfficeDocumentMock.mock.calls[0][0].prompt).toContain('防汛值班和停车治理')
+    expect(createOfficeDocumentMock.mock.calls[0][0].prompt).toContain('用于正式归档')
   })
 
   it('detects vague revision commands before starting the Office worker', async () => {

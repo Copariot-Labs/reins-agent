@@ -21,6 +21,14 @@ export function mayNeedWorkOrderChat(input: string): boolean {
   return WORK_ORDER_ACTION_RE.test(text)
 }
 
+export function isNativeWorkOrderExportRequest(input: string): boolean {
+  const text = compact(input)
+  if (!mayNeedWorkOrderChat(text)) return false
+  const exportAction = /(?:导出|下载)|\b(?:export|download)\b/i.test(text)
+  const workbook = /(?:Excel|xlsx|工作簿|电子表格|表格|台账)|\b(?:excel|xlsx|workbook|spreadsheet|ledger)\b/i.test(text)
+  return exportAction && workbook
+}
+
 export function reinsWorkOrderAgentInstructions(): string {
   return [
     '[Reins Work Orders chat policy]',

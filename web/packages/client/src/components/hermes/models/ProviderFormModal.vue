@@ -125,9 +125,11 @@ watch(providerType, () => {
   selectedPreset.value = null
 })
 
-onMounted(() => {
-  if (modelsStore.providers.length === 0) {
-    modelsStore.fetchProviders()
+onMounted(async () => {
+  // Configured providers can already be populated while the separate preset
+  // catalog is still empty, especially during first launch of the desktop app.
+  if (modelsStore.allProviders.length === 0) {
+    await modelsStore.fetchProviders()
   }
 })
 
@@ -346,6 +348,7 @@ function handleClose() {
         <NSelect
           v-model:value="selectedPreset"
           :options="presetOptions"
+          :loading="modelsStore.loading"
           :placeholder="t('models.chooseProvider')"
           filterable
         />

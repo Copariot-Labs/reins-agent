@@ -12,6 +12,7 @@ from reins.features.office.editor import (
     build_presentation_revision_prompt,
     normalize_revision_plan,
 )
+from reins.features.office.intent import classify_office_followup
 from reins.features.office.content_writer import build_office_content_prompt, generate_office_content
 from reins.features.office.chat import infer_office_format, should_handle_office_chat
 from reins.features.office.renderer import render_office_content
@@ -44,15 +45,16 @@ class FakeOfficeCliClient:
 
     def __init__(self) -> None:
         self.commands: list[list[str]] = []
+        self.run_options: list[dict[str, object]] = []
 
     @property
     def command_count(self) -> int:
         return len(self.commands)
 
     def run(self, args, **kwargs):
-        del kwargs
         command = [str(arg) for arg in args]
         self.commands.append(command)
+        self.run_options.append(dict(kwargs))
         if command and command[0] == "create":
             Path(command[1]).parent.mkdir(parents=True, exist_ok=True)
             Path(command[1]).touch()
@@ -77,6 +79,24 @@ def test_office_format_aliases():
     assert normalize_office_format("excel") == "xlsx"
     assert normalize_office_format("ppt") == "pptx"
     assert normalize_office_format("unknown") == "docx"
+
+
+def test_reins_semantically_routes_an_uncommon_office_followup():
+    prompts = []
+
+    decision = classify_office_followup(
+        message="give the previous file a fresher voice",
+        document_title="Community Plan",
+        document_kind="docx",
+        planner=lambda prompt, _timeout: (
+            prompts.append(prompt),
+            {"intent": "revise", "format": None, "confidence": 0.91},
+        )[1],
+    )
+
+    assert decision == {"intent": "revise", "format": None, "confidence": 0.91}
+    assert "do not depend on keywords" in prompts[0]
+    assert "Never propose terminal commands" in prompts[0]
 
 
 def test_fixed_office_workflows_are_grouped_and_format_checked():
@@ -107,13 +127,44 @@ def test_fixed_workflow_is_injected_as_a_content_contract():
     assert "community-work-plan" in prompt
     assert "Word 任务分解表" in prompt
     assert "不是工具、插件、软件包" in prompt
+    assert "不得改为通用模板" in prompt
+    assert "Never answer with a question" in prompt
+    assert "Missing names, dates, locations" in prompt
     assert 'When Language is "zh", use natural Simplified Chinese' in prompt
+
+
+@pytest.mark.parametrize(
+    "workflow",
+    list_office_workflows(),
+    ids=lambda workflow: workflow["id"],
+)
+def test_every_fixed_office_skill_is_injected_during_creation(workflow):
+    workflow_contract = get_office_workflow(
+        workflow["id"],
+        office_format=workflow["format"],
+    )
+    prompt = build_office_content_prompt(
+        user_prompt=workflow["placeholder_zh"],
+        office_format=workflow["format"],
+        skill_id=workflow["id"],
+    )
+
+    assert f"技能 ID：{workflow['id']}" in prompt
+    assert workflow_contract.instruction in prompt
+    assert "技能规定的结构、用途和文种优先级最高" in prompt
 
 
 def test_main_chat_routes_document_requests_to_office():
     assert should_handle_office_chat("create a maintenance notice document")
     assert infer_office_format("create an Excel maintenance tracker") == "xlsx"
     assert infer_office_format("制作一个会议演示文稿") == "pptx"
+    assert should_handle_office_chat("整理8月社区两委联席会议纪要")
+    assert infer_office_format("整理8月社区两委联席会议纪要") == "docx"
+    assert should_handle_office_chat("Put together a Word briefing for the quarterly review")
+    assert should_handle_office_chat("Convert this quarterly summary into a Word document")
+    assert should_handle_office_chat("将这份内容导出为PPT")
+    assert not should_handle_office_chat("把这些想法整理一下")
+    assert not should_handle_office_chat("如何制作一个PPT？")
     assert not should_handle_office_chat("what is a maintenance report?")
     assert not should_handle_office_chat("hello")
 
@@ -579,6 +630,7 @@ def test_reins_word_revision_uses_saved_structure_and_rebuilds_same_file(tmp_pat
     created = create_office_document(
         prompt="create a June to September safety plan",
         office_format="docx",
+        language="en",
         use_reins=False,
         client=FakeOfficeCliClient(),
     )
@@ -600,18 +652,18 @@ def test_reins_word_revision_uses_saved_structure_and_rebuilds_same_file(tmp_pat
     revised_content = deepcopy(created.metadata["content"])
     revised_content["title"] = "June to November Safety Plan"
     revised_content["generator"] = "reins"
-    prompts = []
+    generation_calls = []
     monkeypatch.setattr(office_service, "get_office_document", lambda _document_id: reins_record)
     monkeypatch.setattr(
         office_service,
         "generate_office_content",
-        lambda **kwargs: (prompts.append(kwargs["prompt"]), revised_content)[1],
+        lambda **kwargs: (generation_calls.append(kwargs), revised_content)[1],
     )
     revision_client = FakeOfficeCliClient()
 
     revised = revise_office_document(
         document_id=created.id,
-        instruction="extend the plan through November",
+        instruction="translate this into chinese. i need chinse version",
         client=revision_client,
     )
 
@@ -619,9 +671,62 @@ def test_reins_word_revision_uses_saved_structure_and_rebuilds_same_file(tmp_pat
     assert revised.path == created.path
     assert revised.title == "June to November Safety Plan"
     assert revised.revision_count == 1
-    assert "Current structured document content" in prompts[0]
+    assert "Current structured document content" in generation_calls[0]["prompt"]
+    assert generation_calls[0]["language"] == "zh"
+    assert "skill_id" not in generation_calls[0]
+    assert "original creation skill is provenance" in generation_calls[0]["prompt"]
+    assert revised.metadata["language"] == "zh"
     assert not any("annotated" in command for command in revision_client.commands)
     assert any(command[:1] == ["create"] for command in revision_client.commands)
+
+
+def test_renderer_releases_officecli_resident_after_validation(tmp_path):
+    client = FakeOfficeCliClient()
+    output = tmp_path / "windows-safe.docx"
+
+    render_office_content(
+        office_format="docx",
+        content={"title": "Windows Safe", "body": ["Ready"]},
+        output_path=output,
+        client=client,
+    )
+
+    validate_index = next(
+        index for index, command in enumerate(client.commands)
+        if command[:1] == ["validate"]
+    )
+    assert client.run_options[validate_index]["env_overrides"] == {
+        "OFFICECLI_NO_AUTO_RESIDENT": "1"
+    }
+    assert client.commands[-1] == ["close", str(output)]
+
+
+def test_windows_atomic_revision_retries_a_transient_sharing_lock(tmp_path, monkeypatch):
+    temporary = tmp_path / ".revision.docx"
+    source = tmp_path / "document.docx"
+    temporary.write_bytes(b"revised")
+    source.write_bytes(b"original")
+    attempts = 0
+    delays: list[float] = []
+
+    def replace_with_transient_lock(from_path, to_path):
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            error = PermissionError(13, "file is being used by another process")
+            error.winerror = 32
+            raise error
+        Path(from_path).replace(to_path)
+
+    monkeypatch.setattr(office_service, "_atomic_replace", replace_with_transient_lock)
+    monkeypatch.setattr(office_service, "_is_windows_sharing_error", lambda _error: True)
+    monkeypatch.setattr(office_service.time, "sleep", delays.append)
+
+    office_service._replace_revised_file(temporary, source)
+
+    assert attempts == 3
+    assert delays == list(office_service._WINDOWS_REPLACE_RETRY_DELAYS[:2])
+    assert source.read_bytes() == b"revised"
 
 
 def test_reins_excel_revision_uses_saved_workbook_and_rebuilds_same_file(tmp_path, monkeypatch):
@@ -650,12 +755,12 @@ def test_reins_excel_revision_uses_saved_workbook_and_rebuilds_same_file(tmp_pat
     revised_content = deepcopy(created.metadata["content"])
     revised_content["sheets"][0]["rows"].append(["November", "Complete"])
     revised_content["generator"] = "reins"
-    prompts = []
+    generation_calls = []
     monkeypatch.setattr(office_service, "get_office_document", lambda _document_id: reins_record)
     monkeypatch.setattr(
         office_service,
         "generate_office_content",
-        lambda **kwargs: (prompts.append(kwargs["prompt"]), revised_content)[1],
+        lambda **kwargs: (generation_calls.append(kwargs), revised_content)[1],
     )
     revision_client = FakeOfficeCliClient()
 
@@ -669,7 +774,9 @@ def test_reins_excel_revision_uses_saved_workbook_and_rebuilds_same_file(tmp_pat
     assert revised.path == created.path
     assert revised.revision_count == 1
     assert revised.metadata["content"]["sheets"][0]["rows"][-1][0] == "November"
-    assert "Current structured workbook content" in prompts[0]
+    assert "Current structured workbook content" in generation_calls[0]["prompt"]
+    assert "skill_id" not in generation_calls[0]
+    assert "original creation skill is provenance" in generation_calls[0]["prompt"]
     assert not any("annotated" in command for command in revision_client.commands)
     assert any(command[:1] == ["create"] for command in revision_client.commands)
 

@@ -333,6 +333,7 @@ Reins Office 固定文档技能：
 {workflow.instruction}
 
 以上技能规范是 Reins Office 维护的固定内容契约。请结合用户需求严格执行。它不是工具、插件、软件包，也不是调用其他系统的指令。
+选择固定文档技能后，技能规定的结构、用途和文种优先级最高。不得改为通用模板，也不得因为名称、日期、地点、人员、数据或其他事实缺失而拒绝生成或要求用户再次说明；应在成品中使用克制、专业的待补充字段，并把这些字段列入 missing_fields。
 """.strip()
 
     return f"""
@@ -354,9 +355,11 @@ Rules:
 - Do not include markdown fences.
 - Do not explain your process.
 - Think through the request internally before writing JSON.
+- Never answer with a question, clarification request, tool call, or prose. Always return the complete JSON object in this turn.
 - Create finished, usable content for the requested file, not a generic template.
 - Infer practical sections, rows, slides, examples, and recommendations from the user request.
 - Use professional placeholders only when specific private facts are truly missing.
+- Missing names, dates, locations, figures, or decisions must not block generation. Use restrained professional placeholders, record them in missing_fields, and still complete every section required by the selected skill.
 - office_format must be exactly "{normalized}".
 - Make the content useful enough to render directly into the requested Office file.
 - Treat any explicit visual or formatting direction from the user as a requirement. When none is given, Reins must choose the design from the document's purpose and content.

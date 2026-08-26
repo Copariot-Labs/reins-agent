@@ -233,6 +233,18 @@ export async function runFinanceWorkbookExport(
   }
 }
 
+export function isFinanceWorkbookExportRequest(text: string): boolean {
+  const value = String(text || '').trim()
+  if (!value) return false
+  if (/(预算|模板|规划|计划|监控|预测)|\b(?:budget|template|planning|plan|monitor|forecast)\b/i.test(value)) {
+    return false
+  }
+  const exportAction = /(导出|下载|生成|制作|创建|保存)|\b(export|download|generate|create|save)\b/i.test(value)
+  const workbook = /(Excel|xlsx|工作簿|电子表格|表格)|\b(?:excel|xlsx|workbook|spreadsheet)\b/i.test(value)
+  const financeData = /(财务|收支|交易|流水|账单|记账|收入|支出)|\b(?:finance|financial|transactions?|ledger|income|expenses?)\b/i.test(value)
+  return exportAction && workbook && financeData
+}
+
 export function mayNeedFinanceChat(text: string): boolean {
   const value = String(text || '').trim()
   if (!value || !/[\u3400-\u9fff]/.test(value)) return false
@@ -247,9 +259,7 @@ export function mayNeedFinanceChat(text: string): boolean {
   const query = /(查|查询|查看|显示|列出|最近|明细|汇总|总结|统计|多少|情况|状况|余额|结余)/.test(value)
     && /(收入|支出|财务|收支|交易|流水|账单|记录)/.test(value)
   const naturalSummary = /(花了多少|赚了多少|余额|结余|收支情况|收支状况|财务情况|财务状况)/.test(value)
-  const exportRequest = /(导出|下载|生成|制作|创建|保存)/.test(value)
-    && /(Excel|xlsx|工作簿|电子表格|表格)/i.test(value)
-    && /(财务|收支|交易|流水|账单|记账)/.test(value)
+  const exportRequest = isFinanceWorkbookExportRequest(value)
   return transaction || query || naturalSummary || exportRequest
 }
 

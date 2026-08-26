@@ -43,7 +43,11 @@ def _run_text(
     allow_failure: bool = False,
 ) -> str:
     try:
-        result = client.run(args, timeout=timeout)
+        result = client.run(
+            args,
+            timeout=timeout,
+            env_overrides={"OFFICECLI_NO_AUTO_RESIDENT": "1"},
+        )
     except OfficeCliCommandError as exc:
         if allow_failure:
             return exc.stdout.strip() or exc.stderr.strip() or str(exc)
@@ -358,13 +362,19 @@ def apply_revision_plan(
         except Exception:
             pass
 
-    validation = _run_text(client, ["validate", path], timeout=90)
-    issues = _run_text(
-        client,
-        ["view", path, "issues", "--limit", "100", "--json"],
-        timeout=90,
-        allow_failure=True,
-    )
+    try:
+        validation = _run_text(client, ["validate", path], timeout=90)
+        issues = _run_text(
+            client,
+            ["view", path, "issues", "--limit", "100", "--json"],
+            timeout=90,
+            allow_failure=True,
+        )
+    finally:
+        try:
+            client.run(["close", path], timeout=60)
+        except Exception:
+            pass
     return {
         "summary": str(plan.get("summary") or "Office document updated"),
         "commands": commands,

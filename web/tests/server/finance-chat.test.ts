@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   financeChatMessage,
+  isFinanceWorkbookExportRequest,
   mayNeedFinanceChat,
   pendingFinanceClarificationText,
   reinsFinanceAgentInstructions,
@@ -28,6 +29,11 @@ describe('Reins finance chat routing', () => {
     expect(mayNeedFinanceChat('财务是什么')).toBe(false)
     expect(mayNeedFinanceChat('帮我买一台电脑')).toBe(false)
     expect(mayNeedFinanceChat('本月花了多少钱')).toBe(true)
+    expect(isFinanceWorkbookExportRequest('导出本月财务Excel')).toBe(true)
+    expect(isFinanceWorkbookExportRequest('Export this month financial transactions to Excel')).toBe(true)
+    expect(isFinanceWorkbookExportRequest('制作一个财务预算表格模板')).toBe(false)
+    expect(isFinanceWorkbookExportRequest('Create a financial budget spreadsheet template')).toBe(false)
+    expect(isFinanceWorkbookExportRequest('制作社区工作计划表格')).toBe(false)
   })
 
   it('continues a pending transaction when the user replies with only an amount', () => {

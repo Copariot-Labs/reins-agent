@@ -33,11 +33,14 @@ import { filterBridgeToolCallMarkupDelta, flushPendingToolCallMarkup } from './b
 import { reinsWorkspaceInstructions } from '../../reins/workspace-path'
 import {
   resolveOfficeChatRequest,
+  resolveOfficeChatRequestWithBrain,
   resolveIndexedOfficeRevisionDocument,
   officeClarificationPrompt,
   officeRevisionNeedsClarification,
   runOfficeChatRequest,
   hasOfficeRevisionIntent,
+  latestOfficeChatDocument,
+  reinsOfficeAgentInstructions,
   OFFICE_CHAT_TOOL_NAMES,
   REINS_OFFICE_CREATE_TOOL,
   REINS_OFFICE_REVISE_TOOL,
@@ -52,11 +55,13 @@ import {
   type OfficeWorkerProgress,
 } from '../../reins/office'
 import {
+  isFinanceWorkbookExportRequest,
   reinsFinanceAgentInstructions,
 } from '../../reins/finance-chat'
 import { reinsChatLanguageInstructions } from '../../reins/chat-language'
 import {
   buildWorkOrderOfficePrompt,
+  isNativeWorkOrderExportRequest,
   reinsWorkOrderAgentInstructions,
 } from '../../reins/work-order-chat'
 import { chatCapabilitiesInstructions, chatCapabilitiesKey, normalizeChatCapabilities, toBridgeCapabilities } from './capabilities'
@@ -280,6 +285,7 @@ export async function handleBridgeRun(
     `[Current Reins profile: ${profile}]`,
     reinsChatLanguageInstructions(),
     reinsWorkspaceInstructions(),
+    reinsOfficeAgentInstructions(),
     reinsFinanceAgentInstructions(),
     reinsWorkOrderAgentInstructions(),
     workToolInstruction(data.work_tool),
@@ -693,6 +699,16 @@ async function maybeHandleOfficeChatRun(args: {
   socket: Socket
   dequeueNextQueuedRun: (socket: Socket, sessionId: string, fallbackProfile?: string) => void
 }): Promise<boolean> {
+  const hasExplicitOfficeSelection = Boolean(args.workTool || args.officeSkillId)
+  if (
+    !hasExplicitOfficeSelection
+    && (
+      isFinanceWorkbookExportRequest(args.input)
+      || isNativeWorkOrderExportRequest(args.input)
+    )
+  ) {
+    return false
+  }
   let request = resolveOfficeChatRequest(args.input, args.workTool, args.state.messages)
   if (request?.operation !== 'revise' && hasOfficeRevisionIntent(args.input)) {
     const persistedOfficeMessage = getLatestToolMessage(args.sessionId, OFFICE_CHAT_TOOL_NAMES)
@@ -721,6 +737,32 @@ async function maybeHandleOfficeChatRun(args: {
         }
       } catch (error) {
         logger.warn(error, '[chat-run-socket] failed to recover Office revision target from the shared index')
+      }
+    }
+  }
+  if (!request) {
+    let semanticMessages = args.state.messages
+    if (!latestOfficeChatDocument(semanticMessages)) {
+      const persistedOfficeMessage = getLatestToolMessage(args.sessionId, OFFICE_CHAT_TOOL_NAMES)
+      if (persistedOfficeMessage) {
+        semanticMessages = [...semanticMessages, persistedOfficeMessage]
+      }
+    }
+    if (latestOfficeChatDocument(semanticMessages)) {
+      try {
+        request = await resolveOfficeChatRequestWithBrain(
+          args.input,
+          args.workTool,
+          semanticMessages,
+        )
+        if (request) {
+          logger.info({
+            sessionId: args.sessionId,
+            operation: request.operation,
+          }, '[chat-run-socket] Reins selected the semantic Office route')
+        }
+      } catch (error) {
+        logger.warn(error, '[chat-run-socket] Reins could not classify the Office follow-up')
       }
     }
   }
@@ -859,6 +901,11 @@ async function maybeHandleOfficeChatRun(args: {
       lastProgressStage,
     )
     if (shouldAskForOfficeClarification(friendly)) {
+      const pendingSkillId = args.officeSkillId
+        || (request.operation === 'create' ? request.skill_id : undefined)
+      const pendingPrompt = request.operation === 'create' && request.original_prompt
+        ? [request.original_prompt, args.input].filter(Boolean).join('\n\n')
+        : args.input
       result = {
         handled: true,
         message: officeClarificationPrompt(request, args.input),
@@ -866,6 +913,15 @@ async function maybeHandleOfficeChatRun(args: {
         document: request.operation === 'revise' ? request.document : null,
         operation: request.operation,
         needs_clarification: true,
+        ...(request.operation === 'create'
+          ? {
+              pending_create: {
+                format: request.format,
+                prompt: pendingPrompt,
+                ...(pendingSkillId ? { skill_id: pendingSkillId } : {}),
+              },
+            }
+          : {}),
       }
     } else {
       result = {
@@ -1087,10 +1143,11 @@ function officeToolArguments(
       instruction: input,
     }
   }
+  const effectiveSkillId = officeSkillId || request.skill_id
   return {
     prompt: input,
     format: request.format,
-    ...(officeSkillId ? { skill_id: officeSkillId } : {}),
+    ...(effectiveSkillId ? { skill_id: effectiveSkillId } : {}),
   }
 }
 
@@ -1100,6 +1157,7 @@ function officeToolResult(result: OfficeChatResult, failed: boolean): string {
     needs_clarification: result.needs_clarification || undefined,
     message: result.message,
     office_document: result.document,
+    pending_create: result.pending_create,
   }, null, 2)
 }
 
