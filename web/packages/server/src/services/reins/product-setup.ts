@@ -26,6 +26,20 @@ export function resolveReinsSetupInvocation(): ReinsSetupInvocation {
     resolve(process.cwd(), '..'),
     process.cwd(),
   ].filter(Boolean) as string[])
+
+  const launcherNames = process.platform === 'win32'
+    ? ['reins-runtime.exe', 'reins-runtime']
+    : ['reins-runtime', 'reins-runtime.exe']
+
+  for (const root of roots) {
+    for (const launcherName of launcherNames) {
+      const launcher = resolve(root, 'bin', launcherName)
+      if (existsSync(launcher)) {
+        return { command: launcher, argsPrefix: [] }
+      }
+    }
+  }
+
   for (const root of roots) {
     const python = process.platform === 'win32'
       ? resolve(root, '.venv', 'Scripts', 'python.exe')
@@ -40,10 +54,14 @@ export function resolveReinsSetupInvocation(): ReinsSetupInvocation {
     }
   }
 
-  return {
-    command: process.env.HERMES_BIN?.trim() || 'reins',
-    argsPrefix: [],
+  const legacyExplicit = process.env.HERMES_BIN?.trim()
+  if (legacyExplicit) {
+    return { command: legacyExplicit, argsPrefix: [] }
   }
+
+  throw new Error(
+    'The local Reins runtime was not found. Restart the desktop app after rebuilding it, or reinstall the latest Reins release.',
+  )
 }
 
 async function runReinsProductSetup(): Promise<Record<string, unknown> | null> {

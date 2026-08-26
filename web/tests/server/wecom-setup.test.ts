@@ -1,6 +1,7 @@
+import { readFileSync } from 'fs'
 import { mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { join, resolve } from 'path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -24,6 +25,15 @@ afterEach(async () => {
 })
 
 describe('WeCom settings setup', () => {
+  it('uses normal API authentication without a super-admin route check', () => {
+    const routes = readFileSync(
+      resolve(process.cwd(), 'packages/server/src/routes/hermes/wecom.ts'),
+      'utf8',
+    )
+
+    expect(routes).not.toContain('requireSuperAdmin')
+  })
+
   it('reports configuration without returning secrets to the browser', async () => {
     const home = await mkdtemp(join(tmpdir(), 'reins-wecom-setup-'))
     temporaryHomes.push(home)
@@ -72,18 +82,24 @@ describe('WeCom settings setup', () => {
       '',
     ].join('\n'), 'utf8')
 
-    const bootstrap = vi.fn(async () => ({
-      wecom: {
-        configured: true,
-        background: { ok: true, running: true },
-      },
+    const runCommand = vi.fn(async () => ({
+      ok: true,
+      running: true,
     }))
     const status = await saveWeComSetup({
       ticket_api_url: 'https://tickets.example.test/internal/tickets',
       ticket_api_token: '',
-    }, bootstrap)
+    }, runCommand)
 
-    expect(bootstrap).toHaveBeenCalledOnce()
+    expect(runCommand).toHaveBeenCalledOnce()
+    expect(runCommand).toHaveBeenCalledWith([
+      'wecom',
+      'ticket-api',
+      'service',
+      'install',
+      '--interval',
+      '30',
+    ])
     expect(status.configured).toBe(true)
     expect(status.values).toMatchObject({ notifications_enabled: false })
     expect(process.env.REINS_WECOM_NOTIFY_ENABLED).toBe('false')

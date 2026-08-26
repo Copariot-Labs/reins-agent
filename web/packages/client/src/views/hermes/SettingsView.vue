@@ -41,7 +41,7 @@ const validTabs = computed(() => new Set([
   "privacy",
   "models",
   "voice",
-  ...(canManageUsers ? ["wecom"] : []),
+  "wecom",
 ]));
 
 function normalizeTab(value: unknown): string {
@@ -118,7 +118,7 @@ onMounted(() => {
           <NTabPane name="voice" :tab="t('settings.tabs.voice')">
             <VoiceSettings />
           </NTabPane>
-          <NTabPane v-if="canManageUsers" name="wecom" tab="WeCom">
+          <NTabPane name="wecom" tab="WeCom">
             <WeComSettings />
           </NTabPane>
         </NTabs>

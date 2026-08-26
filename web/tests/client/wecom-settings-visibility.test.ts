@@ -7,6 +7,10 @@ describe('WeCom user-facing settings', () => {
     resolve(process.cwd(), 'packages/client/src/components/reins/WeComSettings.vue'),
     'utf8',
   )
+  const settingsViewSource = readFileSync(
+    resolve(process.cwd(), 'packages/client/src/views/hermes/SettingsView.vue'),
+    'utf8',
+  )
 
   it('keeps operational defaults out of the normal-user form', () => {
     for (const field of [
@@ -39,5 +43,11 @@ describe('WeCom user-facing settings', () => {
     ]) {
       expect(source).toContain(`form.${field}`)
     }
+  })
+
+  it('keeps the WeCom tab available without a super-admin UI check', () => {
+    expect(settingsViewSource).toContain('<NTabPane name="wecom" tab="WeCom">')
+    expect(settingsViewSource).toContain('"wecom",')
+    expect(settingsViewSource).not.toContain('v-if="canManageUsers" name="wecom"')
   })
 })

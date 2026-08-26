@@ -152,6 +152,7 @@ fn start_backend(project_root: &Path) -> Result<Child, String> {
         .env("PORT", "8647")
         .env("BIND_HOST", "127.0.0.1")
         .env("REINS_DESKTOP", "1")
+        .env("REINS_PROJECT_ROOT", project_root)
         .env("TS_NODE_PROJECT", "packages/server/tsconfig.json")
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())

@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -40,5 +40,31 @@ describe('Reins product setup invocation', () => {
       cwd: projectRoot,
       pythonPath: join(projectRoot, 'src'),
     })
+  })
+
+  it('finds the packaged runtime launcher when REINS_BIN is unavailable', async () => {
+    const runtimeRoot = join(tempDir, 'runtime')
+    const launcher = join(runtimeRoot, 'bin', 'reins-runtime.exe')
+    mkdirSync(join(runtimeRoot, 'bin'), { recursive: true })
+    writeFileSync(launcher, '')
+    process.env.REINS_RUNTIME_ROOT = runtimeRoot
+
+    const { resolveReinsSetupInvocation } = await import('../../packages/server/src/services/reins/product-setup')
+    const invocation = resolveReinsSetupInvocation()
+
+    expect(invocation).toEqual({
+      command: launcher,
+      argsPrefix: [],
+    })
+  })
+
+  it('does not fall back to spawning an unverified bare reins command', async () => {
+    const source = readFileSync(
+      join(process.cwd(), 'packages/server/src/services/reins/product-setup.ts'),
+      'utf8',
+    )
+
+    expect(source).not.toContain("|| 'reins'")
+    expect(source).toContain('The local Reins runtime was not found.')
   })
 })

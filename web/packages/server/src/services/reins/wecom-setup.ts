@@ -1,7 +1,8 @@
 import { execFile } from 'child_process';
 import { chmod, mkdir, readFile, rename, writeFile } from 'fs/promises';
-import { dirname, join } from 'path';
+import { delimiter, dirname, join } from 'path';
 import { promisify } from 'util';
+import { resolveReinsSetupInvocation } from './product-setup';
 import { resolveReinsHome } from './reins-path';
 
 const execFileAsync = promisify(execFile);
@@ -290,12 +291,6 @@ function syncRuntimeEnv(updates: Map<EditableKey, string>): void {
   }
 }
 
-function resolveReinsBin(): string {
-  return (
-    process.env.REINS_BIN?.trim() || process.env.HERMES_BIN?.trim() || 'reins'
-  );
-}
-
 function parseCommandJson(raw: unknown): Record<string, any> {
   const text = String(raw ?? '').trim();
 
@@ -320,21 +315,34 @@ function parseCommandJson(raw: unknown): Record<string, any> {
 
 async function runReinsJson(args: string[]): Promise<Record<string, any>> {
   const home = resolveReinsHome();
+  const invocation = resolveReinsSetupInvocation();
 
   try {
-    const { stdout } = await execFileAsync(resolveReinsBin(), args, {
-      env: {
-        ...process.env,
+    const { stdout } = await execFileAsync(
+      invocation.command,
+      [...invocation.argsPrefix, ...args],
+      {
+        cwd: invocation.cwd,
+        env: {
+          ...process.env,
 
-        REINS_HOME: home,
-        HERMES_HOME: home,
+          REINS_HOME: home,
+          HERMES_HOME: home,
+          ...(invocation.pythonPath
+            ? {
+                PYTHONPATH: [invocation.pythonPath, process.env.PYTHONPATH]
+                  .filter(Boolean)
+                  .join(delimiter),
+              }
+            : {}),
+        },
+
+        encoding: 'utf8',
+        maxBuffer: 4 * 1024 * 1024,
+        timeout: 90_000,
+        windowsHide: true,
       },
-
-      encoding: 'utf8',
-      maxBuffer: 4 * 1024 * 1024,
-      timeout: 90_000,
-      windowsHide: true,
-    });
+    );
 
     return parseCommandJson(stdout);
   } catch (error: any) {
@@ -346,11 +354,12 @@ async function runReinsJson(args: string[]): Promise<Record<string, any>> {
       // Fall through to stderr/message.
     }
 
-    const detail =
-      cleanValue(parsed?.error) ||
-      cleanValue(error?.stderr) ||
-      cleanValue(error?.message) ||
-      'Reins command failed';
+    const detail = error?.code === 'ENOENT'
+      ? 'The bundled Reins runtime was not found. Please reinstall the latest Reins release.'
+      : cleanValue(parsed?.error) ||
+        cleanValue(error?.stderr) ||
+        cleanValue(error?.message) ||
+        'Reins command failed';
 
     throw new Error(detail);
   }
@@ -597,6 +606,7 @@ export async function stopWeComBackgroundService(): Promise<
  */
 export async function saveWeComSetup(
   input: WeComSetupInput,
+  runCommand: typeof runReinsJson = runReinsJson,
 ): Promise<Record<string, unknown>> {
   validateNumber(input.ticket_limit, 'Ticket limit', 1, 100, true);
 
@@ -700,7 +710,7 @@ export async function saveWeComSetup(
    * Therefore changes to notification mode/settings
    * take effect immediately.
    */
-  const result = await runReinsJson([
+  const result = await runCommand([
     'wecom',
     'ticket-api',
     'service',

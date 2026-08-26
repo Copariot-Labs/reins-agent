@@ -12,8 +12,6 @@ import {
   stopWeComBackgroundService,
 } from '../../services/reins/wecom-setup';
 
-import { requireSuperAdmin } from '../../middleware/user-auth';
-
 export const wecomRoutes = new Router();
 
 function statusFromErrorMessage(message: string): number {
@@ -35,14 +33,14 @@ function statusFromErrorMessage(message: string): number {
 /*
  * Settings + actual background service status.
  */
-wecomRoutes.get('/api/reins/wecom/setup', requireSuperAdmin, async (ctx) => {
+wecomRoutes.get('/api/reins/wecom/setup', async (ctx) => {
   ctx.body = await getWeComSetupStatus();
 });
 
 /*
  * Save configuration and install/restart the ticket poller.
  */
-wecomRoutes.post('/api/reins/wecom/setup', requireSuperAdmin, async (ctx) => {
+wecomRoutes.post('/api/reins/wecom/setup', async (ctx) => {
   try {
     ctx.body = await saveWeComSetup(
       (ctx.request.body || {}) as Record<string, any>,
@@ -64,46 +62,38 @@ wecomRoutes.post('/api/reins/wecom/setup', requireSuperAdmin, async (ctx) => {
  * If it has never been installed, the service layer
  * installs it automatically.
  */
-wecomRoutes.post(
-  '/api/reins/wecom/service/start',
-  requireSuperAdmin,
-  async (ctx) => {
-    try {
-      ctx.body = await startWeComBackgroundService();
-    } catch (err: any) {
-      const message =
-        err?.message || 'Could not start the background ticket service';
+wecomRoutes.post('/api/reins/wecom/service/start', async (ctx) => {
+  try {
+    ctx.body = await startWeComBackgroundService();
+  } catch (err: any) {
+    const message =
+      err?.message || 'Could not start the background ticket service';
 
-      ctx.status = statusFromErrorMessage(message);
+    ctx.status = statusFromErrorMessage(message);
 
-      ctx.body = {
-        error: message,
-      };
-    }
-  },
-);
+    ctx.body = {
+      error: message,
+    };
+  }
+});
 
 /*
  * Stop ticket polling without deleting settings.
  */
-wecomRoutes.post(
-  '/api/reins/wecom/service/stop',
-  requireSuperAdmin,
-  async (ctx) => {
-    try {
-      ctx.body = await stopWeComBackgroundService();
-    } catch (err: any) {
-      const message =
-        err?.message || 'Could not stop the background ticket service';
+wecomRoutes.post('/api/reins/wecom/service/stop', async (ctx) => {
+  try {
+    ctx.body = await stopWeComBackgroundService();
+  } catch (err: any) {
+    const message =
+      err?.message || 'Could not stop the background ticket service';
 
-      ctx.status = statusFromErrorMessage(message);
+    ctx.status = statusFromErrorMessage(message);
 
-      ctx.body = {
-        error: message,
-      };
-    }
-  },
-);
+    ctx.body = {
+      error: message,
+    };
+  }
+});
 
 function getBearerToken(ctx: any): string {
   const auth = String(ctx.headers.authorization || '').trim();
