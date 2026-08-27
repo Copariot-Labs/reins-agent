@@ -7,7 +7,10 @@ import {
   type OfficeWorkerProgress,
   type OfficeChatIntentDecision,
 } from './office'
-export { officeRevisionNeedsClarification } from './office-clarification'
+export {
+  officeCreationNeedsClarification,
+  officeRevisionNeedsClarification,
+} from './office-clarification'
 
 export type OfficeChatWorkTool =
   | 'document'
@@ -62,12 +65,12 @@ export const OFFICE_CHAT_TOOL_NAMES = [
   'revise_office_document',
 ] as const
 
-const CREATE_PATTERN = /\b(create|make|generate|write|prepare|draft|build|compose|produce|design|assemble|compile|format|export|save|convert)\b/i
+const CREATE_PATTERN = /\b(create|make|generate|write|prepare|draft|build|compose|produce|design|assemble|compile|format|export|save|convert|need|want)\b/i
 const CREATE_PHRASE_PATTERN = /\b(?:put|pull)\s+together\b|\bturn\b.{0,80}\binto\b/i
 const OFFICE_PATTERN = /\b(document|docx?|word|letter|application|report|proposal|summary|resume|cv|notice|program|plan|minutes|memo|policy|agreement|contract|statement|certificate|form|invoice|receipt|agenda|briefing|presentation|pptx?|slides?|slide deck|deck|powerpoint|spreadsheet|excel|xlsx|sheets?|table|ledger|tracker|budget|inventory|roster)\b/i
 const QUESTION_PATTERN = /^(how\s+to\s+|how\s+can\s+i\s+|what\s+is\s+|why\s+|can\s+you\s+explain\s+)/i
 const CHINESE_QUESTION_PATTERN = /^(如何|怎么|怎样|为什么|什么是|请解释|请介绍)/
-const CHINESE_CREATE_PATTERN = /(创建|制作|生成|写一份|撰写|编写|准备|起草|整理|汇总|输出|形成|保存|转换|导出|做一个|做一份|出一份)/
+const CHINESE_CREATE_PATTERN = /(创建|制作|生成|写一份|撰写|编写|准备|起草|整理|汇总|输出|形成|保存|转换|导出|做一个|做一份|做个|出一份|弄一个|弄一份|弄个|来一份|要一份|需要一份|想要一份)/
 const CHINESE_OFFICE_PATTERN = /(文档|Word|报告|总结|简报|公文|通知|公告|倡议书|申请|合同|简历|计划|方案|会议记录|会议纪要|纪要|台账|清单|表格|电子表格|工作簿|Excel|演示文稿|幻灯片|PPT)/i
 const REVISE_PATTERN = /\b(edit|modify|revise|update|change|adjust|add|insert|append|remove|delete|replace|rename|fix|correct|improve|rewrite|reformat|restyle|redesign|recolor|resize|reorder|move|swap|apply|extend|expand|shorten|simplify|polish|refresh|format|bold|italicize|underline|highlight|align|merge|sort|filter)\b/i
 const REFERENCED_REVISION_PATTERN = /\b(make|turn)\s+(it|this|that|(?:the\s+)?(?:file|document|workbook|spreadsheet|presentation|deck|title|heading|text|table|chart|slide|sheet|page|row|column|cell))\b/i

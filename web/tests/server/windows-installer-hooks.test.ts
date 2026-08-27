@@ -157,3 +157,17 @@ describe('Windows installer release validation', () => {
     expect(workflow).toContain('@("--target", $env:GITHUB_SHA)')
   })
 })
+
+describe('Windows packaged Office validation', () => {
+  const stagingScript = readFileSync(
+    resolve(process.cwd(), '../scripts/stage-windows-runtime.ps1'),
+    'utf8',
+  )
+
+  it('checks the packaged OfficeCLI and private Python brain before bundling', () => {
+    expect(stagingScript).toContain('Verifying packaged Reins Office routing')
+    expect(stagingScript).toContain('REINS_SERVICE_PYTHON = $RuntimePython')
+    expect(stagingScript).toContain('& $PackagedLauncher office doctor --json')
+    expect(stagingScript).toContain('$OfficeStatus.reins_command')
+  })
+})

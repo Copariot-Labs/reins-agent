@@ -3,7 +3,10 @@ import { randomUUID } from 'crypto'
 import { once } from 'events'
 import { existsSync } from 'fs'
 import { delimiter, resolve } from 'path'
-import { officeRevisionNeedsClarification } from './office-clarification'
+import {
+  officeCreationNeedsClarification,
+  officeRevisionNeedsClarification,
+} from './office-clarification'
 import { resolveReinsHome } from './reins-path'
 import { resolveReinsWorkspaceRoot } from './workspace-path'
 
@@ -699,20 +702,6 @@ export function friendlyOfficeOperationError(
     }
   }
 
-  if (normalized.includes('not found') || normalized.includes('no longer exists')) {
-    return {
-      code: 'document_not_found',
-      title_zh: '找不到原文件',
-      title_en: 'Original file not found',
-      message_zh: '要修改的 Office 文件已移动、删除或不再存在。',
-      message_en: 'The Office file being revised was moved, deleted, or no longer exists.',
-      suggestion_zh: '请从最近文件中重新选择有效文件，然后再次提交修改。',
-      suggestion_en: 'Select an available file from Recent files and submit the revision again.',
-      technical_detail: detail,
-      retryable: false,
-    }
-  }
-
   if (
     normalized.includes('winerror 32')
     || normalized.includes('sharing violation')
@@ -735,6 +724,66 @@ export function friendlyOfficeOperationError(
       suggestion_en: 'Close the file in Microsoft Office and turn off the File Explorer preview pane, then try again.',
       technical_detail: detail,
       retryable: true,
+    }
+  }
+
+  if (
+    normalized.includes('enoent')
+    || normalized.includes('winerror 2')
+    || normalized.includes('winerror 6')
+    || normalized.includes('the handle is invalid')
+    || normalized.includes('cannot find the file specified')
+    || normalized.includes('could not start reins')
+    || normalized.includes('failed to start reins')
+    || normalized.includes('runtime is incomplete')
+    || /\bspawn\s+[^\s]+/.test(normalized)
+  ) {
+    return {
+      code: 'runtime_unavailable',
+      title_zh: 'Office 服务暂时不可用',
+      title_en: 'Office service is unavailable',
+      message_zh: 'Reins 无法启动本机的 Office 内容生成服务。',
+      message_en: 'Reins could not start the local Office content service.',
+      suggestion_zh: '请完全退出并重新打开 Reins 后重试；如果问题仍然存在，请重新安装当前版本。',
+      suggestion_en: 'Quit and reopen Reins, then try again. Reinstall the current version if the problem continues.',
+      technical_detail: detail,
+      retryable: true,
+    }
+  }
+
+  if (
+    normalized.includes('no llm provider configured')
+    || normalized.includes('no provider credentials configured')
+    || normalized.includes('no model configured')
+    || normalized.includes('provider is not configured')
+    || normalized.includes('provider not configured')
+    || normalized.includes('missing api key')
+    || normalized.includes('no api key found')
+  ) {
+    return {
+      code: 'model_unavailable',
+      title_zh: '尚未配置可用模型',
+      title_en: 'No model is configured',
+      message_zh: 'Reins Office 需要使用当前模型生成文件内容，但没有找到可用的模型连接。',
+      message_en: 'Reins Office needs the current model to generate document content, but no usable model connection was found.',
+      suggestion_zh: '请在模型设置中完成提供商、模型和密钥配置，然后重新生成。',
+      suggestion_en: 'Configure a provider, model, and credentials in Model settings, then generate the file again.',
+      technical_detail: detail,
+      retryable: true,
+    }
+  }
+
+  if (normalized.includes('not found') || normalized.includes('no longer exists')) {
+    return {
+      code: 'document_not_found',
+      title_zh: '找不到原文件',
+      title_en: 'Original file not found',
+      message_zh: '要修改的 Office 文件已移动、删除或不再存在。',
+      message_en: 'The Office file being revised was moved, deleted, or no longer exists.',
+      suggestion_zh: '请从最近文件中重新选择有效文件，然后再次提交修改。',
+      suggestion_en: 'Select an available file from Recent files and submit the revision again.',
+      technical_detail: detail,
+      retryable: false,
     }
   }
 
@@ -793,7 +842,7 @@ export function friendlyOfficeOperationError(
 export function shouldAskForOfficeClarification(error: OfficeOperationErrorDto): boolean {
   if (error.code !== 'content_generation_failed') return false
   const detail = error.technical_detail.toLowerCase()
-  return !/(?:timed out|connection|network|socket|api key|authentication|unauthorized|forbidden|quota|rate limit|model unavailable|provider unavailable)/.test(detail)
+  return !/(?:timed out|connection|network|socket|api key|authentication|unauthorized|forbidden|quota|rate limit|model unavailable|provider unavailable|provider configured|model configured|credentials configured|enoent|winerror|spawn|runtime|python|permission|access denied)/.test(detail)
 }
 
 function createOperation(kind: OfficeOperationKind): OfficeOperationDto {
@@ -841,13 +890,19 @@ function requestOperationClarification(operation: OfficeOperationDto) {
   })
 }
 
-function failOperation(operation: OfficeOperationDto, error: unknown) {
+function failOperation(operation: OfficeOperationDto, error: unknown, requestText = '') {
   if (operation.status === 'cancelled' || String((error as { code?: string })?.code || '') === 'worker_cancelled') {
     return
   }
   const lastStage = operation.events.at(-1)?.stage || ''
   const friendly = friendlyOfficeOperationError(error, operation.kind, lastStage)
-  if (shouldAskForOfficeClarification(friendly)) {
+  if (
+    shouldAskForOfficeClarification(friendly)
+    && (
+      operation.kind === 'revise'
+      || officeCreationNeedsClarification(requestText)
+    )
+  ) {
     requestOperationClarification(operation)
     return
   }
@@ -877,7 +932,7 @@ export function startOfficeCreateOperation(input: OfficeCreateRequest): OfficeOp
         operation.percent = 100
         operation.updated_at = nowIso()
       })
-      .catch(error => failOperation(operation, error))
+      .catch(error => failOperation(operation, error, input.prompt))
       .finally(() => officeOperationControllers.delete(operation.id))
   })
   return operationSnapshot(operation)
@@ -911,7 +966,7 @@ export function startOfficeRevisionOperation(
         operation.percent = 100
         operation.updated_at = nowIso()
       })
-      .catch(error => failOperation(operation, error))
+      .catch(error => failOperation(operation, error, input.instruction))
       .finally(() => officeOperationControllers.delete(operation.id))
   })
   return operationSnapshot(operation)

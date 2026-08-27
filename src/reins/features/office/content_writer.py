@@ -103,6 +103,14 @@ class ReinsInvocation:
 
 
 def _resolve_reins_invocation() -> ReinsInvocation | None:
+    # The packaged desktop server exposes its private Python explicitly. Use it
+    # for nested brain turns instead of recursively launching reins-runtime.exe.
+    # The direct path avoids Windows process/stdio and Unicode argument issues
+    # while still running the same Reins CLI and model configuration.
+    service_python = os.environ.get("REINS_SERVICE_PYTHON", "").strip()
+    if service_python and Path(service_python).is_file():
+        return ReinsInvocation(command=[service_python, "-m", "reins.main"])
+
     for key in ("REINS_BIN", "HERMES_BIN"):
         value = os.environ.get(key, "").strip()
         if value:

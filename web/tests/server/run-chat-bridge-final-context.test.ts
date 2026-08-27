@@ -41,6 +41,7 @@ const resolveOfficeChatRequestWithBrainMock = vi.fn()
 const resolveIndexedOfficeRevisionDocumentMock = vi.fn()
 const latestOfficeChatDocumentMock = vi.fn()
 const officeClarificationPromptMock = vi.fn()
+const officeCreationNeedsClarificationMock = vi.fn()
 const officeRevisionNeedsClarificationMock = vi.fn()
 const runOfficeChatRequestMock = vi.fn()
 const hasOfficeRevisionIntentMock = vi.fn()
@@ -108,6 +109,7 @@ vi.mock('../../packages/server/src/services/reins/office-chat', () => ({
   latestOfficeChatDocument: latestOfficeChatDocumentMock,
   reinsOfficeAgentInstructions: () => 'Office files must use Reins Office and bundled OfficeCLI only.',
   officeClarificationPrompt: officeClarificationPromptMock,
+  officeCreationNeedsClarification: officeCreationNeedsClarificationMock,
   officeRevisionNeedsClarification: officeRevisionNeedsClarificationMock,
   runOfficeChatRequest: runOfficeChatRequestMock,
   hasOfficeRevisionIntent: hasOfficeRevisionIntentMock,
@@ -168,6 +170,7 @@ describe('bridge run final context usage', () => {
     resolveIndexedOfficeRevisionDocumentMock.mockReturnValue(null)
     latestOfficeChatDocumentMock.mockReturnValue(null)
     officeClarificationPromptMock.mockReturnValue('请告诉我要修改的部分、目标内容和需要保留的内容。')
+    officeCreationNeedsClarificationMock.mockReturnValue(false)
     officeRevisionNeedsClarificationMock.mockReturnValue(false)
     runOfficeChatRequestMock.mockResolvedValue({ handled: false, message: '', exit_code: 0, document: null })
     hasOfficeRevisionIntentMock.mockReturnValue(false)
@@ -910,6 +913,7 @@ describe('bridge run final context usage', () => {
       technical_detail: 'Reins did not return valid structured meeting minutes',
     })
     shouldAskForOfficeClarificationMock.mockReturnValueOnce(true)
+    officeCreationNeedsClarificationMock.mockReturnValueOnce(true)
     recordBridgeToolStartedMock.mockReturnValueOnce({
       id: 'office-tool-create-clarify-1',
       name: 'reins_office_create',
@@ -925,7 +929,7 @@ describe('bridge run final context usage', () => {
       contextEstimate: vi.fn(),
       streamOutput: vi.fn(),
     } as any
-    const prompt = '整理8月社区两委联席会议纪要，议题包括防汛值班和停车治理。'
+    const prompt = '创建一个文档'
 
     const { handleBridgeRun } = await import('../../packages/server/src/services/hermes/run-chat/handle-bridge-run')
     await handleBridgeRun(

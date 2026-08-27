@@ -8,8 +8,16 @@ import {
   startOfficeCreateOperation,
   startOfficeRevisionOperation,
 } from '../../packages/server/src/services/reins/office'
+import { officeCreationNeedsClarification } from '../../packages/server/src/services/reins/office-clarification'
 
 describe('Reins Office service', () => {
+  it('recognizes a detailed Chinese creation request without asking again', () => {
+    expect(officeCreationNeedsClarification(
+      '为阳光社区编写2026年第三季度工作计划，重点包括防汛和垃圾分类。',
+    )).toBe(false)
+    expect(officeCreationNeedsClarification('创建一个文档')).toBe(true)
+  })
+
   it('defaults document generation to Chinese', () => {
     expect(normalizeOfficeCreateRequest({
       format: 'docx',
@@ -97,6 +105,37 @@ describe('Reins Office service', () => {
 
     expect(shouldAskForOfficeClarification(invalidStructure)).toBe(true)
     expect(shouldAskForOfficeClarification(unavailableModel)).toBe(false)
+  })
+
+  it('does not disguise Windows runtime failures as clarification questions', () => {
+    const runtimeFailure = friendlyOfficeOperationError(
+      new Error('spawn reins ENOENT'),
+      'create',
+      'content_generation',
+    )
+    const invalidHandle = friendlyOfficeOperationError(
+      new Error('OSError: [WinError 6] The handle is invalid'),
+      'create',
+      'content_generation',
+    )
+
+    expect(runtimeFailure.code).toBe('runtime_unavailable')
+    expect(runtimeFailure.title_zh).toBe('Office 服务暂时不可用')
+    expect(shouldAskForOfficeClarification(runtimeFailure)).toBe(false)
+    expect(invalidHandle.code).toBe('runtime_unavailable')
+    expect(shouldAskForOfficeClarification(invalidHandle)).toBe(false)
+  })
+
+  it('directs missing model configuration to settings instead of asking for document details', () => {
+    const missingModel = friendlyOfficeOperationError(
+      new Error('No LLM provider configured. Run `reins model` to configure one.'),
+      'create',
+      'content_generation',
+    )
+
+    expect(missingModel.code).toBe('model_unavailable')
+    expect(missingModel.suggestion_zh).toContain('模型设置')
+    expect(shouldAskForOfficeClarification(missingModel)).toBe(false)
   })
 
   it('pauses vague Office page revisions for user input before starting a worker', () => {

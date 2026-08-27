@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import reins.features.office.content_writer as office_content_writer
 import reins.features.office.service as office_service
 from reins.features.office.editor import (
     OfficeRevisionError,
@@ -194,6 +195,21 @@ def test_office_fallback_content_matches_requested_format():
     assert content["generator"] == "fallback"
     assert content["sheets"]
     assert not content["slides"]
+
+
+def test_packaged_office_brain_prefers_private_python_over_recursive_launcher(
+    tmp_path,
+    monkeypatch,
+):
+    service_python = tmp_path / "python.exe"
+    service_python.write_bytes(b"")
+    monkeypatch.setenv("REINS_SERVICE_PYTHON", str(service_python))
+    monkeypatch.setenv("REINS_BIN", str(tmp_path / "reins-runtime.exe"))
+
+    invocation = office_content_writer._resolve_reins_invocation()
+
+    assert invocation is not None
+    assert invocation.command == [str(service_python), "-m", "reins.main"]
 
 
 def test_word_and_excel_prompts_make_reins_the_design_decision_maker():

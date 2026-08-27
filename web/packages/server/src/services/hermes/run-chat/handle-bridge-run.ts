@@ -36,6 +36,7 @@ import {
   resolveOfficeChatRequestWithBrain,
   resolveIndexedOfficeRevisionDocument,
   officeClarificationPrompt,
+  officeCreationNeedsClarification,
   officeRevisionNeedsClarification,
   runOfficeChatRequest,
   hasOfficeRevisionIntent,
@@ -900,7 +901,13 @@ async function maybeHandleOfficeChatRun(args: {
       request.operation === 'revise' ? 'revise' : 'create',
       lastProgressStage,
     )
-    if (shouldAskForOfficeClarification(friendly)) {
+    if (
+      shouldAskForOfficeClarification(friendly)
+      && (
+        request.operation === 'revise'
+        || officeCreationNeedsClarification(args.input)
+      )
+    ) {
       const pendingSkillId = args.officeSkillId
         || (request.operation === 'create' ? request.skill_id : undefined)
       const pendingPrompt = request.operation === 'create' && request.original_prompt

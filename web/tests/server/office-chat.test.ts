@@ -82,6 +82,8 @@ describe('Reins Office chat routing', () => {
     expect(mayNeedOfficeChat('Put together a Word briefing for the quarterly review')).toBe(true)
     expect(inferOfficeChatFormat('Put together a Word briefing for the quarterly review')).toBe('docx')
     expect(mayNeedOfficeChat('Convert this quarterly summary into a Word document')).toBe(true)
+    expect(mayNeedOfficeChat('I need a Word version of the quarterly work plan')).toBe(true)
+    expect(mayNeedOfficeChat('给我弄个Word版季度工作方案')).toBe(true)
     expect(mayNeedOfficeChat('将这份内容导出为PPT')).toBe(true)
     expect(mayNeedOfficeChat('把这些想法整理一下')).toBe(false)
     expect(mayNeedOfficeChat('what is a Word document?')).toBe(false)

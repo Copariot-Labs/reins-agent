@@ -174,6 +174,48 @@ $Launcher = Join-Path $ProjectRoot "desktop\runtime-launcher\target\$TargetTripl
 if (-not (Test-Path $Launcher)) { throw "Reins runtime launcher was not produced" }
 Copy-Item $Launcher (Join-Path $Runtime "bin\reins-runtime.exe")
 
+Write-Host "==> Verifying packaged Reins Office routing" -ForegroundColor Cyan
+$PackagedLauncher = Join-Path $Runtime "bin\reins-runtime.exe"
+$OfficeSmokeHome = Join-Path ([IO.Path]::GetTempPath()) "reins-office-runtime-smoke"
+New-Item -ItemType Directory -Force -Path $OfficeSmokeHome | Out-Null
+$OfficeSmokeEnvironment = @{
+    REINS_RUNTIME_ROOT = $Runtime
+    REINS_SERVICE_PYTHON = $RuntimePython
+    REINS_BIN = $PackagedLauncher
+    HERMES_BIN = $PackagedLauncher
+    OFFICECLI_BIN = (Join-Path $Runtime "bin\officecli.exe")
+    OFFICECLI_SKIP_UPDATE = "1"
+    REINS_HOME = $OfficeSmokeHome
+    HERMES_HOME = $OfficeSmokeHome
+    REINS_WORKSPACE_ROOT = (Join-Path $OfficeSmokeHome "Workspace")
+    PYTHONHOME = (Join-Path $Runtime "python")
+    PYTHONIOENCODING = "utf-8"
+    PYTHONUTF8 = "1"
+}
+$PreviousOfficeSmokeEnvironment = @{}
+foreach ($Name in $OfficeSmokeEnvironment.Keys) {
+    $PreviousOfficeSmokeEnvironment[$Name] = [Environment]::GetEnvironmentVariable($Name, "Process")
+    [Environment]::SetEnvironmentVariable($Name, $OfficeSmokeEnvironment[$Name], "Process")
+}
+try {
+    $OfficeStatusJson = (& $PackagedLauncher office doctor --json | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) { throw "Packaged Reins Office doctor failed" }
+    $OfficeStatus = $OfficeStatusJson | ConvertFrom-Json
+    if (-not $OfficeStatus.available -or -not $OfficeStatus.reins_available) {
+        throw "Packaged Reins Office dependencies are unavailable: $OfficeStatusJson"
+    }
+    $BrainCommand = [string](@($OfficeStatus.reins_command)[0])
+    if ($BrainCommand -ne $RuntimePython) {
+        throw "Packaged Reins Office did not select its private Python brain: $OfficeStatusJson"
+    }
+    Write-Host "Packaged Reins Office routing verified" -ForegroundColor Green
+}
+finally {
+    foreach ($Name in $OfficeSmokeEnvironment.Keys) {
+        [Environment]::SetEnvironmentVariable($Name, $PreviousOfficeSmokeEnvironment[$Name], "Process")
+    }
+}
+
 Copy-Item (Join-Path $ProjectRoot "vendor\hermes-agent\LICENSE") (Join-Path $Runtime "licenses\agent-runtime.txt")
 Copy-Item (Join-Path $ProjectRoot "vendor\OfficeCLI\LICENSE") (Join-Path $Runtime "licenses\office-runtime.txt")
 Copy-Item (Join-Path $ProjectRoot "vendor\OfficeCLI\NOTICE") (Join-Path $Runtime "licenses\office-notice.txt")
