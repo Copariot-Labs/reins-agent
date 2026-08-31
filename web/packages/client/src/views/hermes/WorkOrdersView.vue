@@ -624,7 +624,7 @@ onUnmounted(() => {
                 <dt>{{ t('workOrders.detail.department') }}</dt>
                 <dd>{{ selectedRecord.assigned_role_label || t('workOrders.labels.unassigned') }}</dd>
               </div>
-              <div>
+              <div v-if="selectedRecord.assignees.length > 0">
                 <dt>{{ t('workOrders.detail.assignee') }}</dt>
                 <dd>{{ selectedRecord.assignees.join('、') || t('workOrders.labels.unassigned') }}</dd>
               </div>

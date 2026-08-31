@@ -64,6 +64,8 @@ export interface FinanceSummary {
 
 type SqlParam = string | number | null;
 
+export const FINANCE_DESCRIPTION_MAX_LENGTH = 500;
+
 const FINANCE_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS finance_transactions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -268,9 +270,16 @@ function parseAmount(value: unknown): number {
   return amount;
 }
 
-function parseRequiredText(value: unknown, field: string): string {
+function parseRequiredText(
+  value: unknown,
+  field: string,
+  maximumLength?: number,
+): string {
   const text = String(value || '').trim();
   if (!text) throw new Error(`${field} is required.`);
+  if (maximumLength && text.length > maximumLength) {
+    throw new Error(`${field} must be ${maximumLength} characters or fewer.`);
+  }
   return text;
 }
 
@@ -294,7 +303,11 @@ function parseFinanceTransactionPayload(
     amount: parseAmount(body.amount),
     currency,
     category: parseRequiredText(body.category || '其他', 'Category'),
-    description: parseRequiredText(body.description, 'Description'),
+    description: parseRequiredText(
+      body.description,
+      'Description',
+      FINANCE_DESCRIPTION_MAX_LENGTH,
+    ),
     counterparty: parseOptionalText(body.counterparty),
     payment_method: parseOptionalText(body.payment_method),
     occurred_at: parseRequiredDate(body.occurred_at),

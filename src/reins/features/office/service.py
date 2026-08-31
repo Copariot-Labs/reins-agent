@@ -237,7 +237,8 @@ def create_office_document(
     if content is None:
         _report_progress(
             progress, "content_generation", 18,
-            "Reins 正在整理内容、结构和设计方案", "Reins is planning content, structure, and design",
+            "Reins 正在整理内容、结构和设计方案，生成需要一些时间，请耐心等待",
+            "Reins is planning content, structure, and design. Generation can take some time; please wait while Reins continues processing",
         )
     content_payload = content or generate_office_content(
         prompt=cleaned_prompt,

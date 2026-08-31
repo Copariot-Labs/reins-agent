@@ -845,6 +845,18 @@ export function shouldAskForOfficeClarification(error: OfficeOperationErrorDto):
   return !/(?:timed out|connection|network|socket|api key|authentication|unauthorized|forbidden|quota|rate limit|model unavailable|provider unavailable|provider configured|model configured|credentials configured|enoent|winerror|spawn|runtime|python|permission|access denied)/.test(detail)
 }
 
+export function shouldRequestOfficeOperationClarification(
+  error: OfficeOperationErrorDto,
+  kind: OfficeOperationKind,
+  requestText = '',
+  skillId = '',
+): boolean {
+  if (!shouldAskForOfficeClarification(error)) return false
+  if (kind === 'revise') return true
+  if (skillId.trim()) return false
+  return officeCreationNeedsClarification(requestText)
+}
+
 function createOperation(kind: OfficeOperationKind): OfficeOperationDto {
   pruneOfficeOperations()
   const timestamp = nowIso()
@@ -890,19 +902,23 @@ function requestOperationClarification(operation: OfficeOperationDto) {
   })
 }
 
-function failOperation(operation: OfficeOperationDto, error: unknown, requestText = '') {
+function failOperation(
+  operation: OfficeOperationDto,
+  error: unknown,
+  requestText = '',
+  skillId = '',
+) {
   if (operation.status === 'cancelled' || String((error as { code?: string })?.code || '') === 'worker_cancelled') {
     return
   }
   const lastStage = operation.events.at(-1)?.stage || ''
   const friendly = friendlyOfficeOperationError(error, operation.kind, lastStage)
-  if (
-    shouldAskForOfficeClarification(friendly)
-    && (
-      operation.kind === 'revise'
-      || officeCreationNeedsClarification(requestText)
-    )
-  ) {
+  if (shouldRequestOfficeOperationClarification(
+    friendly,
+    operation.kind,
+    requestText,
+    skillId,
+  )) {
     requestOperationClarification(operation)
     return
   }
@@ -932,7 +948,7 @@ export function startOfficeCreateOperation(input: OfficeCreateRequest): OfficeOp
         operation.percent = 100
         operation.updated_at = nowIso()
       })
-      .catch(error => failOperation(operation, error, input.prompt))
+      .catch(error => failOperation(operation, error, input.prompt, input.skill_id))
       .finally(() => officeOperationControllers.delete(operation.id))
   })
   return operationSnapshot(operation)

@@ -5,6 +5,7 @@ import {
   getOfficeOperation,
   normalizeOfficeCreateRequest,
   shouldAskForOfficeClarification,
+  shouldRequestOfficeOperationClarification,
   startOfficeCreateOperation,
   startOfficeRevisionOperation,
 } from '../../packages/server/src/services/reins/office'
@@ -105,6 +106,26 @@ describe('Reins Office service', () => {
 
     expect(shouldAskForOfficeClarification(invalidStructure)).toBe(true)
     expect(shouldAskForOfficeClarification(unavailableModel)).toBe(false)
+  })
+
+  it('never replaces a selected fixed skill failure with a generic details question', () => {
+    const invalidStructure = friendlyOfficeOperationError(
+      new Error('Reins did not return a JSON object.'),
+      'create',
+      'content_generation',
+    )
+
+    expect(shouldRequestOfficeOperationClarification(
+      invalidStructure,
+      'create',
+      '创建一个文档',
+      'community-work-plan',
+    )).toBe(false)
+    expect(shouldRequestOfficeOperationClarification(
+      invalidStructure,
+      'create',
+      '创建一个文档',
+    )).toBe(true)
   })
 
   it('does not disguise Windows runtime failures as clarification questions', () => {

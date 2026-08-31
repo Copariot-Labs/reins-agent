@@ -14,7 +14,12 @@ from reins.features.office.editor import (
     normalize_revision_plan,
 )
 from reins.features.office.intent import classify_office_followup
-from reins.features.office.content_writer import build_office_content_prompt, generate_office_content
+from reins.features.office.content_writer import (
+    OfficeContentError,
+    OfficeContentResponseError,
+    build_office_content_prompt,
+    generate_office_content,
+)
 from reins.features.office.chat import infer_office_format, should_handle_office_chat
 from reins.features.office.renderer import render_office_content
 from reins.features.office.schemas import (
@@ -129,9 +134,97 @@ def test_fixed_workflow_is_injected_as_a_content_contract():
     assert "Word 任务分解表" in prompt
     assert "不是工具、插件、软件包" in prompt
     assert "不得改为通用模板" in prompt
+    assert "最终文件仍必须采用当前所选固定技能" in prompt
     assert "Never answer with a question" in prompt
     assert "Missing names, dates, locations" in prompt
     assert 'When Language is "zh", use natural Simplified Chinese' in prompt
+
+
+def test_fixed_skill_retries_once_when_reins_returns_unstructured_text(monkeypatch):
+    prompts = []
+
+    def generate(prompt, *, timeout):
+        prompts.append((prompt, timeout))
+        if len(prompts) == 1:
+            raise OfficeContentResponseError("Reins did not return a JSON object.")
+        return {
+            "title": "阳光社区2026年第三季度工作计划",
+            "office_format": "docx",
+            "body": "一、总体目标\n扎实推进防汛和垃圾分类工作。",
+            "document_kind": "report",
+            "tables": [
+                {
+                    "headers": ["任务", "具体措施", "责任部门", "完成时限", "预期成果"],
+                    "rows": [["防汛", "开展隐患排查", "社区相关岗位", "第三季度", "风险闭环"]],
+                }
+            ],
+            "missing_fields": [],
+        }
+
+    monkeypatch.setattr(office_content_writer, "_call_reins_json", generate)
+
+    content = generate_office_content(
+        prompt="为阳光社区编写2026年第三季度工作计划，重点包括防汛和垃圾分类。",
+        office_format="docx",
+        skill_id="community-work-plan",
+    )
+
+    assert len(prompts) == 2
+    assert "JSON response retry" in prompts[1][0]
+    assert "community-work-plan" in prompts[1][0]
+    assert "Do not ask the user for more information" in prompts[1][0]
+    assert content["generator"] == "reins"
+    assert content["tables"][0]["headers"][0] == "任务"
+
+
+def test_fixed_skill_does_not_retry_runtime_or_model_failures(monkeypatch):
+    calls = 0
+
+    def fail(_prompt, *, timeout):
+        nonlocal calls
+        calls += 1
+        raise OfficeContentError("No LLM provider configured")
+
+    monkeypatch.setattr(office_content_writer, "_call_reins_json", fail)
+
+    with pytest.raises(OfficeContentError, match="No LLM provider configured"):
+        generate_office_content(
+            prompt="生成第三季度社区工作计划",
+            office_format="docx",
+            skill_id="community-work-plan",
+        )
+
+    assert calls == 1
+
+
+def test_fixed_skill_retries_a_json_clarification_response(monkeypatch):
+    responses = [
+        {
+            "title": "请补充文件信息",
+            "office_format": "docx",
+            "body": "请提供更多文档详情，包括文件用途、主要内容和格式要求。",
+        },
+        {
+            "title": "阳光社区第三季度工作计划",
+            "office_format": "docx",
+            "body": "一、总体目标\n推进防汛和垃圾分类重点工作。",
+        },
+    ]
+
+    monkeypatch.setattr(
+        office_content_writer,
+        "_call_reins_json",
+        lambda _prompt, *, timeout: responses.pop(0),
+    )
+
+    content = generate_office_content(
+        prompt="制定社区第三季度工作计划",
+        office_format="docx",
+        skill_id="community-work-plan",
+    )
+
+    assert content["title"] == "阳光社区第三季度工作计划"
+    assert not responses
 
 
 @pytest.mark.parametrize(

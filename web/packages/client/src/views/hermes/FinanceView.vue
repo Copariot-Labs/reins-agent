@@ -30,6 +30,7 @@ const editingTransaction = ref<FinanceTransaction | null>(null)
 const selectedMonth = ref(currentMonth())
 const selectedType = ref<FinanceTransactionType | ''>('')
 const form = ref<FinanceFormState>(newFinanceForm())
+const DESCRIPTION_MAX_LENGTH = 500
 
 const expenseCategoryRecommendations = [
   '餐饮',
@@ -220,15 +221,25 @@ function buildTransactionInput(): FinanceTransactionInput | null {
     return null
   }
 
+  if (!value.currency.trim()) {
+    message.error(t('finance.form.currencyRequired'))
+    return null
+  }
+
   if (!value.description.trim()) {
     message.error(t('finance.form.descriptionRequired'))
+    return null
+  }
+
+  if (value.description.trim().length > DESCRIPTION_MAX_LENGTH) {
+    message.error(t('finance.form.descriptionTooLong', { max: DESCRIPTION_MAX_LENGTH }))
     return null
   }
 
   return {
     type: value.type,
     amount,
-    currency: value.currency.trim() || 'CNY',
+    currency: value.currency.trim(),
     category: value.category.trim(),
     description: value.description.trim(),
     counterparty: value.counterparty.trim() || null,
@@ -609,33 +620,43 @@ onMounted(() => {
       :title="editingTransaction ? t('finance.form.editTitle') : t('finance.form.addTitle')"
     >
       <NForm class="finance-form" label-placement="top">
+        <p class="form-requirement-hint">
+          {{ t('finance.form.requiredHint') }}
+        </p>
+
         <div class="form-grid">
-          <NFormItem :label="t('finance.form.type')">
+          <NFormItem required :label="t('finance.form.type')">
             <NSelect
               :value="form.type"
               :options="transactionTypeOptions"
+              :placeholder="t('finance.form.typePlaceholder')"
               @update:value="handleFormTypeUpdate"
             />
           </NFormItem>
-          <NFormItem :label="t('finance.form.amount')">
+          <NFormItem required :label="t('finance.form.amount')">
             <NInputNumber
               v-model:value="form.amount"
               :min="0.01"
               :precision="2"
               :show-button="false"
+              :placeholder="t('finance.form.amountPlaceholder')"
               class="full-input"
             />
           </NFormItem>
-          <NFormItem :label="t('finance.form.currency')">
-            <NInput v-model:value="form.currency" maxlength="8" />
+          <NFormItem required :label="t('finance.form.currency')">
+            <NInput
+              v-model:value="form.currency"
+              maxlength="8"
+              :placeholder="t('finance.form.currencyPlaceholder')"
+            />
           </NFormItem>
-          <NFormItem :label="t('finance.form.date')">
+          <NFormItem required :label="t('finance.form.date')">
             <input v-model="form.occurred_at" class="form-control" type="date" />
           </NFormItem>
         </div>
 
         <div class="form-grid">
-          <NFormItem :label="t('finance.form.category')">
+          <NFormItem required :label="t('finance.form.category')">
             <NAutoComplete
               v-model:value="form.category"
               :options="categoryOptions"
@@ -643,7 +664,9 @@ onMounted(() => {
               clearable
             />
           </NFormItem>
-          <NFormItem :label="t('finance.form.paymentMethod')">
+          <NFormItem
+            :label="t('finance.form.optionalLabel', { label: t('finance.form.paymentMethod') })"
+          >
             <NAutoComplete
               v-model:value="form.payment_method"
               :options="paymentMethodOptions"
@@ -653,16 +676,24 @@ onMounted(() => {
           </NFormItem>
         </div>
 
-        <NFormItem :label="t('finance.form.description')">
+        <NFormItem required :label="t('finance.form.description')">
           <NInput
             v-model:value="form.description"
             type="textarea"
             :autosize="{ minRows: 2, maxRows: 4 }"
+            :maxlength="DESCRIPTION_MAX_LENGTH"
+            :placeholder="t('finance.form.descriptionPlaceholder')"
+            show-count
           />
         </NFormItem>
 
-        <NFormItem :label="t('finance.form.counterparty')">
-          <NInput v-model:value="form.counterparty" />
+        <NFormItem
+          :label="t('finance.form.optionalLabel', { label: t('finance.form.counterparty') })"
+        >
+          <NInput
+            v-model:value="form.counterparty"
+            :placeholder="t('finance.form.counterpartyPlaceholder')"
+          />
         </NFormItem>
       </NForm>
 
@@ -949,6 +980,12 @@ onMounted(() => {
 
 .finance-form {
   margin-top: 4px;
+}
+
+.form-requirement-hint {
+  margin: 0 0 14px;
+  color: $text-muted;
+  font-size: 12px;
 }
 
 .form-grid {

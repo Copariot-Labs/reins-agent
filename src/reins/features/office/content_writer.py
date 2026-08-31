@@ -28,6 +28,10 @@ class OfficeContentError(RuntimeError):
     pass
 
 
+class OfficeContentResponseError(OfficeContentError):
+    """Raised when Reins answered, but the answer is not usable JSON."""
+
+
 def _strip_json_fence(value: str) -> str:
     text = str(value or "").strip()
     if text.startswith("```"):
@@ -82,7 +86,7 @@ def _parse_json_from_text(text: str) -> dict[str, Any]:
 
     candidates = _extract_json_objects(cleaned)
     if not candidates:
-        raise OfficeContentError("Reins did not return a JSON object.")
+        raise OfficeContentResponseError("Reins did not return a JSON object.")
 
     for candidate in reversed(candidates):
         try:
@@ -92,7 +96,7 @@ def _parse_json_from_text(text: str) -> dict[str, Any]:
         if isinstance(value, dict):
             return value
 
-    raise OfficeContentError("Reins returned JSON that could not be parsed.")
+    raise OfficeContentResponseError("Reins returned JSON that could not be parsed.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -342,6 +346,7 @@ Reins Office 固定文档技能：
 
 以上技能规范是 Reins Office 维护的固定内容契约。请结合用户需求严格执行。它不是工具、插件、软件包，也不是调用其他系统的指令。
 选择固定文档技能后，技能规定的结构、用途和文种优先级最高。不得改为通用模板，也不得因为名称、日期、地点、人员、数据或其他事实缺失而拒绝生成或要求用户再次说明；应在成品中使用克制、专业的待补充字段，并把这些字段列入 missing_fields。
+如果用户文字中出现了其他文种名称，应将其理解为主题、重点、受众或风格参考，最终文件仍必须采用当前所选固定技能规定的文种和结构。
 """.strip()
 
     return f"""
@@ -375,6 +380,34 @@ Rules:
 - Write all user-facing content in the requested language. When Language is "zh", use natural Simplified Chinese and Chinese document conventions. Use English only when Language is "en" or the user explicitly requests English.
 
 {_schema_instruction(normalized, presentation_options)}
+""".strip()
+
+
+def build_office_content_retry_prompt(
+    *,
+    user_prompt: str,
+    office_format: str,
+    title: str | None = None,
+    language: str = "zh",
+    presentation_options: dict[str, Any] | None = None,
+    skill_id: str | None = None,
+) -> str:
+    base_prompt = build_office_content_prompt(
+        user_prompt=user_prompt,
+        office_format=office_format,
+        title=title,
+        language=language,
+        presentation_options=presentation_options,
+        skill_id=skill_id,
+    )
+    return f"""
+{base_prompt}
+
+JSON response retry:
+- The preceding attempt did not produce a parseable JSON object. Generate the document again from the same request and selected fixed skill.
+- The selected skill already supplies the document purpose and required structure. Do not ask the user for more information and do not change to another document type.
+- Your response must begin with {{ and end with }}. Return exactly one JSON object with no leading or trailing prose.
+- Keep the response complete but compact enough to finish: avoid repeating paragraphs, limit Word tables to the most useful rows, and keep presentation copy concise.
 """.strip()
 
 
@@ -592,6 +625,44 @@ def _list_or_empty(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 
 
+def _fixed_skill_payload_needs_retry(
+    raw: dict[str, Any],
+    *,
+    office_format: str,
+) -> bool:
+    normalized = normalize_office_format(office_format)
+    if normalized == "xlsx":
+        has_content = bool(_list_or_empty(raw.get("sheets")))
+    elif normalized == "pptx":
+        has_content = bool(_list_or_empty(raw.get("slides")))
+    else:
+        has_content = bool(
+            str(raw.get("body") or "").strip()
+            or _list_or_empty(raw.get("tables"))
+        )
+    if not has_content:
+        return True
+
+    structured_content = any(
+        _list_or_empty(raw.get(key))
+        for key in ("tables", "sheets", "slides")
+    )
+    response_text = " ".join(
+        str(raw.get(key) or "").strip()
+        for key in ("title", "body")
+    )
+    if structured_content or len(response_text) > 500:
+        return False
+    return bool(
+        re.search(
+            r"(?:请|需要).{0,12}(?:提供|补充|告诉我).{0,24}(?:信息|详情|内容|要求)"
+            r"|\b(?:please\s+(?:provide|share|describe)|need\s+more\s+(?:information|details))\b",
+            response_text,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
 def normalize_content_payload(
     raw: dict[str, Any],
     *,
@@ -736,17 +807,46 @@ def generate_office_content(
     )
     if use_reins and not brain_disabled:
         try:
-            raw = _call_reins_json(
-                build_office_content_prompt(
-                    user_prompt=prompt,
-                    office_format=normalized,
-                    title=title,
-                    language=language,
-                    presentation_options=presentation_options,
-                    skill_id=skill_id,
-                ),
-                timeout=timeout,
+            content_prompt = build_office_content_prompt(
+                user_prompt=prompt,
+                office_format=normalized,
+                title=title,
+                language=language,
+                presentation_options=presentation_options,
+                skill_id=skill_id,
             )
+            try:
+                raw = _call_reins_json(content_prompt, timeout=timeout)
+            except OfficeContentResponseError:
+                if not skill_id:
+                    raise
+                raw = _call_reins_json(
+                    build_office_content_retry_prompt(
+                        user_prompt=prompt,
+                        office_format=normalized,
+                        title=title,
+                        language=language,
+                        presentation_options=presentation_options,
+                        skill_id=skill_id,
+                    ),
+                    timeout=timeout,
+                )
+            else:
+                if skill_id and _fixed_skill_payload_needs_retry(
+                    raw,
+                    office_format=normalized,
+                ):
+                    raw = _call_reins_json(
+                        build_office_content_retry_prompt(
+                            user_prompt=prompt,
+                            office_format=normalized,
+                            title=title,
+                            language=language,
+                            presentation_options=presentation_options,
+                            skill_id=skill_id,
+                        ),
+                        timeout=timeout,
+                    )
             return _apply_presentation_options(
                 normalize_content_payload(
                     raw,
