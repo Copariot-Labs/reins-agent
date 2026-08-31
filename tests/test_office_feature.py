@@ -17,6 +17,7 @@ from reins.features.office.intent import classify_office_followup
 from reins.features.office.content_writer import (
     OfficeContentError,
     OfficeContentResponseError,
+    OfficeContentTimeoutError,
     build_office_content_prompt,
     generate_office_content,
 )
@@ -138,6 +139,48 @@ def test_fixed_workflow_is_injected_as_a_content_contract():
     assert "Never answer with a question" in prompt
     assert "Missing names, dates, locations" in prompt
     assert 'When Language is "zh", use natural Simplified Chinese' in prompt
+
+
+def test_office_content_uses_the_configured_reins_model_without_a_nested_cli(monkeypatch):
+    captured = {}
+
+    def call_model(messages, *, timeout):
+        captured["messages"] = messages
+        captured["timeout"] = timeout
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content='{"title":"阳光社区工作计划","office_format":"docx","body":"正文"}'
+                    )
+                )
+            ]
+        )
+
+    monkeypatch.setattr(office_content_writer, "_call_office_content_model", call_model)
+
+    payload = office_content_writer.call_reins_json("生成社区工作计划", timeout=37)
+
+    assert payload["title"] == "阳光社区工作计划"
+    assert captured["timeout"] == 37
+    assert captured["messages"][0]["role"] == "system"
+    assert captured["messages"][1] == {"role": "user", "content": "生成社区工作计划"}
+
+
+def test_office_content_timeout_never_exposes_the_prompt_or_command(monkeypatch):
+    secret_prompt = "生成阳光社区工作计划并包含内部敏感内容"
+
+    def timeout(_messages, *, timeout):
+        command = ["python", "-m", "reins.main", "-z", secret_prompt]
+        raise TimeoutError(f"Command {command!r} timed out")
+
+    monkeypatch.setattr(office_content_writer, "_call_office_content_model", timeout)
+
+    with pytest.raises(OfficeContentTimeoutError) as captured:
+        office_content_writer.call_reins_json(secret_prompt, timeout=300)
+
+    assert str(captured.value) == "Reins content planning timed out after 300 seconds."
+    assert secret_prompt not in str(captured.value)
 
 
 def test_fixed_skill_retries_once_when_reins_returns_unstructured_text(monkeypatch):

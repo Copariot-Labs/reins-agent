@@ -4,7 +4,6 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +29,17 @@ class OfficeContentError(RuntimeError):
 
 class OfficeContentResponseError(OfficeContentError):
     """Raised when Reins answered, but the answer is not usable JSON."""
+
+
+class OfficeContentTimeoutError(OfficeContentError):
+    """Raised when Reins did not finish Office content planning in time."""
+
+
+DEFAULT_OFFICE_CONTENT_TIMEOUT_SECONDS = 300
+_DEFAULT_OFFICE_MAX_OUTPUT_TOKENS = 8_000
+_SECRET_RE = re.compile(
+    r"(?i)\b(api[_-]?key|authorization|bearer|token|secret)(\s*[:=]?\s*)([^\s,;]+)"
+)
 
 
 def _strip_json_fence(value: str) -> str:
@@ -107,10 +117,9 @@ class ReinsInvocation:
 
 
 def _resolve_reins_invocation() -> ReinsInvocation | None:
-    # The packaged desktop server exposes its private Python explicitly. Use it
-    # for nested brain turns instead of recursively launching reins-runtime.exe.
-    # The direct path avoids Windows process/stdio and Unicode argument issues
-    # while still running the same Reins CLI and model configuration.
+    # Keep the packaged runtime location available to Office diagnostics. The
+    # content planner itself calls the configured model in-process and does not
+    # recursively launch this command.
     service_python = os.environ.get("REINS_SERVICE_PYTHON", "").strip()
     if service_python and Path(service_python).is_file():
         return ReinsInvocation(command=[service_python, "-m", "reins.main"])
@@ -411,41 +420,108 @@ JSON response retry:
 """.strip()
 
 
-def _call_reins_json(prompt: str, *, timeout: int) -> dict[str, Any]:
-    invocation = _resolve_reins_invocation()
-    if not invocation:
-        raise OfficeContentError("Could not find the Reins CLI for content generation.")
+def _office_max_output_tokens() -> int:
+    try:
+        configured = int(os.environ.get("REINS_OFFICE_MAX_OUTPUT_TOKENS", ""))
+    except (TypeError, ValueError):
+        configured = _DEFAULT_OFFICE_MAX_OUTPUT_TOKENS
+    return min(12_000, max(2_000, configured))
 
-    command = [*invocation.command, "-z", prompt]
-    env = os.environ.copy()
-    if invocation.python_path:
-        current = env.get("PYTHONPATH", "")
-        env["PYTHONPATH"] = os.pathsep.join(
-            [str(invocation.python_path), current] if current else [str(invocation.python_path)]
-        )
 
-    completed = subprocess.run(
-        command,
-        cwd=str(invocation.cwd) if invocation.cwd else None,
-        env=env,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=timeout,
-        check=False,
+def _response_content(response: Any) -> str:
+    choices = getattr(response, "choices", None)
+    if not choices and isinstance(response, dict):
+        choices = response.get("choices")
+    if not choices:
+        return ""
+    first = choices[0]
+    message = getattr(first, "message", None)
+    if message is None and isinstance(first, dict):
+        message = first.get("message")
+    content = getattr(message, "content", None)
+    if content is None and isinstance(message, dict):
+        content = message.get("content")
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict) and isinstance(item.get("text"), str):
+                parts.append(item["text"])
+            elif isinstance(item, str):
+                parts.append(item)
+        return "\n".join(parts).strip()
+    return str(content or "").strip()
+
+
+def _call_office_content_model(
+    messages: list[dict[str, str]],
+    *,
+    timeout: int,
+) -> Any:
+    # The Office worker already runs inside the bootstrapped Reins runtime.
+    # Calling the configured model here avoids starting a second full agent
+    # process, which is especially expensive in the packaged Windows build.
+    from agent.auxiliary_client import call_llm
+
+    return call_llm(
+        task="office_content",
+        messages=messages,
+        temperature=0,
+        max_tokens=_office_max_output_tokens(),
+        timeout=float(timeout),
     )
 
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip()
-        raise OfficeContentError(detail or f"Reins exited {completed.returncode}.")
 
-    return _parse_json_from_text(completed.stdout)
+def _is_timeout_error(exc: Exception) -> bool:
+    name = type(exc).__name__.lower()
+    detail = str(exc).lower()
+    return "timeout" in name or "timed out" in detail or "time out" in detail
 
 
-def call_reins_json(prompt: str, *, timeout: int = 180) -> dict[str, Any]:
-    """Run a one-shot Reins turn and require a JSON object response."""
+def _safe_content_error(exc: Exception) -> str:
+    detail = str(exc or "").strip()
+    if not detail:
+        return type(exc).__name__
+    if "Command '[" in detail or "Command \"[" in detail:
+        return "The Reins content planning process did not complete."
+    detail = _SECRET_RE.sub(r"\1\2[redacted]", detail)
+    detail = re.sub(r"\s+", " ", detail).strip()
+    return detail[:700]
+
+
+def _call_reins_json(prompt: str, *, timeout: int) -> dict[str, Any]:
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are the Reins Office content planner. Follow the selected fixed skill, "
+                "produce complete usable content, and return exactly one JSON object with no markdown."
+            ),
+        },
+        {"role": "user", "content": prompt},
+    ]
+    try:
+        response = _call_office_content_model(messages, timeout=timeout)
+    except Exception as exc:
+        if _is_timeout_error(exc):
+            raise OfficeContentTimeoutError(
+                f"Reins content planning timed out after {timeout} seconds."
+            ) from exc
+        raise OfficeContentError(_safe_content_error(exc)) from exc
+
+    content = _response_content(response)
+    if not content:
+        raise OfficeContentResponseError("Reins returned an empty Office content response.")
+    return _parse_json_from_text(content)
+
+
+def call_reins_json(
+    prompt: str,
+    *,
+    timeout: int = DEFAULT_OFFICE_CONTENT_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    """Call the configured Reins model and require a JSON object response."""
     return _call_reins_json(prompt, timeout=timeout)
 
 
@@ -792,7 +868,7 @@ def generate_office_content(
     office_format: str,
     title: str | None = None,
     language: str = "zh",
-    timeout: int = 180,
+    timeout: int = DEFAULT_OFFICE_CONTENT_TIMEOUT_SECONDS,
     use_reins: bool = True,
     presentation_options: dict[str, Any] | None = None,
     skill_id: str | None = None,
@@ -864,7 +940,7 @@ def generate_office_content(
                 fallback["generator"] = "fallback"
                 fallback["generator_error"] = {
                     "error_type": type(exc).__name__,
-                    "error": str(exc),
+                    "error": _safe_content_error(exc),
                 }
                 return _apply_presentation_options(
                     normalize_content_payload(
@@ -877,10 +953,11 @@ def generate_office_content(
                     office_format=normalized,
                     presentation_options=presentation_options,
                 )
+            if isinstance(exc, OfficeContentError):
+                raise
             raise OfficeContentError(
                 "Reins failed to generate Office content. "
-                "Office creation now requires Reins by default; use --no-reins only for explicit fallback testing. "
-                f"{type(exc).__name__}: {exc}"
+                f"{type(exc).__name__}: {_safe_content_error(exc)}"
             ) from exc
 
     return _apply_presentation_options(

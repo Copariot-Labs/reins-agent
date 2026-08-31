@@ -31,8 +31,8 @@ import {
   type OfficeStatus,
 } from '@/api/reins/office'
 import { downloadFile } from '@/api/reins/download'
+import { OFFICE_FORMAT_NAV_ITEMS, officeFormatFromQuery } from '@/shared/office-formats'
 
-const OFFICE_FORMATS: OfficeFormat[] = ['docx', 'xlsx', 'pptx']
 const PRESENTATION_STYLES: OfficePresentationStyle[] = ['auto', 'executive', 'modern', 'bold', 'minimal']
 const PRESENTATION_AUDIENCES: OfficePresentationAudience[] = ['general', 'executive', 'client', 'team']
 const PRESENTATION_DETAILS: OfficePresentationDetail[] = ['concise', 'balanced', 'detailed']
@@ -73,9 +73,6 @@ const isChinese = computed(() => locale.value.toLowerCase().startsWith('zh'))
 const copy = computed(() => isChinese.value
   ? {
       title: 'Office',
-      word: 'Word 文档',
-      excel: 'Excel 表格',
-      ppt: 'PPT 演示',
       fixedWorkflows: '文档技能',
       recentFiles: '最近文件',
       noFiles: '暂无此类型文件',
@@ -133,9 +130,6 @@ const copy = computed(() => isChinese.value
     }
   : {
       title: 'Office',
-      word: 'Word documents',
-      excel: 'Excel workbooks',
-      ppt: 'PPT presentations',
       fixedWorkflows: 'Document skills',
       recentFiles: 'Recent files',
       noFiles: 'No files of this type yet',
@@ -192,11 +186,11 @@ const copy = computed(() => isChinese.value
       resultMissing: 'The operation finished without returning a document.',
     })
 
-const formatOptions = computed(() => [
-  { value: 'docx' as const, label: copy.value.word, mark: 'W' },
-  { value: 'xlsx' as const, label: copy.value.excel, mark: 'X' },
-  { value: 'pptx' as const, label: copy.value.ppt, mark: 'P' },
-])
+const formatOptions = computed(() => OFFICE_FORMAT_NAV_ITEMS.map(item => ({
+  value: item.value,
+  label: isChinese.value ? item.labelZh : item.labelEn,
+  mark: item.mark,
+})))
 
 const languageOptions = [
   { label: '中文', value: 'zh' },
@@ -282,10 +276,7 @@ function localizedSkillValue(skill: OfficeSkill | null, field: 'label' | 'descri
 }
 
 function queryFormat(value: unknown): OfficeFormat {
-  const first = Array.isArray(value) ? value[0] : value
-  return OFFICE_FORMATS.includes(String(first) as OfficeFormat)
-    ? String(first) as OfficeFormat
-    : 'docx'
+  return officeFormatFromQuery(value)
 }
 
 function applySkillDefaults(skill: OfficeSkill | null) {

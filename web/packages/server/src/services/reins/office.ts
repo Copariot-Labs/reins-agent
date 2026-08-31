@@ -123,6 +123,18 @@ export interface OfficeChatIntentDecision {
 
 const OFFICE_FORMATS = new Set<OfficeFormat>(['docx', 'xlsx', 'pptx'])
 const DEFAULT_TIMEOUT_MS = Number(process.env.REINS_OFFICE_WEB_TIMEOUT_MS || '') || 600_000
+const DEFAULT_CREATE_MODEL_TIMEOUT_SECONDS = Math.min(
+  Math.max(Number(process.env.REINS_OFFICE_CONTENT_TIMEOUT_SECONDS || '') || 300, 60),
+  480,
+)
+const DEFAULT_CREATE_WORKER_TIMEOUT_MS = Math.min(
+  Math.max(
+    Number(process.env.REINS_OFFICE_CREATE_WORKER_TIMEOUT_MS || '')
+      || Math.max((DEFAULT_CREATE_MODEL_TIMEOUT_SECONDS * 2 + 120) * 1000, 600_000),
+    180_000,
+  ),
+  1_200_000,
+)
 const DEFAULT_REVISION_MODEL_TIMEOUT_SECONDS = Math.min(
   Math.max(Number(process.env.REINS_OFFICE_REVISION_TIMEOUT_SECONDS || '') || 300, 30),
   900,
@@ -493,6 +505,8 @@ export async function createOfficeDocument(
     input.prompt,
     '--language',
     input.language,
+    '--timeout',
+    String(DEFAULT_CREATE_MODEL_TIMEOUT_SECONDS),
     '--json',
   ]
   if (onProgress) args.push('--progress')
@@ -507,7 +521,11 @@ export async function createOfficeDocument(
     )
   }
 
-  const payload = await runReinsOfficeJson(args, { onProgress, signal })
+  const payload = await runReinsOfficeJson(args, {
+    timeoutMs: DEFAULT_CREATE_WORKER_TIMEOUT_MS,
+    onProgress,
+    signal,
+  })
   if (payload.ok === false) {
     throw serviceError(String(payload.error || 'Office creation failed.'), 'worker_error')
   }
@@ -671,7 +689,11 @@ function appendOperationProgress(operation: OfficeOperationDto, progress: Office
 }
 
 function cleanTechnicalDetail(value: unknown): string {
-  const text = String(value || '')
+  const raw = String(value || '')
+  if (/TimeoutExpired:\s*Command\s*["']?\[/i.test(raw)) {
+    return 'Reins content planning timed out before returning a result.'
+  }
+  const text = raw
     .replace(/\u001b\[[0-9;]*m/g, '')
     .replace(/\s+/g, ' ')
     .trim()
@@ -685,18 +707,24 @@ export function friendlyOfficeOperationError(
 ): OfficeOperationErrorDto {
   const input = error as { code?: string, message?: string, workerErrorType?: string }
   const code = String(input?.code || 'worker_error')
+  const workerErrorType = String(input?.workerErrorType || '').toLowerCase()
   const detail = cleanTechnicalDetail(input?.message || error)
   const normalized = detail.toLowerCase()
 
-  if (code === 'worker_timeout' || normalized.includes('timed out')) {
+  if (
+    code === 'worker_timeout'
+    || workerErrorType.includes('timeout')
+    || normalized.includes('timed out')
+    || normalized.includes('timeout')
+  ) {
     return {
       code: 'timeout',
       title_zh: '处理时间过长',
       title_en: 'Office operation timed out',
       message_zh: kind === 'create' ? '文件未能在规定时间内完成生成。' : '文件未能在规定时间内完成修改。',
       message_en: `The document could not finish ${kind === 'create' ? 'generating' : 'revising'} within the time limit.`,
-      suggestion_zh: '请减少一次请求中的内容量，或稍后重试。原文件不会因超时而丢失。',
-      suggestion_en: 'Reduce the amount of content in one request or try again later. The original file is preserved.',
+      suggestion_zh: '请确认模型连接正常后重试。无需重复补充相同内容；生成期间可随时取消，原文件不会因超时而丢失。',
+      suggestion_en: 'Confirm the model connection and try again. You do not need to repeat the same details; generation can be cancelled at any time, and the original file is preserved.',
       technical_detail: detail,
       retryable: true,
     }

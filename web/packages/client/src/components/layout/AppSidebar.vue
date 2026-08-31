@@ -12,6 +12,7 @@ import RouteLinkItem from '@/components/common/RouteLinkItem.vue'
 import LanguageSwitch from './LanguageSwitch.vue'
 import ThemeSwitch from './ThemeSwitch.vue'
 import { formatTimestampMs } from '@/shared/session-display'
+import { OFFICE_FORMAT_NAV_ITEMS, officeFormatFromQuery } from '@/shared/office-formats'
 
 const { t, locale } = useI18n()
 // const message = useMessage()
@@ -28,10 +29,7 @@ const selectedKey = computed(() => {
   return String(route.name || '')
 })
 const officeMenuOpen = ref(selectedKey.value === 'hermes.office')
-const selectedOfficeType = computed(() => {
-  const value = Array.isArray(route.query.type) ? route.query.type[0] : route.query.type
-  return ['docx', 'xlsx', 'pptx'].includes(String(value)) ? String(value) : 'docx'
-})
+const selectedOfficeType = computed(() => officeFormatFromQuery(route.query.type))
 const isChinese = computed(() => locale.value.toLowerCase().startsWith('zh'))
 const copy = computed(() => isChinese.value
   ? {
@@ -56,6 +54,11 @@ const copy = computed(() => isChinese.value
       system: 'System',
       adminLogout: 'Exit administrator',
     })
+
+const officeTypeItems = computed(() => OFFICE_FORMAT_NAV_ITEMS.map(item => ({
+  ...item,
+  label: isChinese.value ? item.labelZh : item.labelEn,
+})))
 
 const recentSessions = computed(() => [...chatStore.sessions]
   .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0))
@@ -177,28 +180,14 @@ onMounted(async () => {
         </button>
         <div v-show="officeMenuOpen" class="office-subnav">
           <RouteLinkItem
+            v-for="item in officeTypeItems"
+            :key="item.value"
             class="office-subitem"
-            :active="selectedKey === 'hermes.office' && selectedOfficeType === 'docx'"
-            :to="{ name: 'hermes.office', query: { type: 'docx' } }"
+            :active="selectedKey === 'hermes.office' && selectedOfficeType === item.value"
+            :to="{ name: 'hermes.office', query: { type: item.value } }"
           >
-            <span class="office-type-mark word">W</span>
-            <span>Word 文档</span>
-          </RouteLinkItem>
-          <RouteLinkItem
-            class="office-subitem"
-            :active="selectedKey === 'hermes.office' && selectedOfficeType === 'xlsx'"
-            :to="{ name: 'hermes.office', query: { type: 'xlsx' } }"
-          >
-            <span class="office-type-mark excel">X</span>
-            <span>Excel 表格</span>
-          </RouteLinkItem>
-          <RouteLinkItem
-            class="office-subitem"
-            :active="selectedKey === 'hermes.office' && selectedOfficeType === 'pptx'"
-            :to="{ name: 'hermes.office', query: { type: 'pptx' } }"
-          >
-            <span class="office-type-mark ppt">P</span>
-            <span>PPT 演示</span>
+            <span class="office-type-mark" :class="item.tone">{{ item.mark }}</span>
+            <span>{{ item.label }}</span>
           </RouteLinkItem>
         </div>
       </div>

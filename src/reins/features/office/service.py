@@ -11,7 +11,11 @@ import time
 from typing import Any, Callable
 from uuid import uuid4
 
-from reins.features.office.content_writer import generate_office_content, reins_status
+from reins.features.office.content_writer import (
+    DEFAULT_OFFICE_CONTENT_TIMEOUT_SECONDS,
+    generate_office_content,
+    reins_status,
+)
 from reins.features.office.editor import (
     OfficePlanner,
     OfficeRevisionError,
@@ -210,7 +214,7 @@ def create_office_document(
     office_format: str = "docx",
     title: str | None = None,
     language: str = "zh",
-    timeout: int = 180,
+    timeout: int = DEFAULT_OFFICE_CONTENT_TIMEOUT_SECONDS,
     use_reins: bool = True,
     presentation_options: dict[str, Any] | None = None,
     skill_id: str | None = None,

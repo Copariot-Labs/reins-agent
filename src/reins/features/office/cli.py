@@ -5,7 +5,10 @@ import json
 import sys
 from typing import Sequence
 
-from reins.features.office.content_writer import generate_office_content
+from reins.features.office.content_writer import (
+    DEFAULT_OFFICE_CONTENT_TIMEOUT_SECONDS,
+    generate_office_content,
+)
 from reins.features.office.intent import classify_office_followup
 from reins.features.office.service import (
     OfficeServiceError,
@@ -83,7 +86,11 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--title", default="")
     create.add_argument("--language", default="zh")
     create.add_argument("--skill", default="", dest="skill_id")
-    create.add_argument("--timeout", type=int, default=180)
+    create.add_argument(
+        "--timeout",
+        type=int,
+        default=DEFAULT_OFFICE_CONTENT_TIMEOUT_SECONDS,
+    )
     create.add_argument("--no-reins", action="store_true", help="Use deterministic fallback content.")
     create.add_argument("--no-hermes", action="store_true", dest="no_reins", help=argparse.SUPPRESS)
     create.add_argument("--print-content", action="store_true")
@@ -105,7 +112,11 @@ def build_parser() -> argparse.ArgumentParser:
     content.add_argument("--title", default="")
     content.add_argument("--language", default="zh")
     content.add_argument("--skill", default="", dest="skill_id")
-    content.add_argument("--timeout", type=int, default=180)
+    content.add_argument(
+        "--timeout",
+        type=int,
+        default=DEFAULT_OFFICE_CONTENT_TIMEOUT_SECONDS,
+    )
     content.add_argument("--no-reins", action="store_true")
     content.add_argument("--no-hermes", action="store_true", dest="no_reins", help=argparse.SUPPRESS)
     content.add_argument("--json", action="store_true", dest="json_output")

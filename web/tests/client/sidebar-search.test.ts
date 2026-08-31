@@ -187,6 +187,34 @@ describe('AppSidebar search entry', () => {
     expect(openSessionSearchMock).toHaveBeenCalledTimes(1)
   })
 
+  it('shows Word, Excel, and PPT as the direct Office work categories', () => {
+    mockRoute.name = 'hermes.office'
+    mockRoute.query = { type: 'xlsx' }
+
+    const wrapper = mount(AppSidebar, {
+      global: {
+        stubs: {
+          LanguageSwitch: true,
+          ThemeSwitch: true,
+        },
+      },
+    })
+
+    expect(wrapper.get('.office-parent').attributes('aria-expanded')).toBe('true')
+
+    const categories = wrapper.findAll('.office-subitem')
+    expect(categories.map(item => item.findAll('span').at(-1)?.text())).toEqual([
+      'Word documents',
+      'Excel workbooks',
+      'PPT presentations',
+    ])
+    expect(categories.map(item => item.classes().includes('active'))).toEqual([
+      false,
+      true,
+      false,
+    ])
+  })
+
   it('collapses to the compact icon rail', async () => {
     mockAppStore.sidebarCollapsed = true
     const wrapper = mount(AppSidebar, {

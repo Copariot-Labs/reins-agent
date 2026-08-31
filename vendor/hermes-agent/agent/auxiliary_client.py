@@ -6020,18 +6020,16 @@ def call_llm(
         except Exception as transient_err:
             if not _is_transient_transport_error(transient_err):
                 raise
-            # Compression is on the critical preflight path: a user cannot
-            # continue or resume an oversized session until it compacts. A
+            # Compression and Office generation are user-blocking paths. A
             # same-provider retry on a timeout means another full ``timeout``-
             # long wall-clock block before the except-chain below can fall
-            # back — doubling the user-visible stall (issue #54465). Skip the
-            # same-provider retry for compression on a full-budget timeout and
-            # fall straight through to provider/model fallback; fast blips (a
-            # streaming-close or a 5xx) still retry, since those are cheap.
-            if task == "compression" and _is_timeout_error(transient_err):
+            # back. Skip that duplicate wait and go directly to provider/model
+            # fallback; fast blips (a streaming-close or a 5xx) still retry.
+            if task in {"compression", "office_content"} and _is_timeout_error(transient_err):
                 logger.info(
-                    "Auxiliary compression: timeout on the critical path; "
+                    "Auxiliary %s: timeout on the critical path; "
                     "skipping same-provider retry and falling back: %s",
+                    task,
                     transient_err,
                 )
                 raise

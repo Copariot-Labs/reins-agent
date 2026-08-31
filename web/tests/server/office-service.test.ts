@@ -79,6 +79,23 @@ describe('Reins Office service', () => {
     expect(error.suggestion_zh).toContain('原文件不会因超时而丢失')
   })
 
+  it('recognizes Python timeout types and hides nested command prompts', () => {
+    const secretPrompt = '生成阳光社区工作计划并包含内部敏感内容'
+    const error = friendlyOfficeOperationError(
+      Object.assign(
+        new Error(`TimeoutExpired: Command ['python', '-m', 'reins.main', '-z', '${secretPrompt}']`),
+        { code: 'worker_error', workerErrorType: 'OfficeContentTimeoutError' },
+      ),
+      'create',
+      'content_generation',
+    )
+
+    expect(error.code).toBe('timeout')
+    expect(error.technical_detail).toBe('Reins content planning timed out before returning a result.')
+    expect(error.technical_detail).not.toContain(secretPrompt)
+    expect(error.suggestion_zh).toContain('无需重复补充相同内容')
+  })
+
   it('explains how to release a Windows Office file lock', () => {
     const error = friendlyOfficeOperationError(
       new Error('[WinError 32] 另一个程序正在使用此文件，进程无法访问'),
