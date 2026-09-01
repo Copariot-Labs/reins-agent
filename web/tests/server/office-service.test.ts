@@ -109,6 +109,18 @@ describe('Reins Office service', () => {
     expect(error.suggestion_en).toContain('File Explorer preview pane')
   })
 
+  it('identifies a Windows OfficeCLI creation path handoff failure', () => {
+    const error = friendlyOfficeOperationError(
+      new Error("Error: Could not find file 'C:\\Users\\ss\\Documents\\Reins Workspace\\Word\\玫瑰湾社区工作计划.docx'."),
+      'create',
+      'officecli_prepare',
+    )
+
+    expect(error.code).toBe('workspace_path_failed')
+    expect(error.title_zh).toContain('Windows 文件路径')
+    expect(error.suggestion_zh).toContain('临时路径')
+  })
+
   it('asks for clarification only for usable planning failures', () => {
     const invalidStructure = friendlyOfficeOperationError(
       new Error('Reins did not return a valid structured Word revision'),

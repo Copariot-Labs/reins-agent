@@ -580,6 +580,34 @@ def test_renderer_applies_reins_word_design(tmp_path):
     assert "text=Review services" in serialized
 
 
+def test_renderer_stages_chinese_workspace_filename_through_ascii_officecli_path(tmp_path):
+    client = FakeOfficeCliClient()
+    output = tmp_path / "玫瑰湾社区2026年第四季度工作计划.docx"
+
+    result = render_office_content(
+        office_format="docx",
+        content={
+            "title": "玫瑰湾社区2026年第四季度工作计划",
+            "body": "一、总体目标\n做好社区第四季度重点工作。",
+            "tables": [],
+        },
+        output_path=output,
+        client=client,
+    )
+
+    officecli_path = Path(client.commands[0][1])
+    assert result == output
+    assert output.is_file()
+    assert officecli_path != output
+    assert officecli_path.name.isascii()
+    assert officecli_path.suffix == ".docx"
+    assert not officecli_path.exists()
+    assert all(
+        len(command) < 2 or Path(command[1]) == officecli_path
+        for command in client.commands
+    )
+
+
 def test_renderer_emits_designed_officecli_xlsx_commands(tmp_path):
     client = FakeOfficeCliClient()
     output = tmp_path / "tracker.xlsx"

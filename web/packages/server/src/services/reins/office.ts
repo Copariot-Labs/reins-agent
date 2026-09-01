@@ -801,6 +801,28 @@ export function friendlyOfficeOperationError(
     }
   }
 
+  if (
+    kind === 'create'
+    && stage.includes('officecli_prepare')
+    && (
+      normalized.includes('could not find file')
+      || normalized.includes('file not found')
+      || normalized.includes('path not found')
+    )
+  ) {
+    return {
+      code: 'workspace_path_failed',
+      title_zh: 'Windows 文件路径处理失败',
+      title_en: 'Windows file path preparation failed',
+      message_zh: '内容已经准备完成，但 Reins Office 未能在工作区准备目标文件。',
+      message_en: 'The content was prepared, but Reins Office could not prepare the destination file in the workspace.',
+      suggestion_zh: '请重新生成文件。Reins 会先使用兼容的临时路径生成并验证文件，再保存为中文文件名。',
+      suggestion_en: 'Generate the file again. Reins will create and validate it through a compatible temporary path before publishing the Chinese filename.',
+      technical_detail: detail,
+      retryable: true,
+    }
+  }
+
   if (normalized.includes('not found') || normalized.includes('no longer exists')) {
     return {
       code: 'document_not_found',

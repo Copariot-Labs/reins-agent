@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from reins.features.office.officecli_client import OfficeCliClient
 from reins.features.office.schemas import (
@@ -103,6 +104,28 @@ def _office_issue_count(output: str) -> int:
 
     match = re.search(r"(?:found\s+)?(\d+)\s+issues?", text, flags=re.IGNORECASE)
     return int(match.group(1)) if match else 0
+
+
+def _officecli_working_path(destination: Path) -> Path:
+    """Keep non-ASCII user filenames away from OfficeCLI child handoffs.
+
+    OfficeCLI supports Unicode document content, but its Windows resident
+    process can fail to reopen a newly-created file when the command-line path
+    itself contains CJK characters. Work under an ASCII sibling name and let
+    Python publish the validated file to the requested workspace filename.
+    """
+    if destination.name.isascii():
+        return destination
+    return destination.with_name(
+        f".reins-office-{uuid4().hex}{destination.suffix.lower()}"
+    )
+
+
+def _discard_working_file(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -3485,79 +3508,107 @@ def render_office_content(
     normalized = normalize_office_format(office_format)
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    working_path = _officecli_working_path(path)
     client = client or OfficeCliClient()
 
-    _report_render_progress(
-        progress,
-        "officecli_prepare",
-        56,
-        "Reins Office 正在创建文件容器",
-        "Reins Office is preparing the file container",
-    )
-    _run_mutation(client, ["create", path], timeout=60)
-    _run_mutation(client, ["open", path], timeout=60)
-
     try:
         _report_render_progress(
             progress,
-            "officecli_render",
-            64,
-            "Reins Office 正在写入内容和版式",
-            "Reins Office is writing content and layout",
+            "officecli_prepare",
+            56,
+            "Reins Office 正在创建文件容器",
+            "Reins Office is preparing the file container",
         )
-        if normalized == "xlsx":
-            _render_xlsx(content, path, client)
-        elif normalized == "pptx":
-            _render_pptx(content, path, client)
-        else:
-            _render_docx(content, path, client)
-    finally:
+        _run_mutation(client, ["create", working_path], timeout=60)
+        if not working_path.is_file():
+            raise OfficeRenderError(
+                "Reins Office did not create the OfficeCLI file container."
+            )
+        _run_mutation(client, ["open", working_path], timeout=60)
+
         try:
-            _run_mutation(client, ["close", path], timeout=60)
-        except Exception:
-            pass
-
-    try:
-        _report_render_progress(
-            progress,
-            "validating",
-            90,
-            "正在验证文件结构和格式",
-            "Validating file structure and formatting",
-        )
-        client.run(
-            ["validate", path],
-            timeout=60,
-            allowed_returncodes=(0, 2),
-            env_overrides=_NO_AUTO_RESIDENT_ENV,
-        )
-        if normalized == "pptx":
             _report_render_progress(
                 progress,
-                "layout_check",
-                94,
-                "正在检查幻灯片布局问题",
-                "Checking presentation layout issues",
+                "officecli_render",
+                64,
+                "Reins Office 正在写入内容和版式",
+                "Reins Office is writing content and layout",
             )
-            issues = client.run(
-                ["view", path, "issues", "--json"],
-                timeout=90,
+            if normalized == "xlsx":
+                _render_xlsx(content, working_path, client)
+            elif normalized == "pptx":
+                _render_pptx(content, working_path, client)
+            else:
+                _render_docx(content, working_path, client)
+        finally:
+            try:
+                _run_mutation(client, ["close", working_path], timeout=60)
+            except Exception:
+                pass
+
+        try:
+            _report_render_progress(
+                progress,
+                "validating",
+                90,
+                "正在验证文件结构和格式",
+                "Validating file structure and formatting",
+            )
+            client.run(
+                ["validate", working_path],
+                timeout=60,
                 allowed_returncodes=(0, 2),
                 env_overrides=_NO_AUTO_RESIDENT_ENV,
             )
-            issue_count = _office_issue_count(issues.stdout or issues.stderr)
-            if issue_count:
-                raise OfficeRenderError(
-                    f"Reins Office found {issue_count} presentation layout issue(s). "
-                    "Shorten the requested slide copy or revise the presentation structure."
+            if normalized == "pptx":
+                _report_render_progress(
+                    progress,
+                    "layout_check",
+                    94,
+                    "正在检查幻灯片布局问题",
+                    "Checking presentation layout issues",
                 )
-    finally:
-        # Read-only OfficeCLI checks used to auto-start another resident after
-        # the editing session closed, leaving the generated file locked on Windows.
-        try:
-            _run_mutation(client, ["close", path], timeout=60)
-        except Exception:
-            pass
+                issues = client.run(
+                    ["view", working_path, "issues", "--json"],
+                    timeout=90,
+                    allowed_returncodes=(0, 2),
+                    env_overrides=_NO_AUTO_RESIDENT_ENV,
+                )
+                issue_count = _office_issue_count(issues.stdout or issues.stderr)
+                if issue_count:
+                    raise OfficeRenderError(
+                        f"Reins Office found {issue_count} presentation layout issue(s). "
+                        "Shorten the requested slide copy or revise the presentation structure."
+                    )
+        finally:
+            # Read-only OfficeCLI checks used to auto-start another resident after
+            # the editing session closed, leaving the generated file locked on Windows.
+            try:
+                _run_mutation(client, ["close", working_path], timeout=60)
+            except Exception:
+                pass
+
+        if working_path != path:
+            if path.exists():
+                raise OfficeRenderError(
+                    f"The destination Office file already exists: {path.name}"
+                )
+            try:
+                working_path.replace(path)
+            except OSError as exc:
+                raise OfficeRenderError(
+                    "Reins Office created and validated the file, but Windows could not "
+                    f"publish it to the requested workspace filename: {path.name}"
+                ) from exc
+    except Exception:
+        if working_path != path:
+            try:
+                _run_mutation(client, ["close", working_path], timeout=15)
+            except Exception:
+                pass
+            _discard_working_file(working_path)
+        raise
+
     _report_render_progress(
         progress,
         "file_ready",
