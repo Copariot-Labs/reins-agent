@@ -908,6 +908,19 @@ export function friendlyOfficeOperationError(
     || normalized.includes('officecli')
     || normalized.includes('layout issue')
   ) {
+    if (kind === 'revise') {
+      return {
+        code: 'officecli_failed',
+        title_zh: '文件修改未完成',
+        title_en: 'Document revision did not complete',
+        message_zh: '本次修改方案与原文件结构或格式不兼容，原文件已完整保留。',
+        message_en: 'The revision plan was not compatible with the existing file structure or formatting. The original file was preserved.',
+        suggestion_zh: '请直接重试相同要求。Reins 会重新读取当前文件的内容和样式，再通过 OfficeCLI 修改同一个文件。',
+        suggestion_en: 'Retry the same request. Reins will reread the current content and styles, then revise the same file through OfficeCLI.',
+        technical_detail: detail,
+        retryable: true,
+      }
+    }
     return {
       code: 'officecli_failed',
       title_zh: '文件生成或验证失败',

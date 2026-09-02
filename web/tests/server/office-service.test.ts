@@ -88,6 +88,20 @@ describe('Reins Office service', () => {
     expect(error.retryable).toBe(true)
   })
 
+  it('explains repeated revision compatibility failures without blaming content length', () => {
+    const error = friendlyOfficeOperationError(
+      new Error('OfficeCliCommandError: unsupported paragraph property'),
+      'revise',
+      'officecli_apply',
+    )
+
+    expect(error.code).toBe('officecli_failed')
+    expect(error.title_zh).toBe('文件修改未完成')
+    expect(error.message_zh).toContain('原文件已完整保留')
+    expect(error.suggestion_zh).toContain('重试相同要求')
+    expect(error.suggestion_zh).not.toContain('减少单页文字')
+  })
+
   it('explains that the original file is preserved after revision timeouts', () => {
     const error = friendlyOfficeOperationError(
       Object.assign(new Error('Office worker timed out'), { code: 'worker_timeout' }),

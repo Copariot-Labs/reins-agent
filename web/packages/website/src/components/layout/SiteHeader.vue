@@ -31,7 +31,7 @@ function goHome() {
     <div class="header-inner">
       <div class="header-left" @click="goHome">
         <img src="/logo.png" alt="Hermes" class="logo-icon" />
-        <span class="logo-text">Hermes Web UI</span>
+        <span class="logo-text">Reins</span>
       </div>
 
       <nav class="header-nav">

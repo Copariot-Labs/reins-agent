@@ -26,6 +26,7 @@ from reins.features.office.editor import (
     canonicalize_presentation_revision_inspection,
     canonicalize_revision_plan_paths,
     canonicalize_word_revision_inspection,
+    inherit_word_revision_formatting,
     compact_revision_result,
     inspect_office_document,
     plan_office_revision,
@@ -862,6 +863,8 @@ def revise_office_document(
                 )
                 plan = plan_office_revision(prompt, timeout, planner=planner)
                 plan = canonicalize_revision_plan_paths(plan, revision_path_aliases)
+                if record.kind == "docx":
+                    plan = inherit_word_revision_formatting(plan, inspection)
                 _report_progress(
                     progress, "officecli_apply", 62,
                     "OfficeCLI 正在修改原文件并验证结果", "OfficeCLI is revising the original file and validating it",

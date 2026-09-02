@@ -51,6 +51,23 @@ _EXCEL_SHEET_HEADER_PATTERN = re.compile(r"^=== Sheet: (?P<name>.+?) ===$")
 _EXCEL_CELL_LINE_PATTERN = re.compile(
     r"^(?P<indent>\s*)(?P<cell>[A-Za-z]{1,3}\d+)(?P<content>:.*)$"
 )
+_WORD_FORMATTING_FIELDS = (
+    "styleId,styleName,font,size,color,bold,italic,align,spaceBefore,spaceAfter,"
+    "lineSpacing,firstLineIndent,listStyle,numId,numLevel"
+)
+_WORD_INHERITED_FORMAT_KEYS = (
+    "style",
+    "font",
+    "size",
+    "color",
+    "bold",
+    "italic",
+    "align",
+    "spaceBefore",
+    "spaceAfter",
+    "lineSpacing",
+    "firstLineIndent",
+)
 
 
 def _run_text(
@@ -91,7 +108,21 @@ def inspect_office_document(
             allow_failure=True,
         ),
     }
-    if record.kind == "pptx":
+    if record.kind == "docx":
+        inspection["formatting"] = _run_text(
+            client,
+            [
+                "query",
+                path,
+                "paragraph",
+                "--compact",
+                "--fields",
+                _WORD_FORMATTING_FIELDS,
+            ],
+            timeout=90,
+            allow_failure=True,
+        )
+    elif record.kind == "pptx":
         elements = _run_text(
             client,
             [
@@ -175,6 +206,138 @@ def canonicalize_word_revision_inspection(
         for key, value in inspection.items()
     }
     return canonical, aliases
+
+
+def _word_formatting_rows(formatting: str) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for line in formatting.splitlines():
+        columns = line.split("\t")
+        if not columns or not columns[0].startswith("/"):
+            continue
+        row = {"path": columns[0]}
+        for column in columns[3:]:
+            key, separator, value = column.partition("=")
+            if separator:
+                row[key.strip()] = value.strip()
+        rows.append(row)
+    return rows
+
+
+def inherit_word_revision_formatting(
+    plan: dict[str, Any],
+    inspection: dict[str, str],
+) -> dict[str, Any]:
+    """Fill missing paragraph formatting from the document's own best exemplar."""
+    rows = _word_formatting_rows(inspection.get("formatting") or "")
+    if not rows:
+        return plan
+    rows_by_path = {row["path"].casefold(): row for row in rows}
+
+    def value_for(row: dict[str, str], key: str) -> str:
+        if key == "style":
+            return row.get("styleId") or ""
+        return row.get(key) or ""
+
+    def row_score(row: dict[str, str]) -> int:
+        return sum(bool(value_for(row, key)) for key in _WORD_INHERITED_FORMAT_KEYS)
+
+    def exemplar_for(properties: dict[str, str]) -> dict[str, str] | None:
+        requested_style = properties.get("style", "").casefold()
+        requested_list = properties.get("liststyle", "").casefold()
+        candidates = rows
+        if requested_style:
+            if requested_style == "normal":
+                candidates = [
+                    row
+                    for row in rows
+                    if (row.get("styleId") or "").casefold() in {"", "normal"}
+                ]
+            else:
+                candidates = [
+                    row
+                    for row in rows
+                    if requested_style
+                    in {
+                        (row.get("styleId") or "").casefold(),
+                        (row.get("styleName") or "").casefold(),
+                    }
+                ]
+        elif requested_list:
+            candidates = [
+                row
+                for row in rows
+                if (row.get("listStyle") or "").casefold() == requested_list
+            ]
+        else:
+            candidates = [
+                row
+                for row in rows
+                if not (row.get("listStyle") or "").strip()
+                and (row.get("styleId") or "").casefold() in {"", "normal"}
+            ]
+        return max(candidates, key=row_score, default=None)
+
+    commands: list[list[str]] = []
+    for command in plan.get("commands") or []:
+        rewritten = list(command)
+        is_paragraph_add = (
+            len(rewritten) >= 4
+            and rewritten[0] == "add"
+            and rewritten[1].casefold() == "/body"
+            and "--type" in rewritten
+        )
+        if is_paragraph_add:
+            type_index = rewritten.index("--type")
+            element_type = (
+                rewritten[type_index + 1].casefold()
+                if type_index + 1 < len(rewritten)
+                else ""
+            )
+            is_paragraph_add = element_type in {"paragraph", "p"}
+
+        target_row = (
+            rows_by_path.get(rewritten[1].casefold())
+            if len(rewritten) >= 2 and rewritten[0] == "set"
+            else None
+        )
+        if not is_paragraph_add and target_row is None:
+            commands.append(rewritten)
+            continue
+
+        properties: dict[str, str] = {}
+        for index, argument in enumerate(rewritten[:-1]):
+            if argument != "--prop":
+                continue
+            key, separator, value = rewritten[index + 1].partition("=")
+            if separator:
+                normalized_key = key.strip().casefold()
+                if normalized_key in {"styleid", "stylename"}:
+                    normalized_key = "style"
+                properties[normalized_key] = value
+
+        selection_properties = dict(properties)
+        if target_row is not None:
+            if "style" not in selection_properties and target_row.get("styleId"):
+                selection_properties["style"] = target_row["styleId"]
+            if "liststyle" not in selection_properties and target_row.get("listStyle"):
+                selection_properties["liststyle"] = target_row["listStyle"]
+
+        exemplar = exemplar_for(selection_properties)
+        if exemplar is None:
+            commands.append(rewritten)
+            continue
+
+        for key in _WORD_INHERITED_FORMAT_KEYS:
+            if key.casefold() in properties:
+                continue
+            if target_row is not None and value_for(target_row, key):
+                continue
+            value = value_for(exemplar, key)
+            if value:
+                rewritten.extend(["--prop", f"{key}={value}"])
+        commands.append(rewritten)
+
+    return {**plan, "commands": commands}
 
 
 def canonicalize_excel_revision_inspection(
@@ -314,6 +477,18 @@ The previous plan was rejected or failed:
 Return a corrected plan. Do not repeat the invalid command.
 """
 
+    last_revision = record.metadata.get("last_revision")
+    revision_context = "(this is the first recorded revision)"
+    if isinstance(last_revision, dict):
+        revision_context = json.dumps(
+            {
+                "instruction": last_revision.get("instruction"),
+                "summary": last_revision.get("summary"),
+                "changed_paths": last_revision.get("changed_paths") or [],
+            },
+            ensure_ascii=False,
+        )
+
     return f"""
 You are Reins, the reasoning brain for Reins Office. Plan a precise revision to
 an existing {record.kind.upper()} file. Reins will execute your plan with
@@ -325,6 +500,9 @@ User instruction:
 Document title: {record.title}
 Document format: {record.kind}
 
+Most recent successful revision:
+{revision_context}
+
 OfficeCLI outline:
 {inspection.get("outline") or "(empty)"}
 
@@ -333,6 +511,9 @@ OfficeCLI annotated content:
 
 OfficeCLI editable elements:
 {inspection.get("elements") or "(use the exact paths shown in the annotated content)"}
+
+OfficeCLI Word paragraph formatting:
+{inspection.get("formatting") or "(not a Word document or no paragraph formatting was returned)"}
 
 Current OfficeCLI issues:
 {inspection.get("issues") or "(none reported)"}
@@ -350,12 +531,15 @@ Rules:
 - Use only OfficeCLI DOM mutations: add, set, remove, move, or swap.
 - Do not include the officecli binary or document file path. Reins inserts both.
 - Each arguments array starts with an element path or parent path.
-- Write new or revised visible content in Chinese unless the user explicitly requests another language.
+- Preserve the existing document language. Use Chinese by default only when the existing language is Chinese or unclear, unless the user explicitly requests another language.
 - For Word, use the positional paragraph paths shown above, such as /body/p[1].
 - Never use Word @paraId selectors; the packaged OfficeCLI requires positional paths for revisions.
 - For Word and PowerPoint text replacement, prefer: set / --find OLD --replace NEW.
 - For properties, use repeated pairs: --prop key=value.
 - For Word, add paragraphs under /body with --type paragraph.
+- Treat the existing file as the design source of truth. For Word design or formatting changes, copy the exact supported property values shown under "Word paragraph formatting" from an analogous existing title, heading, body paragraph, or list item.
+- A Word style name alone may not reproduce the visible design because existing paragraphs can also use direct size, color, bold, spacing, and alignment properties. Apply those shown properties when matching the design.
+- When adding Word paragraphs, include the analogous paragraph's supported formatting properties in the add command. Do not combine --from with --prop; OfficeCLI rejects that combination.
 - For PowerPoint, use the exact positional paths under "editable elements"; never use @id, @name, or @type selectors.
 - For PowerPoint text, set the target shape with --prop text=NEW; add shapes only under a slide path.
 - For Excel, use the exact worksheet and cell paths shown above, including Chinese worksheet names.
@@ -558,6 +742,11 @@ def normalize_revision_plan(raw: dict[str, Any]) -> dict[str, Any]:
                     f"Revision command {index} uses {property_name} as a property; "
                     "use the supported mutation flags or set the cell value directly."
                 )
+        if verb == "add" and "--from" in safe_arguments and "--prop" in safe_arguments:
+            raise OfficeRevisionError(
+                f"Revision command {index} combines --from with --prop. "
+                "Use a typed add with explicit properties, or clone first and set the copy separately."
+            )
         normalized.append([verb, *safe_arguments])
 
     return {"summary": summary, "commands": normalized}
@@ -621,9 +810,16 @@ def compact_revision_result(result: dict[str, Any]) -> dict[str, Any]:
         issues: object = json.loads(issues_text) if issues_text else {}
     except json.JSONDecodeError:
         issues = issues_text
+    changed_paths = []
+    for command in result.get("commands") or []:
+        if len(command) >= 2 and command[1] not in changed_paths:
+            changed_paths.append(command[1])
+        if len(changed_paths) >= 30:
+            break
     return {
         "summary": str(result.get("summary") or "Office document updated"),
         "command_count": len(result.get("commands") or []),
+        "changed_paths": changed_paths,
         "validation": str(result.get("validation") or ""),
         "issues": issues,
     }

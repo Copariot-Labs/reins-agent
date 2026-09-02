@@ -11,11 +11,13 @@ import reins.features.office.content_writer as office_content_writer
 import reins.features.office.service as office_service
 from reins.features.office.editor import (
     OfficeRevisionError,
+    build_revision_prompt,
     build_presentation_revision_prompt,
     canonicalize_excel_revision_inspection,
     canonicalize_presentation_revision_inspection,
     canonicalize_revision_plan_paths,
     canonicalize_word_revision_inspection,
+    inherit_word_revision_formatting,
     normalize_revision_plan,
 )
 from reins.features.office.intent import classify_office_followup
@@ -833,6 +835,151 @@ def test_word_revision_paths_are_canonicalized_for_packaged_officecli():
                 "summary": "Invalid unknown paragraph",
                 "commands": [
                     ["set", "/body/p[@paraId=00FFFFFF]", "--prop", "bold=true"]
+                ],
+            }
+        )
+
+
+def test_word_revision_prompt_includes_existing_design_and_revision_context():
+    record = OfficeDocumentRecord(
+        id="office_word_design",
+        title="AI in Daily Life",
+        kind="docx",
+        path="/tmp/ai.docx",
+        file_name="ai.docx",
+        mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        created_at="2026-09-02T00:00:00+00:00",
+        updated_at="2026-09-02T00:00:00+00:00",
+        revision_count=1,
+        metadata={
+            "last_revision": {
+                "instruction": "add an AI agent section",
+                "summary": "Added the AI agent section",
+                "changed_paths": ["/body"],
+            }
+        },
+    )
+
+    prompt = build_revision_prompt(
+        record=record,
+        instruction="make the new section follow the document design",
+        inspection={
+            "outline": "/body/p[1]",
+            "text": '[/body/p[1]] 「AI in Daily Life」 ← Title',
+            "formatting": (
+                '/body/p[1]\t[Title]\t"AI in Daily Life"\t'
+                "styleId=Title\tsize=24pt"
+            ),
+            "issues": "{}",
+        },
+    )
+
+    assert "Added the AI agent section" in prompt
+    assert "OfficeCLI Word paragraph formatting" in prompt
+    assert "size=24pt" in prompt
+    assert "Preserve the existing document language" in prompt
+    assert "style name alone may not reproduce the visible design" in prompt
+
+
+def test_word_additions_inherit_missing_properties_from_existing_design():
+    inspection = {
+        "formatting": (
+            '/body/p[1]\t[Heading1]\t"Existing heading"\tstyleId=Heading1\t'
+            'styleName=Heading1\tfont=\tsize=16pt\tcolor=#1F3864\tbold=True\t'
+            'italic=\talign=\tspaceBefore=14pt\tspaceAfter=7pt\tlineSpacing=\t'
+            'firstLineIndent=\tlistStyle=\tnumId=\tnumLevel=\n'
+            '/body/p[2]\t[Normal]\t"Existing body"\tstyleId=\tstyleName=\tfont=\t'
+            'size=11pt\tcolor=#262626\tbold=\titalic=\talign=\tspaceBefore=\t'
+            'spaceAfter=7pt\tlineSpacing=1.15x\tfirstLineIndent=\tlistStyle=\t'
+            'numId=\tnumLevel='
+        )
+    }
+    plan = {
+        "summary": "Add a matching section",
+        "commands": [
+            [
+                "add",
+                "/body",
+                "--type",
+                "paragraph",
+                "--prop",
+                "styleId=Heading1",
+                "--prop",
+                "text=AI Agents",
+            ],
+            [
+                "add",
+                "/body",
+                "--type",
+                "paragraph",
+                "--prop",
+                "text=AI agents help people.",
+            ],
+        ],
+    }
+
+    inherited = inherit_word_revision_formatting(plan, inspection)
+    heading = inherited["commands"][0]
+    body = inherited["commands"][1]
+
+    assert "style=Heading1" not in heading
+    assert "size=16pt" in heading
+    assert "color=#1F3864" in heading
+    assert "bold=True" in heading
+    assert "spaceBefore=14pt" in heading
+    assert "size=11pt" in body
+    assert "color=#262626" in body
+    assert "spaceAfter=7pt" in body
+    assert "lineSpacing=1.15x" in body
+
+
+def test_word_set_inherits_only_properties_missing_from_target_paragraph():
+    inspection = {
+        "formatting": (
+            '/body/p[1]\t[Heading1]\t"Existing heading"\tstyleId=Heading1\t'
+            'styleName=Heading1\tfont=\tsize=16pt\tcolor=#1F3864\tbold=True\t'
+            'italic=\talign=\tspaceBefore=14pt\tspaceAfter=7pt\tlineSpacing=\t'
+            'firstLineIndent=\tlistStyle=\tnumId=\tnumLevel=\n'
+            '/body/p[2]\t[Heading1]\t"New heading"\tstyleId=Heading1\t'
+            'styleName=Heading1\tfont=\tsize=\tcolor=\tbold=\titalic=\talign=\t'
+            'spaceBefore=\tspaceAfter=\tlineSpacing=\tfirstLineIndent=\tlistStyle=\t'
+            'numId=\tnumLevel='
+        )
+    }
+    plan = {
+        "summary": "Match the new heading design",
+        "commands": [
+            ["set", "/body/p[2]", "--prop", "color=#C00000"],
+        ],
+    }
+
+    inherited = inherit_word_revision_formatting(plan, inspection)
+    command = inherited["commands"][0]
+
+    assert "color=#C00000" in command
+    assert "color=#1F3864" not in command
+    assert "size=16pt" in command
+    assert "bold=True" in command
+    assert "spaceBefore=14pt" in command
+    assert "spaceAfter=7pt" in command
+
+
+def test_revision_plan_rejects_clone_with_inline_properties():
+    with pytest.raises(OfficeRevisionError, match="combines --from with --prop"):
+        normalize_revision_plan(
+            {
+                "summary": "Clone and rewrite a heading",
+                "commands": [
+                    {
+                        "verb": "add",
+                        "arguments": [
+                            "/body",
+                            "--from",
+                            "/body/p[1]",
+                            "--prop",
+                            "text=New heading",
+                        ],
+                    }
                 ],
             }
         )

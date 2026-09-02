@@ -1127,12 +1127,12 @@ async function handleSessionModelCustomSubmit() {
             </template>
             Preview
           </NTooltip>
-          <NButton size="small" :circle="isMobile" @click="openNewChatModal">
+          <!-- <NButton size="small" :circle="isMobile" @click="openNewChatModal">
             <template #icon>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </template>
             <template v-if="!isMobile">{{ t("chat.newChat") }}</template>
-          </NButton>
+          </NButton> -->
         </div>
       </header>
 
