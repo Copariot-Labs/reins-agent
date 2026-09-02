@@ -33,6 +33,24 @@ _VISUAL_REDESIGN_PATTERN = re.compile(
 _VISUAL_DESIGN_KEYS = tuple(
     key for key in PRESENTATION_DESIGN_KEYS if key != "palette_reason"
 )
+_WORD_PARAGRAPH_PATH_PATTERN = re.compile(
+    r"(?P<base>(?P<parent>/(?:[^/\s\[\]\"']+(?:\[[^\]\s]+\])?/)*)"
+    r"p(?:\[@paraId=(?P<para_id>[0-9A-Fa-f]+)\]|\[(?P<position>\d+)\]))"
+)
+_PRESENTATION_ELEMENT_PATH_PATTERN = re.compile(
+    r"(?P<base>(?P<parent>/(?:[^/\s\[\]\"']+(?:\[[^\]\s]+\])?/)*)"
+    r"(?P<kind>shape|picture|table|chart|group|connector)"
+    r"(?:\[@id=(?P<element_id>\d+)\]|\[(?P<position>\d+)\]))",
+    re.IGNORECASE,
+)
+_UNSUPPORTED_PRESENTATION_SELECTOR_PATTERN = re.compile(
+    r"/(?:shape|picture|table|chart|group|connector|placeholder)\[@",
+    re.IGNORECASE,
+)
+_EXCEL_SHEET_HEADER_PATTERN = re.compile(r"^=== Sheet: (?P<name>.+?) ===$")
+_EXCEL_CELL_LINE_PATTERN = re.compile(
+    r"^(?P<indent>\s*)(?P<cell>[A-Za-z]{1,3}\d+)(?P<content>:.*)$"
+)
 
 
 def _run_text(
@@ -64,7 +82,7 @@ def inspect_office_document(
     if not path.exists():
         raise OfficeRevisionError(f"Office file no longer exists: {path}")
 
-    return {
+    inspection = {
         "outline": _run_text(client, ["view", path, "outline", "--max-lines", "800"]),
         "text": _run_text(client, ["view", path, "annotated", "--max-lines", "1200"]),
         "issues": _run_text(
@@ -72,6 +90,211 @@ def inspect_office_document(
             ["view", path, "issues", "--limit", "100", "--json"],
             allow_failure=True,
         ),
+    }
+    if record.kind == "pptx":
+        elements = _run_text(
+            client,
+            [
+                "query",
+                path,
+                "*",
+                "--compact",
+                "--fields",
+                "x,y,width,height",
+            ],
+            timeout=90,
+            allow_failure=True,
+        )
+        if not re.search(r"/slide\[\d+\]/", elements):
+            elements = _run_text(
+                client,
+                ["query", path, "shape", "--json"],
+                timeout=90,
+                allow_failure=True,
+            )
+        inspection["elements"] = elements
+    return inspection
+
+
+def _replace_path_aliases(value: str, aliases: dict[str, str]) -> str:
+    rewritten = value
+    for source, target in sorted(
+        aliases.items(), key=lambda item: len(item[0]), reverse=True
+    ):
+        rewritten = re.sub(
+            rf"{re.escape(source)}(?=/|$|[\s\],;\"'])",
+            lambda _match, replacement=target: replacement,
+            rewritten,
+            flags=re.IGNORECASE,
+        )
+    return rewritten
+
+
+def canonicalize_word_revision_inspection(
+    inspection: dict[str, str],
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Replace Word stable paragraph IDs with positional paths for CLI compatibility."""
+    aliases: dict[str, str] = {}
+    seen_by_parent: dict[str, set[str]] = {}
+    next_position_by_parent: dict[str, int] = {}
+
+    # Annotated output contains paragraphs in document order. Outline is kept as
+    # a fallback for OfficeCLI versions that expose more paths there.
+    for field in ("text", "outline"):
+        for match in _WORD_PARAGRAPH_PATH_PATTERN.finditer(inspection.get(field) or ""):
+            base = match.group("base")
+            parent = match.group("parent")
+            seen = seen_by_parent.setdefault(parent, set())
+            identity = base.casefold()
+            if identity in seen:
+                continue
+            seen.add(identity)
+
+            explicit_position = match.group("position")
+            if explicit_position:
+                next_position_by_parent[parent] = max(
+                    next_position_by_parent.get(parent, 0),
+                    int(explicit_position),
+                )
+                continue
+
+            position = next_position_by_parent.get(parent, 0) + 1
+            next_position_by_parent[parent] = position
+            aliases[base] = f"{parent}p[{position}]"
+
+    if not aliases:
+        return dict(inspection), {}
+
+    alias_lookup = {source.casefold(): target for source, target in aliases.items()}
+
+    def replace_path(match: re.Match[str]) -> str:
+        return alias_lookup.get(match.group("base").casefold(), match.group("base"))
+
+    canonical = {
+        key: _WORD_PARAGRAPH_PATH_PATTERN.sub(replace_path, value)
+        for key, value in inspection.items()
+    }
+    return canonical, aliases
+
+
+def canonicalize_excel_revision_inspection(
+    inspection: dict[str, str],
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Expose complete editable cell paths, including Chinese worksheet names."""
+    sheet_names: list[str] = []
+    current_sheet = ""
+    annotated_lines: list[str] = []
+    for line in (inspection.get("text") or "").splitlines():
+        sheet_match = _EXCEL_SHEET_HEADER_PATTERN.match(line.strip())
+        if sheet_match:
+            current_sheet = sheet_match.group("name").strip()
+            if current_sheet and current_sheet not in sheet_names:
+                sheet_names.append(current_sheet)
+            annotated_lines.append(line)
+            if current_sheet:
+                annotated_lines.append(f"Editable worksheet path: /{current_sheet}")
+            continue
+
+        cell_match = _EXCEL_CELL_LINE_PATTERN.match(line)
+        if current_sheet and cell_match:
+            cell = cell_match.group("cell").upper()
+            annotated_lines.append(
+                f"{cell_match.group('indent')}[/{current_sheet}/{cell}] "
+                f"{cell}{cell_match.group('content')}"
+            )
+            continue
+        annotated_lines.append(line)
+
+    aliases: dict[str, str] = {}
+    real_sheet_names = {name.casefold() for name in sheet_names}
+    for index, sheet_name in enumerate(sheet_names, start=1):
+        target = f"/{sheet_name}"
+        aliases[f"/sheet[{index}]"] = target
+        for placeholder in (f"/Sheet{index}", f"/工作表{index}"):
+            if placeholder[1:].casefold() not in real_sheet_names:
+                aliases[placeholder] = target
+
+    canonical = dict(inspection)
+    canonical["text"] = "\n".join(annotated_lines)
+    return canonical, aliases
+
+
+def canonicalize_presentation_revision_inspection(
+    inspection: dict[str, str],
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Convert stable PowerPoint element IDs into Windows-compatible positions."""
+    aliases: dict[str, str] = {}
+    seen_by_parent_and_kind: dict[tuple[str, str], set[str]] = {}
+    next_position: dict[tuple[str, str], int] = {}
+
+    for field in ("elements", "text", "outline"):
+        for match in _PRESENTATION_ELEMENT_PATH_PATTERN.finditer(
+            inspection.get(field) or ""
+        ):
+            base = match.group("base")
+            parent = match.group("parent")
+            kind = match.group("kind").lower()
+            key = (parent.casefold(), kind)
+            seen = seen_by_parent_and_kind.setdefault(key, set())
+            identity = base.casefold()
+            if identity in seen:
+                continue
+            seen.add(identity)
+
+            explicit_position = match.group("position")
+            if explicit_position:
+                next_position[key] = max(
+                    next_position.get(key, 0),
+                    int(explicit_position),
+                )
+                continue
+
+            position = next_position.get(key, 0) + 1
+            next_position[key] = position
+            aliases[base] = f"{parent}{kind}[{position}]"
+
+    canonical = {
+        key: _replace_path_aliases(value, aliases)
+        for key, value in inspection.items()
+    }
+    return canonical, aliases
+
+
+def canonicalize_revision_plan_paths(
+    plan: dict[str, Any],
+    aliases: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Translate format-specific aliases before invoking OfficeCLI."""
+    alias_lookup = {
+        source.casefold(): target for source, target in (aliases or {}).items()
+    }
+
+    def replace_path(match: re.Match[str]) -> str:
+        return alias_lookup.get(match.group("base").casefold(), match.group("base"))
+
+    commands: list[list[str]] = []
+    for command in plan.get("commands") or []:
+        rewritten = list(command)
+        for index in range(1, len(rewritten)):
+            rewritten[index] = _replace_path_aliases(rewritten[index], aliases or {})
+            rewritten[index] = _WORD_PARAGRAPH_PATH_PATTERN.sub(
+                replace_path, rewritten[index]
+            )
+            if "@paraId=" in rewritten[index]:
+                raise OfficeRevisionError(
+                    "The revision used a Word paragraph ID that this OfficeCLI build cannot edit. "
+                    "Use a positional paragraph path from the inspected document instead."
+                )
+            if _UNSUPPORTED_PRESENTATION_SELECTOR_PATTERN.search(rewritten[index]):
+                raise OfficeRevisionError(
+                    "The revision used a PowerPoint attribute selector that this OfficeCLI build "
+                    "cannot edit. Use a positional element path from the inspected presentation instead."
+                )
+        commands.append(rewritten)
+
+    return {
+        **plan,
+        "commands": commands,
     }
 
 
@@ -108,6 +331,9 @@ OfficeCLI outline:
 OfficeCLI annotated content:
 {inspection.get("text") or "(empty)"}
 
+OfficeCLI editable elements:
+{inspection.get("elements") or "(use the exact paths shown in the annotated content)"}
+
 Current OfficeCLI issues:
 {inspection.get("issues") or "(none reported)"}
 {error_section}
@@ -124,11 +350,16 @@ Rules:
 - Use only OfficeCLI DOM mutations: add, set, remove, move, or swap.
 - Do not include the officecli binary or document file path. Reins inserts both.
 - Each arguments array starts with an element path or parent path.
+- Write new or revised visible content in Chinese unless the user explicitly requests another language.
+- For Word, use the positional paragraph paths shown above, such as /body/p[1].
+- Never use Word @paraId selectors; the packaged OfficeCLI requires positional paths for revisions.
 - For Word and PowerPoint text replacement, prefer: set / --find OLD --replace NEW.
 - For properties, use repeated pairs: --prop key=value.
 - For Word, add paragraphs under /body with --type paragraph.
-- For PowerPoint, edit shapes using paths from the outline; add shapes under a slide.
-- For Excel, edit cells with paths such as /Sheet1/A1 and use --prop value=NEW.
+- For PowerPoint, use the exact positional paths under "editable elements"; never use @id, @name, or @type selectors.
+- For PowerPoint text, set the target shape with --prop text=NEW; add shapes only under a slide path.
+- For Excel, use the exact worksheet and cell paths shown above, including Chinese worksheet names.
+- For Excel values use --prop value=NEW, and for formulas use --prop formula=FORMULA; never use text as a cell property.
 - For Excel, never use --find/--replace and never put find or replace inside --prop.
 - Preserve content and formatting unrelated to the request.
 - Never use raw XML, import, create, open, close, save, watch, or filesystem commands.
@@ -350,6 +581,7 @@ def apply_revision_plan(
     client: OfficeCliClient,
 ) -> dict[str, Any]:
     path = Path(record.path)
+    plan = canonicalize_revision_plan_paths(plan)
     commands = plan.get("commands") or []
     client.run(["open", path], timeout=60)
     try:

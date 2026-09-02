@@ -18,6 +18,7 @@ import {
   fetchOfficePreviewHtml,
   fetchOfficeSkills,
   fetchOfficeStatus,
+  importOfficeDocument,
   startOfficeCreateOperation,
   startOfficeRevisionOperation,
   type OfficeDocument,
@@ -53,6 +54,7 @@ const presentationAudience = ref<OfficePresentationAudience>('general')
 const presentationDetail = ref<OfficePresentationDetail>('balanced')
 const slideCount = ref(8)
 const working = ref(false)
+const importing = ref(false)
 const loading = ref(false)
 const previewLoading = ref(false)
 const previewVersion = ref(0)
@@ -60,6 +62,7 @@ const previewHtml = ref('')
 const previewError = ref('')
 const activeOperation = ref<OfficeOperation | null>(null)
 const promptInputRef = ref<InputInst | null>(null)
+const officeFileInputRef = ref<HTMLInputElement | null>(null)
 const operationTransportError = ref('')
 const cancelingOperation = ref(false)
 const status = ref<OfficeStatus | null>(null)
@@ -82,6 +85,13 @@ const copy = computed(() => isChinese.value
       language: '文件语言',
       generate: '生成文件',
       generating: '正在生成',
+      importFile: '导入文件',
+      importingFile: '正在导入',
+      imported: '文件已导入工作区',
+      importFailed: '导入 Office 文件失败',
+      importTypeMismatch: '当前区域仅支持 {extension} 文件',
+      importInvalid: '所选文件不是有效的 {extension} Office 文件，或文件已经损坏',
+      importTooLarge: '文件不能超过 50 MB',
       newFile: '新建文件',
       refresh: '刷新',
       connected: '已连接',
@@ -139,6 +149,13 @@ const copy = computed(() => isChinese.value
       language: 'File language',
       generate: 'Generate file',
       generating: 'Generating',
+      importFile: 'Import file',
+      importingFile: 'Importing',
+      imported: 'File imported into the workspace',
+      importFailed: 'Failed to import Office file',
+      importTypeMismatch: 'This section only accepts {extension} files',
+      importInvalid: 'The selected file is not a valid {extension} Office file or is damaged',
+      importTooLarge: 'Files cannot exceed 50 MB',
       newFile: 'New file',
       refresh: 'Refresh',
       connected: 'Connected',
@@ -231,6 +248,11 @@ const selectedDocument = computed(() =>
 const isCreateMode = computed(() => creatingNew.value || !selectedDocument.value)
 const servicesReady = computed(() => Boolean(status.value?.available && status.value?.reins_available))
 const currentFormat = computed(() => formatOptions.value.find(option => option.value === format.value)!)
+const officeImportAccept = computed(() => ({
+  docx: '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xlsx: '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pptx: '.pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation',
+})[format.value])
 const operationStatusText = computed(() => {
   const operationStatus = activeOperation.value?.status
   if (!operationStatus) return ''
@@ -339,6 +361,39 @@ function upsertDocument(document: OfficeDocument) {
   documents.value = [document, ...documents.value.filter(item => item.id !== document.id)]
 }
 
+function openOfficeImportPicker() {
+  if (working.value || importing.value) return
+  officeFileInputRef.value?.click()
+}
+
+async function handleOfficeImport(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
+  const selectedFormat = format.value
+  const expectedExtension = `.${selectedFormat}`
+  if (!file.name.toLowerCase().endsWith(expectedExtension)) {
+    message.error(copy.value.importTypeMismatch.replace('{extension}', expectedExtension))
+    input.value = ''
+    return
+  }
+
+  importing.value = true
+  resetOperationActivity()
+  try {
+    const response = await importOfficeDocument(selectedFormat, file)
+    upsertDocument(response.document)
+    selectDocument(response.document, true)
+    message.success(copy.value.imported)
+  } catch (error) {
+    message.error(readableImportError(error, expectedExtension))
+  } finally {
+    importing.value = false
+    input.value = ''
+  }
+}
+
 function refreshPreview() {
   if (!selectedDocument.value) return
   previewVersion.value += 1
@@ -355,6 +410,25 @@ function readableError(error: unknown, fallback: string): string {
     } catch {}
   }
   return raw || fallback
+}
+
+function readableImportError(error: unknown, extension: string): string {
+  const detail = readableError(error, copy.value.importFailed)
+  const normalized = detail.toLowerCase()
+  if (normalized.includes('50 mb') || normalized.includes('file_too_large')) {
+    return copy.value.importTooLarge
+  }
+  if (
+    normalized.includes('not a valid')
+    || normalized.includes('damaged')
+    || normalized.includes('expands beyond')
+  ) {
+    return copy.value.importInvalid.replace('{extension}', extension)
+  }
+  if (normalized.includes('only accepts')) {
+    return copy.value.importTypeMismatch.replace('{extension}', extension)
+  }
+  return detail
 }
 
 function pause(milliseconds: number): Promise<void> {
@@ -748,12 +822,29 @@ onBeforeUnmount(() => {
             </section>
 
             <div class="form-actions">
+              <input
+                ref="officeFileInputRef"
+                class="office-file-input"
+                type="file"
+                :accept="officeImportAccept"
+                @change="handleOfficeImport"
+              >
+              <NButton
+                attr-type="button"
+                size="large"
+                secondary
+                :loading="importing"
+                :disabled="working"
+                @click="openOfficeImportPicker"
+              >
+                {{ importing ? copy.importingFile : copy.importFile }}
+              </NButton>
               <NButton
                 type="primary"
                 attr-type="submit"
                 size="large"
                 :loading="working"
-                :disabled="!prompt.trim() || !selectedSkill || !servicesReady"
+                :disabled="importing || !prompt.trim() || !selectedSkill || !servicesReady"
               >
                 {{ working ? copy.generating : copy.generate }}
               </NButton>
@@ -1309,9 +1400,13 @@ onBeforeUnmount(() => {
 .instruction-field { flex: 1; }
 .form-actions {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding-top: 4px;
 }
+
+.office-file-input { display: none; }
 
 .operation-activity {
   min-width: 0;

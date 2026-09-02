@@ -35,6 +35,12 @@ export interface OfficeRevisionRequest {
   instruction: string
 }
 
+export interface OfficeImportRequest {
+  format: OfficeFormat
+  source_path: string
+  file_name: string
+}
+
 export interface OfficeDocumentDto {
   id: string
   title: string
@@ -278,6 +284,25 @@ export function normalizeOfficeRevisionRequest(body: unknown): OfficeRevisionReq
   return {
     instruction: requiredText(input.instruction || input.prompt, 'Office revision instruction', 30_000),
   }
+}
+
+export function normalizeOfficeImportRequest(
+  formatValue: unknown,
+  sourcePathValue: unknown,
+  fileNameValue: unknown,
+): OfficeImportRequest {
+  const format = normalizeFormat(formatValue)
+  const sourcePath = requiredText(sourcePathValue, 'Office import path', 4096)
+  const rawName = requiredText(fileNameValue, 'Office import file name', 260)
+  const fileName = rawName.replace(/\\/g, '/').split('/').pop()?.trim() || ''
+  const expectedSuffix = `.${format}`
+  if (!fileName || !fileName.toLowerCase().endsWith(expectedSuffix)) {
+    throw serviceError(
+      `The ${format.toUpperCase()} section only accepts ${expectedSuffix} files.`,
+      'invalid_request',
+    )
+  }
+  return { format, source_path: sourcePath, file_name: fileName }
 }
 
 function parseJsonOutput(stdout: string): Record<string, unknown> {
@@ -528,6 +553,26 @@ export async function createOfficeDocument(
   })
   if (payload.ok === false) {
     throw serviceError(String(payload.error || 'Office creation failed.'), 'worker_error')
+  }
+  return normalizeDocument(payload.document)
+}
+
+export async function importOfficeDocument(
+  formatValue: unknown,
+  sourcePathValue: unknown,
+  fileNameValue: unknown,
+): Promise<OfficeDocumentDto> {
+  const input = normalizeOfficeImportRequest(formatValue, sourcePathValue, fileNameValue)
+  const payload = await runReinsOfficeJson([
+    'office',
+    'import',
+    '--format', input.format,
+    '--source', input.source_path,
+    '--name', input.file_name,
+    '--json',
+  ], { timeoutMs: 180_000 })
+  if (payload.ok === false) {
+    throw serviceError(String(payload.error || 'Office import failed.'), 'worker_error')
   }
   return normalizeDocument(payload.document)
 }

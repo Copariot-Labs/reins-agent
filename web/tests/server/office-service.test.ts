@@ -4,6 +4,7 @@ import {
   friendlyOfficeOperationError,
   getOfficeOperation,
   normalizeOfficeCreateRequest,
+  normalizeOfficeImportRequest,
   shouldAskForOfficeClarification,
   shouldRequestOfficeOperationClarification,
   startOfficeCreateOperation,
@@ -54,6 +55,24 @@ describe('Reins Office service', () => {
       prompt: 'Create a notice',
       skill_id: 'x'.repeat(121),
     })).toThrow('Office skill cannot exceed 120 characters')
+  })
+
+  it('normalizes an Office import and enforces the selected section', () => {
+    expect(normalizeOfficeImportRequest(
+      'word',
+      'C:\\Temp\\upload.docx',
+      'C:\\fakepath\\阳光社区工作计划.docx',
+    )).toEqual({
+      format: 'docx',
+      source_path: 'C:\\Temp\\upload.docx',
+      file_name: '阳光社区工作计划.docx',
+    })
+
+    expect(() => normalizeOfficeImportRequest(
+      'xlsx',
+      'C:\\Temp\\upload.xlsx',
+      '阳光社区工作计划.docx',
+    )).toThrow('only accepts .xlsx files')
   })
 
   it('turns OfficeCLI validation failures into actionable bilingual errors', () => {

@@ -121,6 +121,18 @@ export async function createOfficeDocument(input: OfficeCreateInput): Promise<{ 
   })
 }
 
+export async function importOfficeDocument(
+  format: OfficeFormat,
+  file: File,
+): Promise<{ document: OfficeDocument }> {
+  const form = new FormData()
+  form.append('file', file, file.name)
+  return request<{ document: OfficeDocument }>(
+    `/api/reins/office/import?format=${encodeURIComponent(format)}`,
+    { method: 'POST', body: form },
+  )
+}
+
 export async function reviseOfficeDocument(
   documentId: string,
   instruction: string,

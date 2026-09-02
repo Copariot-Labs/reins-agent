@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
+from zipfile import ZipFile
 
 import pytest
 
@@ -11,6 +12,10 @@ import reins.features.office.service as office_service
 from reins.features.office.editor import (
     OfficeRevisionError,
     build_presentation_revision_prompt,
+    canonicalize_excel_revision_inspection,
+    canonicalize_presentation_revision_inspection,
+    canonicalize_revision_plan_paths,
+    canonicalize_word_revision_inspection,
     normalize_revision_plan,
 )
 from reins.features.office.intent import classify_office_followup
@@ -31,6 +36,7 @@ from reins.features.office.schemas import (
 from reins.features.office.service import (
     OfficeServiceError,
     create_office_document,
+    import_office_document,
     list_office_documents,
     preview_office_document,
     revise_office_document,
@@ -86,6 +92,57 @@ def test_office_format_aliases():
     assert normalize_office_format("excel") == "xlsx"
     assert normalize_office_format("ppt") == "pptx"
     assert normalize_office_format("unknown") == "docx"
+
+
+def _write_minimal_office_package(path: Path, member: str) -> None:
+    with ZipFile(path, "w") as package:
+        package.writestr(member, "<root />")
+
+
+def test_import_office_document_validates_copies_and_registers_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("REINS_HOME", str(tmp_path / "home"))
+    source = tmp_path / "upload.docx"
+    _write_minimal_office_package(source, "word/document.xml")
+
+    imported = import_office_document(
+        source_path=source,
+        office_format="docx",
+        display_name="阳光社区工作计划.docx",
+    )
+
+    assert imported.title == "阳光社区工作计划"
+    assert imported.kind == "docx"
+    assert imported.generator == "import"
+    assert imported.metadata == {
+        "imported": True,
+        "source_file_name": "阳光社区工作计划.docx",
+    }
+    assert Path(imported.path).parent.name == "Word"
+    assert Path(imported.path).read_bytes() == source.read_bytes()
+    assert list_office_documents(limit=0)[-1].id == imported.id
+
+
+def test_import_office_document_rejects_the_wrong_section(tmp_path):
+    source = tmp_path / "upload.docx"
+    _write_minimal_office_package(source, "word/document.xml")
+
+    with pytest.raises(OfficeServiceError, match="only accepts .xlsx"):
+        import_office_document(
+            source_path=source,
+            office_format="xlsx",
+            display_name="社区工作计划.docx",
+        )
+
+
+def test_import_office_document_rejects_renamed_non_office_file(tmp_path):
+    source = tmp_path / "upload.pptx"
+    source.write_text("not a presentation", encoding="utf-8")
+
+    with pytest.raises(OfficeServiceError, match="not a valid PPTX package"):
+        import_office_document(
+            source_path=source,
+            office_format="pptx",
+        )
 
 
 def test_reins_semantically_routes_an_uncommon_office_followup():
@@ -739,6 +796,104 @@ def test_revision_plan_rejects_find_and_replace_as_cell_properties():
         raise AssertionError("unsupported Excel find/replace properties were accepted")
 
 
+def test_word_revision_paths_are_canonicalized_for_packaged_officecli():
+    inspection, aliases = canonicalize_word_revision_inspection(
+        {
+            "outline": "",
+            "text": (
+                '[/body/p[@paraId=0010006D]] 「标题」 ← Heading 1\n'
+                '[/body/p[@paraId=0010006E]] 「正文」 ← Normal\n'
+                '[/body/p[@paraId=0010006E]] 「续文」 ← Normal'
+            ),
+            "issues": '{"count":0,"issues":[]}',
+        }
+    )
+
+    assert "@paraId=" not in inspection["text"]
+    assert "/body/p[1]" in inspection["text"]
+    assert inspection["text"].count("/body/p[2]") == 2
+    assert aliases["/body/p[@paraId=0010006E]"] == "/body/p[2]"
+
+    plan = canonicalize_revision_plan_paths(
+        {
+            "summary": "Updated the second paragraph",
+            "commands": [
+                ["set", "/body/p[@paraId=0010006E]", "--prop", "bold=true"]
+            ],
+        },
+        aliases,
+    )
+    assert plan["commands"] == [
+        ["set", "/body/p[2]", "--prop", "bold=true"]
+    ]
+
+    with pytest.raises(OfficeRevisionError, match="positional paragraph path"):
+        canonicalize_revision_plan_paths(
+            {
+                "summary": "Invalid unknown paragraph",
+                "commands": [
+                    ["set", "/body/p[@paraId=00FFFFFF]", "--prop", "bold=true"]
+                ],
+            }
+        )
+
+
+def test_excel_revision_inspection_exposes_chinese_worksheet_paths():
+    inspection, aliases = canonicalize_excel_revision_inspection(
+        {
+            "outline": 'File: ledger.xlsx\n├── "社区台账" (2 rows × 2 cols)',
+            "text": (
+                "=== Sheet: 社区台账 ===\n"
+                "  A1: [居民姓名] ← String\n"
+                "  B1: [联系电话] ← String"
+            ),
+            "issues": '{"count":0,"issues":[]}',
+        }
+    )
+
+    assert "Editable worksheet path: /社区台账" in inspection["text"]
+    assert "[/社区台账/A1]" in inspection["text"]
+    assert aliases["/Sheet1"] == "/社区台账"
+    assert aliases["/工作表1"] == "/社区台账"
+    assert aliases["/sheet[1]"] == "/社区台账"
+
+
+def test_presentation_revision_paths_are_canonicalized_for_packaged_officecli():
+    inspection, aliases = canonicalize_presentation_revision_inspection(
+        {
+            "outline": 'File: report.pptx | 1 slides',
+            "text": '[/slide[1]]\n  [Text Box] "社区工作汇报" ← (default)',
+            "elements": (
+                '/slide[1]/shape[@id=100000]\t[title]\t"社区工作汇报"\n'
+                '/slide[1]/picture[@id=100001]\t[picture]\t(empty)\n'
+                '/slide[1]/shape[@id=100002]\t[textbox]\t"防汛安排"'
+            ),
+            "issues": '{"count":0,"issues":[]}',
+        }
+    )
+
+    assert "@id=" not in inspection["elements"]
+    assert "/slide[1]/shape[1]" in inspection["elements"]
+    assert "/slide[1]/shape[2]" in inspection["elements"]
+    assert "/slide[1]/picture[1]" in inspection["elements"]
+
+    plan = canonicalize_revision_plan_paths(
+        {
+            "summary": "更新防汛安排",
+            "commands": [
+                [
+                    "set",
+                    "/slide[1]/shape[@id=100002]",
+                    "--prop",
+                    "text=完善社区防汛安排",
+                ]
+            ],
+        },
+        aliases,
+    )
+    assert plan["commands"][0][1] == "/slide[1]/shape[2]"
+
+
 def test_revise_document_keeps_one_record_and_tracks_validation(tmp_path, monkeypatch):
     monkeypatch.setenv("REINS_HOME", str(tmp_path))
     created = create_office_document(
@@ -769,6 +924,208 @@ def test_revise_document_keeps_one_record_and_tracks_validation(tmp_path, monkey
     assert revised.metadata["last_revision"]["summary"] == "Changed task status to Complete"
     assert revised.metadata["last_revision"]["validation"] == "no errors found"
     assert len(list_office_documents(limit=10)) == 1
+
+
+def test_imported_document_revision_uses_an_ascii_officecli_working_path(tmp_path, monkeypatch):
+    monkeypatch.setenv("REINS_HOME", str(tmp_path / "home"))
+    source = tmp_path / "upload.docx"
+    _write_minimal_office_package(source, "word/document.xml")
+    imported = import_office_document(
+        source_path=source,
+        office_format="docx",
+        display_name="阳光社区工作计划.docx",
+    )
+    revision_client = FakeOfficeCliClient()
+
+    revised = revise_office_document(
+        document_id=imported.id,
+        instruction="将标题改为正式公文风格",
+        client=revision_client,
+        planner=lambda _prompt, _timeout: {
+            "summary": "Updated the title style",
+            "commands": [
+                {
+                    "verb": "set",
+                    "arguments": ["/body/p[1]", "--prop", "bold=true"],
+                }
+            ],
+        },
+    )
+
+    assert revised.path == imported.path
+    assert Path(revised.path).exists()
+    officecli_paths = [command[1] for command in revision_client.commands if len(command) > 1]
+    assert officecli_paths
+    assert all(Path(path).name.isascii() for path in officecli_paths)
+
+
+def test_imported_word_revision_translates_stable_paragraph_ids(tmp_path, monkeypatch):
+    monkeypatch.setenv("REINS_HOME", str(tmp_path / "home"))
+    source = tmp_path / "upload.docx"
+    _write_minimal_office_package(source, "word/document.xml")
+    imported = import_office_document(
+        source_path=source,
+        office_format="docx",
+        display_name="玫瑰湾社区工作计划.docx",
+    )
+
+    class StableParagraphOfficeCliClient(FakeOfficeCliClient):
+        def run(self, args, **kwargs):
+            result = super().run(args, **kwargs)
+            command = [str(arg) for arg in args]
+            if len(command) > 2 and command[0] == "view" and command[2] == "annotated":
+                result.stdout = (
+                    '[/body/p[@paraId=0010006D]] 「标题」 ← Heading 1\n'
+                    '[/body/p[@paraId=0010006E]] 「正文」 ← Normal'
+                )
+            return result
+
+    revision_client = StableParagraphOfficeCliClient()
+
+    def planner(prompt, _timeout):
+        assert "@paraId=" not in prompt
+        assert "/body/p[2]" in prompt
+        return {
+            "summary": "Updated the body paragraph",
+            "commands": [
+                {
+                    "verb": "set",
+                    "arguments": [
+                        "/body/p[@paraId=0010006E]",
+                        "--prop",
+                        "bold=true",
+                    ],
+                }
+            ],
+        }
+
+    revised = revise_office_document(
+        document_id=imported.id,
+        instruction="加粗正文",
+        client=revision_client,
+        planner=planner,
+    )
+
+    assert revised.revision_count == 1
+    set_commands = [
+        command for command in revision_client.commands if command[:1] == ["set"]
+    ]
+    assert set_commands
+    assert set_commands[0][2] == "/body/p[2]"
+    assert all("@paraId=" not in argument for argument in set_commands[0])
+
+
+def test_imported_excel_revision_uses_chinese_worksheet_path(tmp_path, monkeypatch):
+    monkeypatch.setenv("REINS_HOME", str(tmp_path / "home"))
+    source = tmp_path / "upload.xlsx"
+    _write_minimal_office_package(source, "xl/workbook.xml")
+    imported = import_office_document(
+        source_path=source,
+        office_format="xlsx",
+        display_name="社区居民台账.xlsx",
+    )
+
+    class ChineseWorksheetOfficeCliClient(FakeOfficeCliClient):
+        def run(self, args, **kwargs):
+            result = super().run(args, **kwargs)
+            command = [str(arg) for arg in args]
+            if len(command) > 2 and command[0] == "view" and command[2] == "annotated":
+                result.stdout = (
+                    "=== Sheet: 社区台账 ===\n"
+                    "  A1: [居民姓名] ← String\n"
+                    "  B1: [联系电话] ← String"
+                )
+            return result
+
+    revision_client = ChineseWorksheetOfficeCliClient()
+
+    def planner(prompt, _timeout):
+        assert "[/社区台账/A1]" in prompt
+        assert "visible content in Chinese" in prompt
+        return {
+            "summary": "补充居民信息",
+            "commands": [
+                {
+                    "verb": "set",
+                    "arguments": [
+                        "/Sheet1/A2",
+                        "--prop",
+                        "value=张三",
+                    ],
+                }
+            ],
+        }
+
+    revised = revise_office_document(
+        document_id=imported.id,
+        instruction="在台账中补充一条中文居民信息",
+        client=revision_client,
+        planner=planner,
+    )
+
+    assert revised.revision_count == 1
+    set_commands = [
+        command for command in revision_client.commands if command[:1] == ["set"]
+    ]
+    assert set_commands[0][2] == "/社区台账/A2"
+    assert "value=张三" in set_commands[0]
+
+
+def test_imported_presentation_revision_translates_stable_shape_ids(tmp_path, monkeypatch):
+    monkeypatch.setenv("REINS_HOME", str(tmp_path / "home"))
+    source = tmp_path / "upload.pptx"
+    _write_minimal_office_package(source, "ppt/presentation.xml")
+    imported = import_office_document(
+        source_path=source,
+        office_format="pptx",
+        display_name="社区工作汇报.pptx",
+    )
+
+    class StableShapeOfficeCliClient(FakeOfficeCliClient):
+        def run(self, args, **kwargs):
+            result = super().run(args, **kwargs)
+            command = [str(arg) for arg in args]
+            if command[:1] == ["query"]:
+                result.stdout = (
+                    '/slide[1]/shape[@id=100000]\t[title]\t"社区工作汇报"\n'
+                    '/slide[1]/shape[@id=100002]\t[textbox]\t"防汛安排"\n'
+                    "total: 2 of 2 elements / 1 slides"
+                )
+            return result
+
+    revision_client = StableShapeOfficeCliClient()
+
+    def planner(prompt, _timeout):
+        assert "@id=" not in prompt
+        assert "/slide[1]/shape[2]" in prompt
+        assert "visible content in Chinese" in prompt
+        return {
+            "summary": "更新防汛安排",
+            "commands": [
+                {
+                    "verb": "set",
+                    "arguments": [
+                        "/slide[1]/shape[@id=100002]",
+                        "--prop",
+                        "text=完善社区防汛安排",
+                    ],
+                }
+            ],
+        }
+
+    revised = revise_office_document(
+        document_id=imported.id,
+        instruction="将第二个文本框改为更完整的中文防汛安排",
+        client=revision_client,
+        planner=planner,
+    )
+
+    assert revised.revision_count == 1
+    set_commands = [
+        command for command in revision_client.commands if command[:1] == ["set"]
+    ]
+    assert set_commands[0][2] == "/slide[1]/shape[2]"
+    assert "text=完善社区防汛安排" in set_commands[0]
 
 
 def test_revision_timeout_stops_without_retry_and_preserves_original(tmp_path, monkeypatch):

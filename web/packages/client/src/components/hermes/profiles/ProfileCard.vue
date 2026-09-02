@@ -132,10 +132,10 @@ async function handleExport() {
             <span class="info-label">{{ t('profiles.provider') }}</span>
             <span class="info-value">{{ detail.provider }}</span>
           </div>
-          <div class="info-row">
+          <!-- <div class="info-row">
             <span class="info-label">{{ t('profiles.path') }}</span>
             <code class="info-value mono detail-path">{{ detail.path }}</code>
-          </div>
+          </div> -->
           <div class="info-row">
             <span class="info-label">{{ t('profiles.skills') }}</span>
             <span class="info-value">{{ detail.skills }}</span>

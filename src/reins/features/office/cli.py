@@ -13,6 +13,7 @@ from reins.features.office.intent import classify_office_followup
 from reins.features.office.service import (
     OfficeServiceError,
     create_office_document,
+    import_office_document,
     list_office_documents,
     office_status,
     preview_office_document,
@@ -137,6 +138,14 @@ def build_parser() -> argparse.ArgumentParser:
     preview.add_argument("--id", required=True, dest="document_id")
     preview.add_argument("--json", action="store_true", dest="json_output")
 
+    import_cmd = subparsers.add_parser(
+        "import", help="Import an existing Office file."
+    )
+    import_cmd.add_argument("--source", required=True)
+    import_cmd.add_argument("--format", required=True, choices=["docx", "xlsx", "pptx"])
+    import_cmd.add_argument("--name", default="")
+    import_cmd.add_argument("--json", action="store_true", dest="json_output")
+
     route = subparsers.add_parser("route", help=argparse.SUPPRESS)
     route.add_argument("--message", required=True)
     route.add_argument("--document-title", required=True)
@@ -202,7 +211,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         except Exception as exc:
             if args.json_output:
-                _print_json({"ok": False, "error": str(exc), "error_type": type(exc).__name__})
+                _print_json(
+                    {
+                        "ok": False,
+                        "error": str(exc),
+                        "error_type": type(exc).__name__,
+                    }
+                )
             else:
                 print(f"Office routing failed: {exc}")
             return 1
@@ -270,6 +285,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             _print_json({"ok": True, "preview_path": str(preview_path)})
         else:
             print(preview_path)
+        return 0
+
+    if args.command == "import":
+        try:
+            record = import_office_document(
+                source_path=args.source,
+                office_format=args.format,
+                display_name=args.name or None,
+            )
+        except Exception as exc:
+            if args.json_output:
+                _print_json({"ok": False, "error": str(exc), "error_type": type(exc).__name__})
+            else:
+                print(f"Office import failed: {exc}")
+            return 1
+        if args.json_output:
+            _print_json({"ok": True, "document": record.to_dict()})
+        else:
+            print("Office document imported.")
+            print(f"Title: {record.title}")
+            print(f"Type: {record.kind}")
+            print(f"Path: {record.path}")
         return 0
 
     if args.command == "revise":

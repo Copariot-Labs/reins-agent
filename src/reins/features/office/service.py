@@ -10,6 +10,7 @@ import subprocess
 import time
 from typing import Any, Callable
 from uuid import uuid4
+from zipfile import BadZipFile, ZipFile
 
 from reins.features.office.content_writer import (
     DEFAULT_OFFICE_CONTENT_TIMEOUT_SECONDS,
@@ -21,6 +22,10 @@ from reins.features.office.editor import (
     OfficeRevisionError,
     apply_revision_plan,
     build_revision_prompt,
+    canonicalize_excel_revision_inspection,
+    canonicalize_presentation_revision_inspection,
+    canonicalize_revision_plan_paths,
+    canonicalize_word_revision_inspection,
     compact_revision_result,
     inspect_office_document,
     plan_office_revision,
@@ -163,6 +168,24 @@ def _discard_temporary_file(path: Path) -> None:
         pass
 
 
+def _record_at_path(record: OfficeDocumentRecord, path: Path) -> OfficeDocumentRecord:
+    return OfficeDocumentRecord(
+        id=record.id,
+        title=record.title,
+        kind=record.kind,
+        path=str(path),
+        file_name=path.name,
+        mime_type=record.mime_type,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+        revision_count=record.revision_count,
+        prompt=record.prompt,
+        generator=record.generator,
+        command_count=record.command_count,
+        metadata=record.metadata,
+    )
+
+
 def _append_record(record: OfficeDocumentRecord) -> OfficeDocumentRecord:
     index_path = office_index_path()
     index_path.parent.mkdir(parents=True, exist_ok=True)
@@ -206,6 +229,92 @@ def get_office_document(document_id: str) -> OfficeDocumentRecord:
         if record.id == clean_id:
             return record
     raise OfficeServiceError("Office document was not found.")
+
+
+_OFFICE_PACKAGE_ROOTS = {
+    "docx": "word/document.xml",
+    "xlsx": "xl/workbook.xml",
+    "pptx": "ppt/presentation.xml",
+}
+_MAX_OFFICE_PACKAGE_UNCOMPRESSED_SIZE = 500 * 1024 * 1024
+
+
+def _import_display_name(value: object, *, office_format: str) -> str:
+    raw_name = str(value or "").replace("\\", "/")
+    file_name = Path(raw_name).name.strip()
+    if not file_name:
+        raise OfficeServiceError("Office import file name is required.")
+    expected_suffix = f".{office_format}"
+    if Path(file_name).suffix.lower() != expected_suffix:
+        raise OfficeServiceError(
+            f"The selected Office section only accepts {expected_suffix} files."
+        )
+    return file_name
+
+
+def _validate_office_package(source: Path, office_format: str) -> None:
+    expected_member = _OFFICE_PACKAGE_ROOTS[office_format]
+    try:
+        with ZipFile(source) as package:
+            package_info = package.infolist()
+            expanded_size = sum(member.file_size for member in package_info)
+            if expanded_size > _MAX_OFFICE_PACKAGE_UNCOMPRESSED_SIZE:
+                raise OfficeServiceError("The uploaded Office package expands beyond 500 MB.")
+            members = {member.filename for member in package_info}
+            if expected_member not in members:
+                raise OfficeServiceError(
+                    f"The uploaded file is not a valid {office_format.upper()} package."
+                )
+            bad_member = package.testzip()
+            if bad_member:
+                raise OfficeServiceError(
+                    f"The uploaded Office package is damaged near {bad_member}."
+                )
+    except BadZipFile as exc:
+        raise OfficeServiceError(
+            f"The uploaded file is not a valid {office_format.upper()} package."
+        ) from exc
+
+
+def import_office_document(
+    *,
+    source_path: str | Path,
+    office_format: str,
+    display_name: str | None = None,
+) -> OfficeDocumentRecord:
+    """Register an existing Office file in the Reins workspace."""
+    source = Path(source_path).expanduser()
+    if not source.is_file():
+        raise OfficeServiceError("The Office import file was not found.")
+
+    normalized = normalize_office_format(office_format)
+    file_name = _import_display_name(
+        display_name or source.name,
+        office_format=normalized,
+    )
+    _validate_office_package(source, normalized)
+
+    title = normalize_title(Path(file_name).stem)
+    destination = unique_office_path(title=title, office_format=normalized)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        shutil.copy2(source, destination)
+        record = OfficeDocumentRecord.create(
+            title=title,
+            kind=normalized,
+            path=destination,
+            prompt="",
+            generator="import",
+            command_count=0,
+            metadata={
+                "imported": True,
+                "source_file_name": file_name,
+            },
+        )
+        return _append_record(record)
+    except Exception:
+        _discard_temporary_file(destination)
+        raise
 
 
 def create_office_document(
@@ -708,22 +817,38 @@ def revise_office_document(
             progress=progress,
         )
 
-    _report_progress(
-        progress, "inspection", 18,
-        "OfficeCLI 正在读取原文件结构", "OfficeCLI is inspecting the original file structure",
-    )
-    inspection = inspect_office_document(record, client=client)
-
+    working = source.with_name(f".reins-office-revision-{uuid4().hex}.{record.kind}")
+    shutil.copy2(source, working)
+    working_record = _record_at_path(record, working)
     previous_error = ""
     result: dict[str, Any] | None = None
     try:
+        _report_progress(
+            progress, "inspection", 18,
+            "OfficeCLI 正在读取原文件结构", "OfficeCLI is inspecting the original file structure",
+        )
+        inspection = inspect_office_document(working_record, client=client)
+        revision_path_aliases: dict[str, str] = {}
+        if record.kind == "docx":
+            inspection, revision_path_aliases = canonicalize_word_revision_inspection(
+                inspection
+            )
+        elif record.kind == "xlsx":
+            inspection, revision_path_aliases = canonicalize_excel_revision_inspection(
+                inspection
+            )
+        elif record.kind == "pptx":
+            inspection, revision_path_aliases = (
+                canonicalize_presentation_revision_inspection(inspection)
+            )
+
         for attempt in range(2):
             if attempt:
                 _report_progress(
                     progress, "retry", 44,
                     "正在根据验证结果调整修改方案", "Adjusting the revision plan after validation",
                 )
-                shutil.copy2(backup, source)
+                shutil.copy2(backup, working)
             prompt = build_revision_prompt(
                 record=record,
                 instruction=clean_instruction,
@@ -736,11 +861,12 @@ def revise_office_document(
                     "Reins 正在制定精确修改方案", "Reins is preparing an exact revision plan",
                 )
                 plan = plan_office_revision(prompt, timeout, planner=planner)
+                plan = canonicalize_revision_plan_paths(plan, revision_path_aliases)
                 _report_progress(
                     progress, "officecli_apply", 62,
                     "OfficeCLI 正在修改原文件并验证结果", "OfficeCLI is revising the original file and validating it",
                 )
-                result = apply_revision_plan(record, plan, client=client)
+                result = apply_revision_plan(working_record, plan, client=client)
                 _report_progress(
                     progress, "validating", 92,
                     "文件修改已通过结构和格式检查", "The revision passed structure and formatting checks",
@@ -755,8 +881,14 @@ def revise_office_document(
 
         if result is None:
             raise OfficeRevisionError(previous_error or "Reins could not produce a valid Office revision.")
+        _replace_revised_file(working, source, progress=progress)
     except Exception:
-        shutil.copy2(backup, source)
+        _discard_temporary_file(working)
+        if not source.exists():
+            try:
+                shutil.copy2(backup, source)
+            except OSError:
+                pass
         raise
 
     revision = compact_revision_result(result)
