@@ -1,5 +1,7 @@
 #Requires -Version 5.1
 
+# Keep this script ASCII-only because Tauri invokes Windows PowerShell 5.1.
+
 [CmdletBinding()]
 param(
     [string]$PythonVersion = "3.12",
@@ -177,6 +179,8 @@ Copy-Item $Launcher (Join-Path $Runtime "bin\reins-runtime.exe")
 Write-Host "==> Verifying packaged Reins Office routing" -ForegroundColor Cyan
 $PackagedLauncher = Join-Path $Runtime "bin\reins-runtime.exe"
 $OfficeSmokeHome = Join-Path ([IO.Path]::GetTempPath()) "reins-office-runtime-smoke"
+$OfficeSmokeWorkspaceName = -join ([char[]]@(0x4E2D, 0x6587, 0x5DE5, 0x4F5C, 0x533A))
+$OfficeSmokeTitle = "Windows" + (-join ([char[]]@(0x8DEF, 0x5F84, 0x9A8C, 0x8BC1)))
 New-Item -ItemType Directory -Force -Path $OfficeSmokeHome | Out-Null
 $OfficeSmokeEnvironment = @{
     REINS_RUNTIME_ROOT = $Runtime
@@ -187,7 +191,7 @@ $OfficeSmokeEnvironment = @{
     OFFICECLI_SKIP_UPDATE = "1"
     REINS_HOME = $OfficeSmokeHome
     HERMES_HOME = $OfficeSmokeHome
-    REINS_WORKSPACE_ROOT = (Join-Path $OfficeSmokeHome "中文工作区")
+    REINS_WORKSPACE_ROOT = (Join-Path $OfficeSmokeHome $OfficeSmokeWorkspaceName)
     PYTHONHOME = (Join-Path $Runtime "python")
     PYTHONIOENCODING = "utf-8"
     PYTHONUTF8 = "1"
@@ -211,8 +215,8 @@ try {
 
     $OfficeCreateJson = (& $PackagedLauncher office create `
         --format docx `
-        --prompt "创建一份Windows文件路径验证文档。" `
-        --title "Windows路径验证" `
+        --prompt "Create a Windows file path validation document." `
+        --title $OfficeSmokeTitle `
         --language zh `
         --no-reins `
         --json | Out-String).Trim()
