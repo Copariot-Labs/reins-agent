@@ -6,7 +6,12 @@ import re
 from typing import Any, Callable
 
 from reins.features.office.content_writer import call_reins_json, normalize_content_payload
-from reins.features.office.officecli_client import OfficeCliClient, OfficeCliCommandError
+from reins.features.office.officecli_client import (
+    DEFAULT_OFFICECLI_BATCH_TIMEOUT_SECONDS,
+    OfficeCliClient,
+    OfficeCliCommandError,
+    officecli_batch_item,
+)
 from reins.features.office.schemas import (
     PRESENTATION_DESIGN_KEYS,
     PRESENTATION_FONT_CHOICES,
@@ -799,16 +804,33 @@ def apply_revision_plan(
     path = Path(record.path)
     plan = canonicalize_revision_plan_paths(plan)
     commands = plan.get("commands") or []
-    client.run(["open", path], timeout=60)
-    try:
-        for command in commands:
-            verb, *arguments = command
-            client.run([verb, path, *arguments], timeout=90)
-    finally:
+    batch_items = [
+        officecli_batch_item([command[0], path, *command[1:]])
+        for command in commands
+    ]
+    can_batch = (
+        bool(commands)
+        and all(item is not None for item in batch_items)
+        and callable(getattr(client, "run_batch", None))
+    )
+    if can_batch:
+        client.run_batch(
+            path,
+            [item for item in batch_items if item is not None],
+            timeout=DEFAULT_OFFICECLI_BATCH_TIMEOUT_SECONDS,
+            allowed_returncodes=(0,),
+        )
+    else:
+        client.run(["open", path], timeout=60)
         try:
-            client.run(["close", path], timeout=60)
-        except Exception:
-            pass
+            for command in commands:
+                verb, *arguments = command
+                client.run([verb, path, *arguments], timeout=90)
+        finally:
+            try:
+                client.run(["close", path], timeout=60)
+            except Exception:
+                pass
 
     try:
         validation = _run_text(client, ["validate", path], timeout=90)

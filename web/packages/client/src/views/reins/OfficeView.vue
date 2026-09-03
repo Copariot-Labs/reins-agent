@@ -55,7 +55,9 @@ const promptInputRef = ref<InputInst | null>(null)
 const officeFileInputRef = ref<HTMLInputElement | null>(null)
 const status = ref<OfficeStatus | null>(null)
 const documents = ref<OfficeDocument[]>([])
+const elapsedClock = ref(Date.now())
 let previewRunId = 0
+let elapsedClockTimer: number | undefined
 
 interface PendingOfficeFile {
   id: string
@@ -214,6 +216,7 @@ const copy = computed(() => isChinese.value
       slideCount: '页数',
       selectedWorkflow: '已选技能',
       activity: '处理过程',
+      elapsed: '已用时',
       queued: '等待开始',
       running: '处理中',
       needs_input: '需要补充信息',
@@ -282,6 +285,7 @@ const copy = computed(() => isChinese.value
       slideCount: 'Slides',
       selectedWorkflow: 'Selected skill',
       activity: 'Activity',
+      elapsed: 'Elapsed',
       queued: 'Waiting',
       running: 'In progress',
       needs_input: 'More information needed',
@@ -355,6 +359,21 @@ const operationStatusText = computed(() => {
   const operationStatus = activeOperation.value?.status
   if (!operationStatus) return ''
   return copy.value[operationStatus]
+})
+const operationElapsedText = computed(() => {
+  const createdAt = activeOperation.value?.created_at
+  if (!createdAt) return ''
+  const startedAt = Date.parse(createdAt)
+  if (!Number.isFinite(startedAt)) return ''
+  const status = activeOperation.value?.status
+  const finishedAt = Date.parse(activeOperation.value?.updated_at || '')
+  const referenceTime = status === 'queued' || status === 'running' || !Number.isFinite(finishedAt)
+    ? elapsedClock.value
+    : finishedAt
+  const elapsedSeconds = Math.max(0, Math.floor((referenceTime - startedAt) / 1000))
+  const minutes = Math.floor(elapsedSeconds / 60)
+  const seconds = elapsedSeconds % 60
+  return `${copy.value.elapsed} ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 })
 const canCancelOperation = computed(() =>
   activeOperation.value?.status === 'queued' || activeOperation.value?.status === 'running',
@@ -807,9 +826,13 @@ watch(
   loadPreview,
 )
 
-onMounted(loadOffice)
+onMounted(() => {
+  elapsedClockTimer = window.setInterval(() => { elapsedClock.value = Date.now() }, 1000)
+  loadOffice()
+})
 onBeforeUnmount(() => {
   previewRunId += 1
+  if (elapsedClockTimer !== undefined) window.clearInterval(elapsedClockTimer)
   for (const operationFormat of Object.keys(longRunningTimers) as OfficeFormat[]) {
     const timer = longRunningTimers[operationFormat]
     if (timer !== undefined) window.clearTimeout(timer)
@@ -965,6 +988,7 @@ onBeforeUnmount(() => {
               <header class="activity-header">
                 <strong>{{ copy.activity }}</strong>
                 <div class="activity-actions">
+                  <small v-if="operationElapsedText" class="activity-elapsed">{{ operationElapsedText }}</small>
                   <span :class="['activity-status', activeOperation?.status || 'failed']">
                     {{ operationTransportError && !activeOperation ? copy.failed : operationStatusText }}
                   </span>
@@ -1151,6 +1175,7 @@ onBeforeUnmount(() => {
               <header class="activity-header">
                 <strong>{{ copy.activity }}</strong>
                 <div class="activity-actions">
+                  <small v-if="operationElapsedText" class="activity-elapsed">{{ operationElapsedText }}</small>
                   <span :class="['activity-status', activeOperation?.status || 'failed']">
                     {{ operationTransportError && !activeOperation ? copy.failed : operationStatusText }}
                   </span>
@@ -1716,6 +1741,12 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 9px;
+}
+
+.activity-elapsed {
+  color: $text-muted;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
 }
 
 .activity-status {

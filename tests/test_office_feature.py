@@ -31,6 +31,7 @@ from reins.features.office.content_writer import (
     generate_office_content,
 )
 from reins.features.office.chat import infer_office_format, should_handle_office_chat
+from reins.features.office.officecli_client import officecli_batch_item
 from reins.features.office.renderer import render_office_content
 from reins.features.office.schemas import (
     OfficeDocumentRecord,
@@ -91,11 +92,47 @@ class FakeOfficeCliClient:
         return SimpleNamespace(stdout=stdout, stderr="", returncode=0)
 
 
+class BatchOfficeCliClient(FakeOfficeCliClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.batches: list[list[dict[str, object]]] = []
+
+    def run_batch(self, path, commands, **kwargs):
+        batch = list(commands)
+        self.batches.append(batch)
+        self.commands.append(["batch", str(path)])
+        self.run_options.append(dict(kwargs))
+        return SimpleNamespace(stdout='{"success":true}', stderr="", returncode=0)
+
+
 def test_office_format_aliases():
     assert normalize_office_format("word") == "docx"
     assert normalize_office_format("excel") == "xlsx"
     assert normalize_office_format("ppt") == "pptx"
     assert normalize_office_format("unknown") == "docx"
+
+
+def test_officecli_batch_item_preserves_unicode_properties():
+    item = officecli_batch_item(
+        [
+            "add",
+            "C:/Users/test/Documents/Reins Workspace/Word/report.docx",
+            "/body",
+            "--type",
+            "paragraph",
+            "--prop",
+            "text=社区第四季度工作计划",
+            "--prop",
+            "bold=true",
+        ]
+    )
+
+    assert item == {
+        "command": "add",
+        "parent": "/body",
+        "type": "paragraph",
+        "props": {"text": "社区第四季度工作计划", "bold": "true"},
+    }
 
 
 def test_office_cli_uses_long_running_model_timeout_by_default():
@@ -1407,6 +1444,72 @@ def test_reins_word_revision_uses_saved_structure_and_rebuilds_same_file(tmp_pat
     assert any(command[:1] == ["create"] for command in revision_client.commands)
 
 
+def test_generated_word_simple_revision_uses_compact_officecli_plan(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("REINS_HOME", str(tmp_path))
+    created = create_office_document(
+        prompt="create a community work plan",
+        office_format="docx",
+        use_reins=False,
+        client=FakeOfficeCliClient(),
+    )
+    reins_record = OfficeDocumentRecord(
+        id=created.id,
+        title=created.title,
+        kind=created.kind,
+        path=created.path,
+        file_name=created.file_name,
+        mime_type=created.mime_type,
+        created_at=created.created_at,
+        updated_at=created.updated_at,
+        revision_count=created.revision_count,
+        prompt=created.prompt,
+        generator="reins",
+        command_count=created.command_count,
+        metadata=created.metadata,
+    )
+    monkeypatch.setattr(
+        office_service, "get_office_document", lambda _document_id: reins_record
+    )
+    monkeypatch.setattr(
+        office_service,
+        "generate_office_content",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("full regeneration was used")
+        ),
+    )
+    revision_client = BatchOfficeCliClient()
+
+    revised = revise_office_document(
+        document_id=created.id,
+        instruction="把第一段改成更详细的中文说明",
+        client=revision_client,
+        planner=lambda _prompt, _timeout: {
+            "summary": "补充第一段说明",
+            "commands": [
+                {
+                    "verb": "set",
+                    "arguments": [
+                        "/body/p[1]",
+                        "--prop",
+                        "text=更详细的社区工作说明",
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert revised.revision_count == 1
+    assert revised.metadata["content_stale"] is True
+    assert revised.metadata["revision_mode"] == "officecli_patch"
+    assert len(revision_client.batches) == 1
+    assert revision_client.batches[0][0]["props"] == {
+        "text": "更详细的社区工作说明"
+    }
+    assert any("annotated" in command for command in revision_client.commands)
+
+
 def test_renderer_releases_officecli_resident_after_validation(tmp_path):
     client = FakeOfficeCliClient()
     output = tmp_path / "windows-safe.docx"
@@ -1426,6 +1529,26 @@ def test_renderer_releases_officecli_resident_after_validation(tmp_path):
         "OFFICECLI_NO_AUTO_RESIDENT": "1"
     }
     assert client.commands[-1] == ["close", str(output)]
+
+
+def test_renderer_batches_office_mutations_when_client_supports_it(tmp_path):
+    client = BatchOfficeCliClient()
+    output = tmp_path / "batched.docx"
+
+    render_office_content(
+        office_format="docx",
+        content={"title": "社区工作计划", "body": ["一、总体目标", "完成重点任务。"]},
+        output_path=output,
+        client=client,
+    )
+
+    assert output.exists()
+    assert len(client.batches) == 1
+    assert len(client.batches[0]) > 2
+    assert not any(command[:1] in (["add"], ["set"]) for command in client.commands)
+    create_options = client.run_options[0]
+    assert create_options["env_overrides"] == {"OFFICECLI_NO_AUTO_RESIDENT": "1"}
+    assert any(item["command"] == "add" for item in client.batches[0])
 
 
 def test_windows_atomic_revision_retries_a_transient_sharing_lock(tmp_path, monkeypatch):
@@ -1493,7 +1616,7 @@ def test_reins_excel_revision_uses_saved_workbook_and_rebuilds_same_file(tmp_pat
 
     revised = revise_office_document(
         document_id=created.id,
-        instruction="extend the workbook through November",
+        instruction="rebuild the entire workbook and extend it through November",
         client=revision_client,
     )
 
@@ -1548,7 +1671,7 @@ def test_ppt_revision_updates_structured_content_without_dom_inspection(tmp_path
 
     revised = revise_office_document(
         document_id=created.id,
-        instruction="make the launch narrative sharper",
+        instruction="rewrite the entire presentation to make the launch narrative sharper",
         client=revision_client,
         planner=lambda prompt, _timeout: (
             revised_content

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 import errno
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import shutil
 import subprocess
+import threading
 import time
 from typing import Any, Callable
 from uuid import uuid4
@@ -56,6 +59,19 @@ class OfficeServiceError(RuntimeError):
 
 OfficeProgressReporter = Callable[[str, int, str, str], None]
 
+_FULL_STRUCTURED_REVISION_PATTERN = re.compile(
+    r"(?:"
+    r"\b(?:redesign|rebrand|translate|rewrite|rebuild)\b|"
+    r"\b(?:entire|whole|complete|full)\s+(?:document|workbook|presentation|deck)\b|"
+    r"全文|整篇|整份|整个|全部|所有|全面|整体|彻底|重新设计|全新设计|"
+    r"整体改版|统一改为|翻译|译成|改成中文|重新编写|重新生成"
+    r")",
+    re.IGNORECASE,
+)
+_INSPECTION_CACHE_MAX = 24
+_inspection_cache: OrderedDict[tuple[str, int, int, str], dict[str, str]] = OrderedDict()
+_inspection_cache_lock = threading.Lock()
+
 
 def _report_progress(
     progress: OfficeProgressReporter | None,
@@ -76,6 +92,41 @@ def _is_revision_timeout(error: Exception) -> bool:
     if isinstance(error, (subprocess.TimeoutExpired, TimeoutError)):
         return True
     return "timed out" in str(error).casefold()
+
+
+def _requires_full_structured_revision(instruction: str) -> bool:
+    return bool(_FULL_STRUCTURED_REVISION_PATTERN.search(instruction))
+
+
+def _office_file_fingerprint(path: Path) -> tuple[str, int, int, str]:
+    stat = path.stat()
+    digest = hashlib.sha256()
+    with path.open("rb") as office_file:
+        for chunk in iter(lambda: office_file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return (str(path.resolve()), stat.st_size, stat.st_mtime_ns, digest.hexdigest())
+
+
+def _inspect_office_document_cached(
+    record: OfficeDocumentRecord,
+    *,
+    cache_path: Path,
+    client: OfficeCliClient,
+) -> tuple[dict[str, str], bool]:
+    key = _office_file_fingerprint(cache_path)
+    with _inspection_cache_lock:
+        cached = _inspection_cache.get(key)
+        if cached is not None:
+            _inspection_cache.move_to_end(key)
+            return dict(cached), True
+
+    inspection = inspect_office_document(record, client=client)
+    with _inspection_cache_lock:
+        _inspection_cache[key] = dict(inspection)
+        _inspection_cache.move_to_end(key)
+        while len(_inspection_cache) > _INSPECTION_CACHE_MAX:
+            _inspection_cache.popitem(last=False)
+    return inspection, False
 
 
 _REVISION_LANGUAGE_PATTERNS = (
@@ -788,7 +839,16 @@ def revise_office_document(
     shutil.copy2(source, backup)
 
     content = record.metadata.get("content")
-    if record.kind == "pptx" and isinstance(content, dict) and content.get("slides"):
+    use_full_structured_revision = (
+        not bool(record.metadata.get("content_stale"))
+        and _requires_full_structured_revision(clean_instruction)
+    )
+    if (
+        use_full_structured_revision
+        and record.kind == "pptx"
+        and isinstance(content, dict)
+        and content.get("slides")
+    ):
         return _revise_structured_presentation(
             record=record,
             source=source,
@@ -799,7 +859,12 @@ def revise_office_document(
             planner=planner,
             progress=progress,
         )
-    if record.kind == "docx" and record.generator == "reins" and isinstance(content, dict):
+    if (
+        use_full_structured_revision
+        and record.kind == "docx"
+        and record.generator == "reins"
+        and isinstance(content, dict)
+    ):
         return _revise_structured_word_document(
             record=record,
             source=source,
@@ -808,7 +873,12 @@ def revise_office_document(
             client=client,
             progress=progress,
         )
-    if record.kind == "xlsx" and record.generator == "reins" and isinstance(content, dict):
+    if (
+        use_full_structured_revision
+        and record.kind == "xlsx"
+        and record.generator == "reins"
+        and isinstance(content, dict)
+    ):
         return _revise_structured_excel_document(
             record=record,
             source=source,
@@ -828,7 +898,19 @@ def revise_office_document(
             progress, "inspection", 18,
             "OfficeCLI 正在读取原文件结构", "OfficeCLI is inspecting the original file structure",
         )
-        inspection = inspect_office_document(working_record, client=client)
+        inspection, inspection_cached = _inspect_office_document_cached(
+            working_record,
+            cache_path=source,
+            client=client,
+        )
+        if inspection_cached:
+            _report_progress(
+                progress,
+                "inspection_cached",
+                24,
+                "已复用当前文件的结构索引",
+                "Reused the current file structure index",
+            )
         revision_path_aliases: dict[str, str] = {}
         if record.kind == "docx":
             inspection, revision_path_aliases = canonicalize_word_revision_inspection(
@@ -909,6 +991,8 @@ def revise_office_document(
         {
             "revisions": history[-50:],
             "last_revision": history[-1],
+            "content_stale": isinstance(metadata.get("content"), dict),
+            "revision_mode": "officecli_patch",
         }
     )
 

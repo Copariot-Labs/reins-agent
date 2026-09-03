@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
 import platform
 import shutil
 import subprocess
+import tempfile
 from typing import Sequence
 
 from reins.compat.bootstrap import get_project_root
+
+DEFAULT_OFFICECLI_BATCH_TIMEOUT_SECONDS = 1_200
 
 
 class OfficeCliError(RuntimeError):
@@ -42,6 +46,62 @@ class OfficeCliRun:
     returncode: int
     stdout: str
     stderr: str
+
+
+def officecli_batch_item(args: Sequence[object]) -> dict[str, object] | None:
+    """Translate one supported OfficeCLI mutation into a batch item."""
+    command = [str(argument) for argument in args]
+    if len(command) < 3 or command[0] not in {"add", "set", "remove", "move", "swap"}:
+        return None
+
+    verb = command[0]
+    target = command[2]
+    item: dict[str, object] = {
+        "command": verb,
+        "parent" if verb == "add" else "path": target,
+    }
+    position = 3
+    if verb == "swap":
+        if position >= len(command) or command[position].startswith("--"):
+            return None
+        item["path2"] = command[position]
+        position += 1
+
+    props: dict[str, str] = {}
+    field_flags = {
+        "--type": "type",
+        "--from": "from",
+        "--after": "after",
+        "--before": "before",
+        "--to": "to",
+        "--path2": "path2",
+    }
+    while position < len(command):
+        flag = command[position]
+        if position + 1 >= len(command):
+            return None
+        value = command[position + 1]
+        position += 2
+        if flag == "--prop":
+            name, separator, prop_value = value.partition("=")
+            if not separator or not name:
+                return None
+            props[name] = prop_value
+        elif flag == "--index":
+            try:
+                item["index"] = int(value)
+            except ValueError:
+                return None
+        elif flag in field_flags:
+            item[field_flags[flag]] = value
+        else:
+            # Find/replace and any future CLI-only flags stay on the proven
+            # sequential path until OfficeCLI exposes an equivalent batch field.
+            return None
+
+    if props:
+        item["props"] = props
+    return item
 
 
 def _candidate_vendor_bins() -> list[Path]:
@@ -172,6 +232,45 @@ class OfficeCliClient:
             )
 
         return result
+
+    def run_batch(
+        self,
+        path: str | Path,
+        commands: Sequence[dict[str, object]],
+        *,
+        timeout: int = DEFAULT_OFFICECLI_BATCH_TIMEOUT_SECONDS,
+        allowed_returncodes: tuple[int, ...] = (0, 2),
+    ) -> OfficeCliRun:
+        """Apply mutations in one atomic OfficeCLI open/save cycle."""
+        if not commands:
+            return OfficeCliRun(args=[], returncode=0, stdout="", stderr="")
+
+        input_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                suffix=".json",
+                prefix="reins-office-batch-",
+                delete=False,
+            ) as batch_file:
+                json.dump(list(commands), batch_file, ensure_ascii=False)
+                input_path = Path(batch_file.name)
+            return self.run(
+                ["batch", path, "--input", input_path, "--stop-on-error", "--json"],
+                timeout=timeout,
+                allowed_returncodes=allowed_returncodes,
+                env_overrides={
+                    "OFFICECLI_NO_AUTO_RESIDENT": "1",
+                    "OFFICECLI_BATCH_ALLOW_STDIN_REDIRECT": "1",
+                },
+            )
+        finally:
+            if input_path is not None:
+                try:
+                    input_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
     def version(self) -> str | None:
         result = self.run(["--version"], timeout=10)

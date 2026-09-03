@@ -8,7 +8,12 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from reins.features.office.officecli_client import OfficeCliClient
+from reins.features.office.officecli_client import (
+    DEFAULT_OFFICECLI_BATCH_TIMEOUT_SECONDS,
+    OfficeCliClient,
+    OfficeCliRun,
+    officecli_batch_item,
+)
 from reins.features.office.schemas import (
     normalize_office_format,
     normalize_presentation_design,
@@ -83,6 +88,29 @@ def _run_mutation(
     client: OfficeCliClient, args: list[object], *, timeout: int = 60
 ) -> None:
     client.run(args, timeout=timeout, allowed_returncodes=(0, 2))
+
+
+class _OfficeMutationBatch:
+    def __init__(self, client: OfficeCliClient, path: Path) -> None:
+        self.client = client
+        self.path = path
+        self.commands: list[dict[str, object]] = []
+
+    def run(self, args: list[object], **_kwargs: object) -> OfficeCliRun:
+        item = officecli_batch_item(args)
+        if item is None:
+            raise OfficeRenderError(
+                f"Unsupported OfficeCLI renderer mutation: {str(args[0]) if args else '(empty)'}"
+            )
+        self.commands.append(item)
+        return OfficeCliRun(args=[], returncode=0, stdout="", stderr="")
+
+    def flush(self) -> None:
+        self.client.run_batch(
+            self.path,
+            self.commands,
+            timeout=DEFAULT_OFFICECLI_BATCH_TIMEOUT_SECONDS,
+        )
 
 
 _NO_AUTO_RESIDENT_ENV = {"OFFICECLI_NO_AUTO_RESIDENT": "1"}
@@ -3519,12 +3547,22 @@ def render_office_content(
             "Reins Office 正在创建文件容器",
             "Reins Office is preparing the file container",
         )
-        _run_mutation(client, ["create", working_path], timeout=60)
+        supports_batch = callable(getattr(client, "run_batch", None))
+        if supports_batch:
+            client.run(
+                ["create", working_path],
+                timeout=60,
+                allowed_returncodes=(0, 2),
+                env_overrides=_NO_AUTO_RESIDENT_ENV,
+            )
+        else:
+            _run_mutation(client, ["create", working_path], timeout=60)
         if not working_path.is_file():
             raise OfficeRenderError(
                 "Reins Office did not create the OfficeCLI file container."
             )
-        _run_mutation(client, ["open", working_path], timeout=60)
+        if not supports_batch:
+            _run_mutation(client, ["open", working_path], timeout=60)
 
         try:
             _report_render_progress(
@@ -3534,17 +3572,23 @@ def render_office_content(
                 "Reins Office 正在写入内容和版式",
                 "Reins Office is writing content and layout",
             )
+            render_client: Any = (
+                _OfficeMutationBatch(client, working_path) if supports_batch else client
+            )
             if normalized == "xlsx":
-                _render_xlsx(content, working_path, client)
+                _render_xlsx(content, working_path, render_client)
             elif normalized == "pptx":
-                _render_pptx(content, working_path, client)
+                _render_pptx(content, working_path, render_client)
             else:
-                _render_docx(content, working_path, client)
+                _render_docx(content, working_path, render_client)
+            if supports_batch:
+                render_client.flush()
         finally:
-            try:
-                _run_mutation(client, ["close", working_path], timeout=60)
-            except Exception:
-                pass
+            if not supports_batch:
+                try:
+                    _run_mutation(client, ["close", working_path], timeout=60)
+                except Exception:
+                    pass
 
         try:
             _report_render_progress(
