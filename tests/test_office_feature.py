@@ -1489,6 +1489,160 @@ def test_revision_timeout_stops_without_retry_and_preserves_original(tmp_path, m
     assert list_office_documents(limit=10)[0].revision_count == 0
 
 
+def test_revision_uses_a_third_internal_plan_before_returning_an_error(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("REINS_HOME", str(tmp_path))
+    created = create_office_document(
+        prompt="create a task list",
+        office_format="docx",
+        use_reins=False,
+        client=FakeOfficeCliClient(),
+    )
+    planner_calls = 0
+    planner_prompts = []
+
+    def planner(prompt, _timeout):
+        nonlocal planner_calls
+        planner_calls += 1
+        planner_prompts.append(prompt)
+        if planner_calls < 3:
+            return {
+                "summary": "Invalid plan",
+                "commands": [
+                    {
+                        "verb": "add",
+                        "arguments": ["/body", "--grid", "rows=2"],
+                    }
+                ],
+            }
+        return {
+            "summary": "Updated the document",
+            "commands": [
+                {
+                    "verb": "set",
+                    "arguments": ["/body/p[1]", "--prop", "text=完成"],
+                }
+            ],
+        }
+
+    revised = revise_office_document(
+        document_id=created.id,
+        instruction="补充任务内容",
+        client=FakeOfficeCliClient(),
+        planner=planner,
+    )
+
+    assert planner_calls == 3
+    assert "automatic recovery attempt" in planner_prompts[1]
+    assert "Attempt 1:" in planner_prompts[1]
+    assert "Attempt 1:" in planner_prompts[2]
+    assert "Attempt 2:" in planner_prompts[2]
+    assert revised.revision_count == 1
+    assert revised.metadata["last_revision"]["summary"] == "Updated the document"
+
+
+def test_officecli_timeout_is_retried_instead_of_reported_as_planning_timeout(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("REINS_HOME", str(tmp_path))
+    monkeypatch.setattr(office_service.time, "sleep", lambda _delay: None)
+    created = create_office_document(
+        prompt="create a task list",
+        office_format="docx",
+        use_reins=False,
+        client=FakeOfficeCliClient(),
+    )
+
+    class TransientOfficeCliClient(BatchOfficeCliClient):
+        def __init__(self):
+            super().__init__()
+            self.batch_attempts = 0
+
+        def run_batch(self, path, commands, **kwargs):
+            self.batch_attempts += 1
+            if self.batch_attempts == 1:
+                raise TimeoutError("OfficeCLI apply timed out")
+            return super().run_batch(path, commands, **kwargs)
+
+    revision_client = TransientOfficeCliClient()
+    planner_calls = 0
+
+    def planner(_prompt, _timeout):
+        nonlocal planner_calls
+        planner_calls += 1
+        return {
+            "summary": "Updated the document",
+            "commands": [
+                {
+                    "verb": "set",
+                    "arguments": ["/body/p[1]", "--prop", "text=完成"],
+                }
+            ],
+        }
+
+    revised = revise_office_document(
+        document_id=created.id,
+        instruction="补充任务内容",
+        client=revision_client,
+        planner=planner,
+    )
+
+    assert planner_calls == 2
+    assert revision_client.batch_attempts == 2
+    assert revised.revision_count == 1
+
+
+def test_failed_patch_plans_rebuild_and_replace_the_same_office_file(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("REINS_HOME", str(tmp_path))
+    created = create_office_document(
+        prompt="create a task list",
+        office_format="docx",
+        use_reins=False,
+        client=FakeOfficeCliClient(),
+    )
+    original_path = created.path
+    rebuilt_content = deepcopy(created.metadata["content"])
+    rebuilt_content.update(
+        {
+            "title": created.title,
+            "body": "修改后的完整中文内容",
+            "generator": "reins",
+        }
+    )
+    generation_prompts = []
+    monkeypatch.setattr(
+        office_service,
+        "generate_office_content",
+        lambda **kwargs: (generation_prompts.append(kwargs["prompt"]), rebuilt_content)[1],
+    )
+
+    revised = revise_office_document(
+        document_id=created.id,
+        instruction="补充完整说明",
+        client=FakeOfficeCliClient(),
+        planner=lambda _prompt, _timeout: {
+            "summary": "Invalid plan",
+            "commands": [
+                {
+                    "verb": "add",
+                    "arguments": ["/body", "--unsupported-layout"],
+                }
+            ],
+        },
+    )
+
+    assert revised.path == original_path
+    assert Path(original_path).exists()
+    assert revised.revision_count == 1
+    assert revised.metadata["revision_mode"] == "officecli_rebuild_recovery"
+    assert revised.metadata["content_stale"] is False
+    assert revised.metadata["content"]["body"] == "修改后的完整中文内容"
+    assert "Produce the result now without asking the user to retry" in generation_prompts[0]
+
+
 def test_reins_word_revision_uses_saved_structure_and_rebuilds_same_file(tmp_path, monkeypatch):
     monkeypatch.setenv("REINS_HOME", str(tmp_path))
     created = create_office_document(

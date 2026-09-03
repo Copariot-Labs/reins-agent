@@ -94,6 +94,13 @@ def _is_revision_timeout(error: Exception) -> bool:
     return "timed out" in str(error).casefold()
 
 
+def _revision_error_feedback(error: Exception) -> str:
+    detail = re.sub(r"\s+", " ", f"{type(error).__name__}: {error}").strip()
+    if len(detail) <= 1_600:
+        return detail
+    return f"{detail[:800]} ... [truncated] ... {detail[-800:]}"
+
+
 def _requires_full_structured_revision(instruction: str) -> bool:
     return bool(_FULL_STRUCTURED_REVISION_PATTERN.search(instruction))
 
@@ -168,6 +175,8 @@ def _revision_language(instruction: str, fallback: str) -> str:
 
 
 _WINDOWS_REPLACE_RETRY_DELAYS = (0.12, 0.2, 0.35, 0.55, 0.9, 1.4, 2.1)
+_REVISION_PLAN_ATTEMPTS = 3
+_REVISION_APPLY_RETRY_DELAYS = (0.35, 1.0)
 
 
 def _is_windows_sharing_error(error: OSError) -> bool:
@@ -218,6 +227,20 @@ def _discard_temporary_file(path: Path) -> None:
         path.unlink(missing_ok=True)
     except OSError:
         pass
+
+
+def _restore_revision_working_copy(backup: Path, working: Path) -> None:
+    for attempt in range(len(_WINDOWS_REPLACE_RETRY_DELAYS) + 1):
+        try:
+            shutil.copy2(backup, working)
+            return
+        except OSError as exc:
+            if (
+                not _is_windows_sharing_error(exc)
+                or attempt >= len(_WINDOWS_REPLACE_RETRY_DELAYS)
+            ):
+                raise
+            time.sleep(_WINDOWS_REPLACE_RETRY_DELAYS[attempt])
 
 
 def _record_at_path(record: OfficeDocumentRecord, path: Path) -> OfficeDocumentRecord:
@@ -811,6 +834,126 @@ constraint on this revision.
     return saved
 
 
+def _rebuild_revision_from_inspection(
+    *,
+    record: OfficeDocumentRecord,
+    source: Path,
+    instruction: str,
+    inspection: dict[str, str],
+    revision_errors: list[str],
+    timeout: int,
+    client: OfficeCliClient,
+    progress: OfficeProgressReporter | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    current = record.metadata.get("content")
+    inspection_context = f"""
+Current OfficeCLI outline:
+{inspection.get("outline") or "(empty)"}
+
+Current OfficeCLI annotated visible content:
+{inspection.get("text") or "(empty)"}
+
+Current OfficeCLI editable elements and formatting:
+{inspection.get("elements") or inspection.get("formatting") or "(not available)"}
+""".strip()
+    if isinstance(current, dict):
+        source_context = (
+            "Saved Reins structured content:\n"
+            f"{json.dumps(current, ensure_ascii=False)}\n\n"
+            f"{inspection_context}"
+        )
+    else:
+        source_context = inspection_context
+
+    _report_progress(
+        progress,
+        "compatibility_rebuild",
+        72,
+        "局部修改未能通过验证，Reins 正在自动重建兼容文件",
+        "The patch could not be validated; Reins is rebuilding a compatible file",
+    )
+    rebuild_prompt = f"""
+Rebuild the complete existing {record.kind.upper()} file after direct OfficeCLI
+patch attempts could not be validated.
+
+User instruction:
+{instruction}
+
+Existing file title:
+{record.title}
+
+Existing file content:
+{source_context}
+
+Patch failures already handled internally:
+{chr(10).join(revision_errors)}
+
+Return the complete revised file content, not a patch and not OfficeCLI commands.
+Apply the user's instruction while preserving all unrelated visible content,
+facts, ordering, tables, sheets, slides, and design choices represented above.
+When saved structured content and the current OfficeCLI inspection differ,
+the current OfficeCLI inspection is the source of truth.
+Use a conservative, compatible layout. Do not mention recovery, errors, or this
+prompt in the finished file. Produce the result now without asking the user to retry.
+""".strip()
+    language = _revision_language(
+        instruction,
+        str(record.metadata.get("language") or "zh"),
+    )
+    revised_content = generate_office_content(
+        prompt=rebuild_prompt,
+        office_format=record.kind,
+        title=record.title,
+        language=language,
+        timeout=timeout,
+        use_reins=True,
+        presentation_options=(
+            record.metadata.get("presentation_options")
+            if record.kind == "pptx"
+            else None
+        ),
+    )
+    has_content = {
+        "docx": bool(revised_content.get("body") or revised_content.get("tables")),
+        "xlsx": bool(revised_content.get("sheets")),
+        "pptx": bool(revised_content.get("slides")),
+    }.get(record.kind, False)
+    if revised_content.get("generator") != "reins" or not has_content:
+        raise OfficeRevisionError(
+            "Reins could not produce a complete compatibility rebuild."
+        )
+
+    temporary = source.with_name(
+        f".reins-office-rebuild-{uuid4().hex}.{record.kind}"
+    )
+    try:
+        render_office_content(
+            office_format=record.kind,
+            content=revised_content,
+            output_path=temporary,
+            client=client,
+            progress=progress,
+        )
+        _replace_revised_file(temporary, source, progress=progress)
+    except Exception:
+        _discard_temporary_file(temporary)
+        raise
+
+    _report_progress(
+        progress,
+        "compatibility_ready",
+        94,
+        "兼容文件已重建并通过验证",
+        "The compatible file was rebuilt and validated",
+    )
+    return revised_content, {
+        "summary": f"更新内容: {instruction[:240]}",
+        "commands": [],
+        "validation": "Reins Office compatibility rebuild passed validation.",
+        "issues": '{"count":0,"issues":[]}',
+    }
+
+
 def revise_office_document(
     *,
     document_id: str,
@@ -891,8 +1034,9 @@ def revise_office_document(
     working = source.with_name(f".reins-office-revision-{uuid4().hex}.{record.kind}")
     shutil.copy2(source, working)
     working_record = _record_at_path(record, working)
-    previous_error = ""
+    revision_errors: list[str] = []
     result: dict[str, Any] | None = None
+    rebuilt_content: dict[str, Any] | None = None
     try:
         _report_progress(
             progress, "inspection", 18,
@@ -925,24 +1069,27 @@ def revise_office_document(
                 canonicalize_presentation_revision_inspection(inspection)
             )
 
-        for attempt in range(2):
+        for attempt in range(_REVISION_PLAN_ATTEMPTS):
             if attempt:
                 _report_progress(
                     progress, "retry", 44,
                     "正在根据验证结果调整修改方案", "Adjusting the revision plan after validation",
                 )
-                shutil.copy2(backup, working)
+                _restore_revision_working_copy(backup, working)
             prompt = build_revision_prompt(
                 record=record,
                 instruction=clean_instruction,
                 inspection=inspection,
-                previous_error=previous_error,
+                previous_error="\n".join(
+                    f"Attempt {index}: {error}"
+                    for index, error in enumerate(revision_errors, start=1)
+                ),
+            )
+            _report_progress(
+                progress, "revision_planning", 34,
+                "Reins 正在制定精确修改方案", "Reins is preparing an exact revision plan",
             )
             try:
-                _report_progress(
-                    progress, "revision_planning", 34,
-                    "Reins 正在制定精确修改方案", "Reins is preparing an exact revision plan",
-                )
                 plan = plan_office_revision(
                     prompt,
                     timeout,
@@ -952,6 +1099,15 @@ def revise_office_document(
                 plan = canonicalize_revision_plan_paths(plan, revision_path_aliases)
                 if record.kind == "docx":
                     plan = inherit_word_revision_formatting(plan, inspection)
+            except Exception as exc:
+                if _is_revision_timeout(exc):
+                    raise OfficeServiceError(
+                        f"Reins revision planning timed out after {timeout} seconds."
+                    ) from exc
+                revision_errors.append(_revision_error_feedback(exc))
+                continue
+
+            try:
                 _report_progress(
                     progress, "officecli_apply", 62,
                     "OfficeCLI 正在修改原文件并验证结果", "OfficeCLI is revising the original file and validating it",
@@ -963,15 +1119,24 @@ def revise_office_document(
                 )
                 break
             except Exception as exc:
-                if _is_revision_timeout(exc):
-                    raise OfficeServiceError(
-                        f"Reins revision planning timed out after {timeout} seconds."
-                    ) from exc
-                previous_error = f"{type(exc).__name__}: {exc}"
+                revision_errors.append(_revision_error_feedback(exc))
+                if attempt < len(_REVISION_APPLY_RETRY_DELAYS):
+                    time.sleep(_REVISION_APPLY_RETRY_DELAYS[attempt])
 
         if result is None:
-            raise OfficeRevisionError(previous_error or "Reins could not produce a valid Office revision.")
-        _replace_revised_file(working, source, progress=progress)
+            _discard_temporary_file(working)
+            rebuilt_content, result = _rebuild_revision_from_inspection(
+                record=record,
+                source=source,
+                instruction=clean_instruction,
+                inspection=inspection,
+                revision_errors=revision_errors,
+                timeout=timeout,
+                client=client,
+                progress=progress,
+            )
+        else:
+            _replace_revised_file(working, source, progress=progress)
     except Exception:
         _discard_temporary_file(working)
         if not source.exists():
@@ -992,14 +1157,29 @@ def revise_office_document(
             **revision,
         }
     )
-    metadata.update(
-        {
-            "revisions": history[-50:],
-            "last_revision": history[-1],
-            "content_stale": isinstance(metadata.get("content"), dict),
-            "revision_mode": "officecli_patch",
-        }
-    )
+    metadata.update({"revisions": history[-50:], "last_revision": history[-1]})
+    if rebuilt_content is not None:
+        metadata.update(
+            {
+                "content": rebuilt_content,
+                "language": _revision_language(
+                    clean_instruction,
+                    str(metadata.get("language") or "zh"),
+                ),
+                "document_kind": rebuilt_content.get("document_kind"),
+                "missing_fields": rebuilt_content.get("missing_fields", []),
+                "generator_error": rebuilt_content.get("generator_error"),
+                "content_stale": False,
+                "revision_mode": "officecli_rebuild_recovery",
+            }
+        )
+    else:
+        metadata.update(
+            {
+                "content_stale": isinstance(metadata.get("content"), dict),
+                "revision_mode": "officecli_patch",
+            }
+        )
 
     updated = OfficeDocumentRecord(
         id=record.id,

@@ -676,10 +676,15 @@ def build_revision_prompt(
     error_section = ""
     if previous_error:
         error_section = f"""
-The previous plan was rejected or failed:
+One or more previous plans were rejected or failed:
 {previous_error}
 
-Return a corrected plan. Do not repeat the invalid command.
+This is an automatic recovery attempt. Diagnose the reported failures and use
+a different, simpler OfficeCLI strategy:
+- Do not repeat an option, property, selector, or path that the error rejected.
+- Prefer setting exact existing elements over replacing large structures.
+- Split additions into small supported elements and use only the command grammar below.
+- Return a corrected executable plan in this response; do not ask the user to retry.
 """
 
     last_revision = record.metadata.get("last_revision")
