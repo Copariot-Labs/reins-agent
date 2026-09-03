@@ -943,7 +943,12 @@ def revise_office_document(
                     progress, "revision_planning", 34,
                     "Reins 正在制定精确修改方案", "Reins is preparing an exact revision plan",
                 )
-                plan = plan_office_revision(prompt, timeout, planner=planner)
+                plan = plan_office_revision(
+                    prompt,
+                    timeout,
+                    planner=planner,
+                    office_format=record.kind,
+                )
                 plan = canonicalize_revision_plan_paths(plan, revision_path_aliases)
                 if record.kind == "docx":
                     plan = inherit_word_revision_formatting(plan, inspection)

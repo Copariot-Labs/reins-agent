@@ -7,6 +7,7 @@ import { downloadFile, downloadUrl, getDownloadUrl } from "@/api/hermes/download
 import { copyToClipboard } from "@/utils/clipboard";
 import MarkdownRenderer from "./MarkdownRenderer.vue";
 import { parseThinking, countThinkingChars } from "@/utils/thinking-parser";
+import { visibleReinsReasoning } from "@/utils/reins-reasoning";
 import { useChatStore } from "@/stores/hermes/chat";
 import { useProfilesStore } from "@/stores/hermes/profiles";
 import { useSettingsStore } from "@/stores/hermes/settings";
@@ -219,7 +220,7 @@ const hasReasoningField = computed(() => !!(props.message.reasoning && props.mes
 
 const hasThinking = computed(() => hasReasoningField.value || parsedThinking.value.hasThinking);
 
-const thinkingFullText = computed(() => {
+const rawThinkingFullText = computed(() => {
   const parts: string[] = [];
   if (props.message.reasoning) parts.push(props.message.reasoning);
   parts.push(...parsedThinking.value.segments);
@@ -227,7 +228,15 @@ const thinkingFullText = computed(() => {
   return parts.join("\n\n");
 });
 
+const thinkingFullText = computed(() => visibleReinsReasoning(
+  rawThinkingFullText.value,
+  !!parsedThinking.value.body.trim(),
+));
+
 const thinkingCharCount = computed(() => {
+  if (thinkingFullText.value !== rawThinkingFullText.value.trim()) {
+    return thinkingFullText.value.length;
+  }
   let count = countThinkingChars(parsedThinking.value);
   if (props.message.reasoning) count += props.message.reasoning.length;
   return count;

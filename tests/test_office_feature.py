@@ -871,6 +871,82 @@ def test_revision_plan_rejects_find_and_replace_as_cell_properties():
         raise AssertionError("unsupported Excel find/replace properties were accepted")
 
 
+def test_excel_revision_expands_bulk_json_rows_into_officecli_cell_sets():
+    plan = normalize_revision_plan(
+        {
+            "summary": "新增三笔交易",
+            "commands": [
+                {
+                    "verb": "add",
+                    "arguments": [
+                        "/交易记录/A6:I8",
+                        "--table",
+                        "data=[{\"A6\":23,\"B6\":46269,\"C6\":\"收入\",\"D6\":2000.0},{\"A7\":22,\"C7\":\"支出\"}]",
+                    ],
+                }
+            ],
+        },
+        office_format="xlsx",
+    )
+
+    assert plan["summary"] == "新增三笔交易"
+    assert plan["commands"] == [
+        ["set", "/交易记录/A6", "--prop", "value=23"],
+        ["set", "/交易记录/B6", "--prop", "value=46269"],
+        ["set", "/交易记录/C6", "--prop", "value=收入"],
+        ["set", "/交易记录/D6", "--prop", "value=2000.0"],
+        ["set", "/交易记录/A7", "--prop", "value=22"],
+        ["set", "/交易记录/C7", "--prop", "value=支出"],
+    ]
+
+
+def test_revision_plan_repairs_typed_add_and_bare_properties():
+    plan = normalize_revision_plan(
+        {
+            "summary": "Add a table",
+            "commands": [
+                {
+                    "verb": "add",
+                    "arguments": [
+                        "/body",
+                        "--table",
+                        "rows=2",
+                        "cols=3",
+                    ],
+                }
+            ],
+        },
+        office_format="docx",
+    )
+
+    assert plan["commands"] == [[
+        "add",
+        "/body",
+        "--type",
+        "table",
+        "--prop",
+        "rows=2",
+        "--prop",
+        "cols=3",
+    ]]
+
+
+def test_revision_plan_rejects_unknown_officecli_options_before_execution():
+    with pytest.raises(OfficeRevisionError, match="unsupported OfficeCLI option '--grid'"):
+        normalize_revision_plan(
+            {
+                "summary": "Invalid table change",
+                "commands": [
+                    {
+                        "verb": "add",
+                        "arguments": ["/body", "--grid", "rows=2"],
+                    }
+                ],
+            },
+            office_format="docx",
+        )
+
+
 def test_word_revision_paths_are_canonicalized_for_packaged_officecli():
     inspection, aliases = canonicalize_word_revision_inspection(
         {

@@ -12,6 +12,7 @@ import {
     resolveMentionTargets,
     stripMentionRoutingTokens,
 } from './mention-routing'
+import { reinsChatLanguageInstructions, reinsReasoningProgressSummary } from '../../reins/chat-language'
 
 export const GROUP_CHAT_AGENT_SOCKET_SECRET = randomBytes(32).toString('hex')
 
@@ -72,10 +73,13 @@ export function groupContextTokensWithFixedOverhead(
     return Math.floor(fixedContextTokens) + estimateGroupHistoryMessageTokens(history)
 }
 
-export function groupBridgeReasoningDeltaFromEvent(event: Record<string, unknown>): string | null {
+export function groupBridgeReasoningDeltaFromEvent(
+    event: Record<string, unknown>,
+    alreadyVisible = false,
+): string | null {
     if (String(event.event || '') !== 'reasoning.delta') return null
     const text = String(event.text || '')
-    return text ? text : null
+    return text && !alreadyVisible ? reinsReasoningProgressSummary() : null
 }
 
 interface MemberData {
@@ -480,10 +484,11 @@ class AgentClient {
                 })
                 : `${routedPrefix}\n\n原始消息：${stripMentionRoutingTokens(msg.content, this.name) || msg.content}`
             const runContext = [
-                `[Current Hermes profile: ${this.profile}]`,
-                'When calling Hermes Web UI endpoints from tools or skills, include the current Hermes profile as the X-Hermes-Profile header if the endpoint supports profile-scoped behavior.',
+                `[Current Reins profile: ${this.profile}]`,
+                'When calling internal Reins endpoints from tools or skills, include the current profile as the X-Hermes-Profile header if the endpoint supports profile-scoped behavior. Treat the header name as a private implementation detail.',
             ].join('\n')
             instructions = instructions ? `${runContext}\n${instructions}` : runContext
+            instructions = `${instructions}\n${reinsChatLanguageInstructions()}`
             const bridgeInput: AgentBridgeMessage = isContentBlockArray(input)
                 ? await convertContentBlocksForAgent(input)
                 : input
@@ -504,7 +509,7 @@ class AgentClient {
             streamStarted = true
             for await (const chunk of bridge.streamOutput(started.run_id, { timeoutMs: 120000 })) {
                 lastChunk = chunk
-                reasoningContent += await this.recordBridgeEvents(roomId, sessionId, instructions, chunk, () => streamMessageId, async () => {
+                reasoningContent += await this.recordBridgeEvents(roomId, sessionId, instructions, chunk, reasoningContent, () => streamMessageId, async () => {
                     const toolBaseId = streamMessageId
                     if (currentContent.trim()) {
                         await this.sendMessage(roomId, currentContent, streamMessageId, {
@@ -676,6 +681,7 @@ class AgentClient {
         sessionId: string,
         instructions: string | undefined,
         chunk: AgentBridgeOutput,
+        existingReasoning: string,
         getCurrentMessageId: () => string,
         beforeToolStarted: () => Promise<string>,
     ): Promise<string> {
@@ -705,7 +711,10 @@ class AgentClient {
                     choice: (ev as any).choice,
                 })
             } else {
-                const text = groupBridgeReasoningDeltaFromEvent(ev as Record<string, unknown>)
+                const text = groupBridgeReasoningDeltaFromEvent(
+                    ev as Record<string, unknown>,
+                    Boolean(existingReasoning || reasoning),
+                )
                 if (text) {
                     reasoning += text
                     this.emitMessageReasoningDelta(roomId, getCurrentMessageId(), text)

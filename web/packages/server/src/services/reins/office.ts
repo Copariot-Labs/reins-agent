@@ -918,6 +918,33 @@ export function friendlyOfficeOperationError(
   }
 
   if (
+    kind === 'revise'
+    && (
+      normalized.includes('unrecognized option')
+      || normalized.includes('bare property')
+      || normalized.includes('missing_prop_flag')
+      || normalized.includes('unsupported officecli option')
+      || normalized.includes('unsupported property')
+      || normalized.includes('unsupported props')
+      || normalized.includes('unexpected positional argument')
+      || normalized.includes('invalid property')
+      || normalized.includes('unrecognized command or argument')
+    )
+  ) {
+    return {
+      code: 'revision_plan_incompatible',
+      title_zh: '文件修改方案需要调整',
+      title_en: 'The revision plan needs adjustment',
+      message_zh: 'Reins 未能把本次修改要求转换为可安全执行的 Office 操作，原文件已完整保留。',
+      message_en: 'Reins could not convert this request into safe Office operations. The original file was preserved.',
+      suggestion_zh: '请用自然语言重新说明要修改的位置和内容，例如“在交易记录表末尾新增三笔交易”。',
+      suggestion_en: 'Describe the target and change again in natural language, for example: “Add three transactions to the end of the transaction sheet.”',
+      technical_detail: '',
+      retryable: true,
+    }
+  }
+
+  if (
     stage.includes('content')
     || stage.includes('planning')
     || normalized.includes('reins failed to generate')
@@ -952,7 +979,7 @@ export function friendlyOfficeOperationError(
         message_en: 'The revision plan was not compatible with the existing file structure or formatting. The original file was preserved.',
         suggestion_zh: '请直接重试相同要求。Reins 会重新读取当前文件的内容和样式，再通过 OfficeCLI 修改同一个文件。',
         suggestion_en: 'Retry the same request. Reins will reread the current content and styles, then revise the same file through OfficeCLI.',
-        technical_detail: detail,
+        technical_detail: '',
         retryable: true,
       }
     }

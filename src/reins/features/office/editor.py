@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 import re
 from typing import Any, Callable
@@ -78,6 +79,51 @@ _NATURAL_CHARACTER_SPACING_PATTERN = re.compile(
     r"(?:characters?|chars?|character\s*widths?|字符|个字符|字)\s*$",
     re.IGNORECASE,
 )
+_EXCEL_CELL_REFERENCE_PATTERN = re.compile(r"^[A-Za-z]{1,3}[1-9]\d*$")
+_EXCEL_CELL_OR_RANGE_PATH_TAIL_PATTERN = re.compile(
+    r"^(?:[A-Za-z]{1,3}[1-9]\d*|[A-Za-z]{1,3}[1-9]\d*:[A-Za-z]{1,3}[1-9]\d*)$"
+)
+_ADD_TYPE_FLAG_ALIASES = {
+    "--cell": "cell",
+    "--chart": "chart",
+    "--connector": "connector",
+    "--group": "group",
+    "--paragraph": "paragraph",
+    "--picture": "picture",
+    "--row": "row",
+    "--run": "run",
+    "--shape": "shape",
+    "--slide": "slide",
+    "--table": "table",
+    "--textbox": "shape",
+    "--text-box": "shape",
+}
+_REVISION_FLAG_ARITY = {
+    "add": {
+        "--type": 1,
+        "--from": 1,
+        "--index": 1,
+        "--after": 1,
+        "--before": 1,
+        "--prop": 1,
+        "--force": 0,
+    },
+    "set": {
+        "--prop": 1,
+        "--find": 1,
+        "--replace": 1,
+        "--force": 0,
+    },
+    "remove": {"--shift": 1, "--prop": 1},
+    "move": {
+        "--to": 1,
+        "--index": 1,
+        "--after": 1,
+        "--before": 1,
+        "--prop": 1,
+    },
+    "swap": {},
+}
 
 
 def _normalize_revision_property(argument: str) -> str:
@@ -94,6 +140,139 @@ def _normalize_revision_property(argument: str) -> str:
         return argument
     normalized_number = f"{number:g}"
     return f"{name}={normalized_number}pt"
+
+
+def _excel_value_property(value: Any) -> str:
+    if value is None:
+        return "value="
+    if isinstance(value, bool):
+        return f"value={'true' if value else 'false'}"
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if isinstance(value, float) and not math.isfinite(value):
+            raise OfficeRevisionError("Excel bulk data contains a non-finite number.")
+        return f"value={value}"
+    if isinstance(value, str):
+        return f"{'formula' if value.startswith('=') else 'value'}={value}"
+    raise OfficeRevisionError(
+        "Excel bulk data values must be text, numbers, booleans, or empty cells."
+    )
+
+
+def _excel_worksheet_path(path: str) -> str:
+    parts = path.strip().strip("/").split("/")
+    if len(parts) > 1 and _EXCEL_CELL_OR_RANGE_PATH_TAIL_PATTERN.fullmatch(parts[-1]):
+        parts.pop()
+    return f"/{'/'.join(parts)}" if parts and parts[0] else path
+
+
+def _expand_excel_bulk_cell_command(command: list[str]) -> list[list[str]] | None:
+    """Translate a common model bulk-row shorthand into valid OfficeCLI cell sets."""
+    if len(command) < 3 or command[0] != "add":
+        return None
+
+    data_text = ""
+    for argument in command[2:]:
+        name, separator, value = argument.partition("=")
+        if separator and name.strip().casefold() == "data":
+            data_text = value
+            break
+    if not data_text:
+        return None
+
+    try:
+        rows = json.loads(data_text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(rows, list) or not rows:
+        return None
+
+    worksheet = _excel_worksheet_path(command[1])
+    expanded: list[list[str]] = []
+    for row in rows:
+        if not isinstance(row, dict) or not row:
+            return None
+        for cell, value in row.items():
+            cell_ref = str(cell).strip().upper()
+            if not _EXCEL_CELL_REFERENCE_PATTERN.fullmatch(cell_ref):
+                return None
+            expanded.append(
+                ["set", f"{worksheet}/{cell_ref}", "--prop", _excel_value_property(value)]
+            )
+    return expanded or None
+
+
+def _repair_revision_arguments(verb: str, arguments: list[str]) -> list[str]:
+    """Repair harmless planner shorthand before validating the exact CLI grammar."""
+    if verb == "swap":
+        return arguments
+
+    repaired: list[str] = [arguments[0]]
+    index = 1
+    while index < len(arguments):
+        argument = arguments[index]
+        lowered = argument.casefold()
+        if verb == "add" and lowered in _ADD_TYPE_FLAG_ALIASES:
+            repaired.extend(["--type", _ADD_TYPE_FLAG_ALIASES[lowered]])
+            index += 1
+            continue
+        if lowered in _REVISION_FLAG_ARITY[verb]:
+            repaired.append(lowered)
+            arity = _REVISION_FLAG_ARITY[verb][lowered]
+            if arity and index + 1 < len(arguments):
+                repaired.append(arguments[index + 1])
+                index += 2
+            else:
+                index += 1
+            continue
+        if "=" in argument and not argument.startswith("--"):
+            repaired.extend(["--prop", argument])
+            index += 1
+            continue
+        repaired.append(argument)
+        index += 1
+    return repaired
+
+
+def _validate_revision_arguments(verb: str, arguments: list[str], command_index: int) -> None:
+    if verb == "swap":
+        if len(arguments) != 2 or not arguments[1].startswith("/"):
+            raise OfficeRevisionError(
+                f"Revision command {command_index} must provide exactly two document paths for swap."
+            )
+        return
+
+    allowed = _REVISION_FLAG_ARITY[verb]
+    index = 1
+    while index < len(arguments):
+        flag = arguments[index]
+        if not flag.startswith("--"):
+            raise OfficeRevisionError(
+                f"Revision command {command_index} contains unexpected positional argument "
+                f"'{flag}'. Use an OfficeCLI option and repeated --prop key=value pairs."
+            )
+        if flag not in allowed:
+            raise OfficeRevisionError(
+                f"Revision command {command_index} uses unsupported OfficeCLI option '{flag}'."
+            )
+        arity = allowed[flag]
+        if arity == 0:
+            index += 1
+            continue
+        if index + 1 >= len(arguments):
+            raise OfficeRevisionError(
+                f"Revision command {command_index} is missing a value for {flag}."
+            )
+        value = arguments[index + 1]
+        if value.casefold() in allowed or value.casefold() in _ADD_TYPE_FLAG_ALIASES:
+            raise OfficeRevisionError(
+                f"Revision command {command_index} is missing a value for {flag}."
+            )
+        if flag == "--prop" and ("=" not in value or not value.split("=", 1)[0].strip()):
+            raise OfficeRevisionError(
+                f"Revision command {command_index} has an invalid property. "
+                "Use --prop key=value."
+            )
+        index += 2
 
 
 def _run_text(
@@ -562,6 +741,8 @@ Rules:
 - Never use Word @paraId selectors; the packaged OfficeCLI requires positional paths for revisions.
 - For Word and PowerPoint text replacement, prefer: set / --find OLD --replace NEW.
 - For properties, use repeated pairs: --prop key=value.
+- Never use element names as options such as --table, --row, --cell, --paragraph, --slide, or --shape. For an add command, use --type table, --type row, --type cell, --type paragraph, --type slide, or --type shape.
+- Never pass a bare key=value argument. Every property must be preceded by --prop.
 - For Word character spacing properties (spacing, charSpacing, or letterSpacing), use a finite number with an OfficeCLI unit such as 2pt. Never use natural-language values such as "2 characters" or "两个字符".
 - For Word, add paragraphs under /body with --type paragraph.
 - Treat the existing file as the design source of truth. For Word design or formatting changes, copy the exact supported property values shown under "Word paragraph formatting" from an analogous existing title, heading, body paragraph, or list item.
@@ -572,6 +753,7 @@ Rules:
 - For Excel, use the exact worksheet and cell paths shown above, including Chinese worksheet names.
 - For Excel values use --prop value=NEW, and for formulas use --prop formula=FORMULA; never use text as a cell property.
 - For Excel, never use --find/--replace and never put find or replace inside --prop.
+- For Excel, never append rows with --table or a JSON data property. Emit one set command per destination cell, for example: set /交易记录/A6 --prop value=23.
 - Preserve content and formatting unrelated to the request.
 - Never use raw XML, import, create, open, close, save, watch, or filesystem commands.
 - Return an empty commands list only when the requested state is already present.
@@ -731,7 +913,11 @@ You must also change the composition and slide variants; changing colors alone i
     }
 
 
-def normalize_revision_plan(raw: dict[str, Any]) -> dict[str, Any]:
+def normalize_revision_plan(
+    raw: dict[str, Any],
+    *,
+    office_format: str | None = None,
+) -> dict[str, Any]:
     summary = str(raw.get("summary") or "Office document updated").strip()
     commands = raw.get("commands")
     if not isinstance(commands, list):
@@ -765,6 +951,24 @@ def normalize_revision_plan(raw: dict[str, Any]) -> dict[str, Any]:
                 )
         if not safe_arguments[0].startswith("/"):
             raise OfficeRevisionError(f"Revision command {index} must start with a document element path.")
+        normalized_command = [verb, *safe_arguments]
+        if office_format == "xlsx":
+            expanded = _expand_excel_bulk_cell_command(normalized_command)
+            if expanded is not None:
+                normalized.extend(expanded)
+                if len(normalized) > _MAX_COMMANDS:
+                    raise OfficeRevisionError(
+                        f"Reins revision plan exceeded {_MAX_COMMANDS} commands after expanding Excel data."
+                    )
+                continue
+
+        safe_arguments = _repair_revision_arguments(verb, safe_arguments)
+        for argument_index, argument in enumerate(safe_arguments[:-1]):
+            if argument == "--prop":
+                safe_arguments[argument_index + 1] = _normalize_revision_property(
+                    safe_arguments[argument_index + 1]
+                )
+        _validate_revision_arguments(verb, safe_arguments, index)
         for argument_index, argument in enumerate(safe_arguments[:-1]):
             if argument != "--prop":
                 continue
@@ -789,10 +993,15 @@ def plan_office_revision(
     timeout: int,
     *,
     planner: OfficePlanner | None = None,
+    office_format: str | None = None,
 ) -> dict[str, Any]:
     if planner:
-        return normalize_revision_plan(planner(prompt, timeout))
-    return normalize_revision_plan(call_reins_json(prompt, timeout=timeout))
+        return normalize_revision_plan(
+            planner(prompt, timeout), office_format=office_format
+        )
+    return normalize_revision_plan(
+        call_reins_json(prompt, timeout=timeout), office_format=office_format
+    )
 
 
 def apply_revision_plan(

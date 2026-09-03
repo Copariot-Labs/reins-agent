@@ -32,7 +32,11 @@ describe('group chat fixed context cache helpers', () => {
     expect(groupBridgeReasoningDeltaFromEvent({
       event: 'reasoning.delta',
       text: 'real reasoning',
-    })).toBe('real reasoning')
+    })).toBe('正在理解您的需求，并确定需要使用的 Reins 功能。')
+    expect(groupBridgeReasoningDeltaFromEvent({
+      event: 'reasoning.delta',
+      text: 'more private reasoning',
+    }, true)).toBeNull()
     expect(groupBridgeReasoningDeltaFromEvent({
       event: 'reasoning.delta',
       text: '',

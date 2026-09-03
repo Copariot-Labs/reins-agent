@@ -11,6 +11,7 @@ import {
     renderHighlightedCodeBlock,
 } from '../chat/highlight'
 import { parseThinking, countThinkingChars } from '@/utils/thinking-parser'
+import { visibleReinsReasoning } from '@/utils/reins-reasoning'
 import { useGlobalSpeech } from '@/composables/useSpeech'
 import { useVoiceSettings } from '@/composables/useVoiceSettings'
 import { speedToEdgeRate, hzToEdgePitch } from '@/utils/ttsHelpers'
@@ -67,14 +68,21 @@ const mentionNames = computed(() => ['all', ...props.agents.map(a => a.name).fil
 const parsedThinking = computed(() => parseThinking(props.message.content || '', { streaming: !!props.message.isStreaming }))
 const hasReasoningField = computed(() => !!(props.message.reasoning && props.message.reasoning.length > 0))
 const hasThinking = computed(() => hasReasoningField.value || parsedThinking.value.hasThinking)
-const thinkingFullText = computed(() => {
+const rawThinkingFullText = computed(() => {
     const parts: string[] = []
     if (props.message.reasoning) parts.push(props.message.reasoning)
     parts.push(...parsedThinking.value.segments)
     if (parsedThinking.value.pending) parts.push(parsedThinking.value.pending)
     return parts.join('\n\n')
 })
+const thinkingFullText = computed(() => visibleReinsReasoning(
+    rawThinkingFullText.value,
+    !!parsedThinking.value.body.trim(),
+))
 const thinkingCharCount = computed(() => {
+    if (thinkingFullText.value !== rawThinkingFullText.value.trim()) {
+        return thinkingFullText.value.length
+    }
     let count = countThinkingChars(parsedThinking.value)
     if (props.message.reasoning) count += props.message.reasoning.length
     return count

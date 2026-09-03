@@ -59,7 +59,7 @@ import {
   isFinanceWorkbookExportRequest,
   reinsFinanceAgentInstructions,
 } from '../../reins/finance-chat'
-import { reinsChatLanguageInstructions } from '../../reins/chat-language'
+import { reinsChatLanguageInstructions, reinsReasoningProgressSummary } from '../../reins/chat-language'
 import {
   buildWorkOrderOfficePrompt,
   isNativeWorkOrderExportRequest,
@@ -284,7 +284,6 @@ export async function handleBridgeRun(
   }
   const runContext = [
     `[Current Reins profile: ${profile}]`,
-    reinsChatLanguageInstructions(),
     reinsWorkspaceInstructions(),
     reinsOfficeAgentInstructions(),
     reinsFinanceAgentInstructions(),
@@ -294,7 +293,7 @@ export async function handleBridgeRun(
     ...(weComWorkflow?.instructions || []),
     'When calling internal Reins endpoints from tools or skills, include the current profile as the X-Hermes-Profile header if the endpoint supports profile-scoped behavior. Treat the header name as a private implementation detail.',
   ].filter(Boolean).join('\n')
-  const fullInstructions = [runContext, instructions, getSystemPrompt()]
+  const fullInstructions = [runContext, instructions, getSystemPrompt(), reinsChatLanguageInstructions()]
     .filter(Boolean)
     .join('\n')
 
@@ -1400,18 +1399,21 @@ async function applyBridgeChunkAsync(
     } else if (evType === 'turn.boundary') {
       flushBridgePendingToDb(state, sessionId, runMarker)
     } else if (evType === 'reasoning.delta' || evType === 'thinking.delta') {
-      const text = String(ev.text || '')
+      const rawText = String(ev.text || '')
+      const text = rawText && !state.bridgePendingReasoningContent
+        ? reinsReasoningProgressSummary((state.bridgeToolCounter || 0) > 0)
+        : ''
       if (text) {
-        state.bridgePendingReasoningContent = (state.bridgePendingReasoningContent || '') + text
+        state.bridgePendingReasoningContent = text
         const message = ensureOpenBridgeAssistantMessage(state, sessionId, runMarker)
-        message.reasoning = (message.reasoning || '') + text
-        message.reasoning_content = (message.reasoning_content || '') + text
+        message.reasoning = text
+        message.reasoning_content = text
+        emit(evType, {
+          event: evType,
+          run_id: chunk.run_id,
+          text,
+        })
       }
-      emit(evType, {
-        event: evType,
-        run_id: chunk.run_id,
-        text,
-      })
     } else if (evType === 'reasoning.available') {
       emit('reasoning.available', {
         event: 'reasoning.available',

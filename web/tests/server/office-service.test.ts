@@ -102,6 +102,19 @@ describe('Reins Office service', () => {
     expect(error.suggestion_zh).not.toContain('减少单页文字')
   })
 
+  it('hides malformed OfficeCLI planner commands behind a useful Chinese message', () => {
+    const error = friendlyOfficeOperationError(
+      new Error('OfficeCliCommandError: Bare property data=[{"A6":23}] ignored. Unrecognized option --table.'),
+      'revise',
+      'officecli_apply',
+    )
+
+    expect(error.code).toBe('revision_plan_incompatible')
+    expect(error.title_zh).toBe('文件修改方案需要调整')
+    expect(error.suggestion_zh).toContain('自然语言')
+    expect(error.technical_detail).toBe('')
+  })
+
   it('explains that the original file is preserved after revision timeouts', () => {
     const error = friendlyOfficeOperationError(
       Object.assign(new Error('Office worker timed out'), { code: 'worker_timeout' }),

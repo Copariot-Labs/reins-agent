@@ -101,11 +101,11 @@ export async function handleApiRun(
 
   // Keep request-specific context before the authoritative Reins identity.
   const customInstructions: string[] = []
-  customInstructions.push(reinsChatLanguageInstructions())
   customInstructions.push(reinsWorkspaceInstructions())
   customInstructions.push(reinsWorkOrderAgentInstructions())
   if (instructions) customInstructions.push(instructions)
   customInstructions.push(getSystemPrompt())
+  customInstructions.push(reinsChatLanguageInstructions())
   const fullInstructions = customInstructions.join('\n')
 
   const upstream = ''
