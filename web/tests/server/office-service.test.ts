@@ -154,6 +154,18 @@ describe('Reins Office service', () => {
     expect(error.suggestion_zh).toContain('临时路径')
   })
 
+  it('identifies a final Windows workspace publishing failure', () => {
+    const error = friendlyOfficeOperationError(
+      new Error('Reins Office created and validated the file, but Windows could not publish it to the requested workspace filename: 社区工作计划.docx'),
+      'create',
+      'validating',
+    )
+
+    expect(error.code).toBe('workspace_publish_failed')
+    expect(error.message_zh).toContain('最后的工作区保存操作')
+    expect(error.suggestion_en).toContain('do not need to shorten')
+  })
+
   it('asks for clarification only for usable planning failures', () => {
     const invalidStructure = friendlyOfficeOperationError(
       new Error('Reins did not return a valid structured Word revision'),

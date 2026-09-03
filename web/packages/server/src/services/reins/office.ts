@@ -883,6 +883,26 @@ export function friendlyOfficeOperationError(
     }
   }
 
+  if (
+    kind === 'create'
+    && (
+      normalized.includes('publish it to the requested workspace filename')
+      || normalized.includes('could not publish the workspace file')
+    )
+  ) {
+    return {
+      code: 'workspace_publish_failed',
+      title_zh: '文件保存到工作区失败',
+      title_en: 'Could not save the file to the workspace',
+      message_zh: '文件已经生成并通过检查，但 Windows 阻止了最后的工作区保存操作。',
+      message_en: 'The file was generated and validated, but Windows blocked the final workspace save.',
+      suggestion_zh: '请确认工作区可写且同名文件未被占用，然后重新生成。无需缩短文件内容。',
+      suggestion_en: 'Make sure the workspace is writable and no file with the same name is open, then generate it again. You do not need to shorten the content.',
+      technical_detail: detail,
+      retryable: true,
+    }
+  }
+
   if (normalized.includes('not found') || normalized.includes('no longer exists')) {
     return {
       code: 'document_not_found',

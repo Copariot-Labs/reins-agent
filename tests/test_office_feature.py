@@ -707,13 +707,37 @@ def test_renderer_stages_chinese_workspace_filename_through_ascii_officecli_path
     assert result == output
     assert output.is_file()
     assert officecli_path != output
+    assert officecli_path.parent != output.parent
     assert officecli_path.name.isascii()
+    assert officecli_path.name == "document.docx"
     assert officecli_path.suffix == ".docx"
     assert not officecli_path.exists()
     assert all(
         len(command) < 2 or Path(command[1]) == officecli_path
         for command in client.commands
     )
+
+
+def test_renderer_stages_ascii_workspace_path_on_windows(tmp_path, monkeypatch):
+    from reins.features.office import renderer
+
+    monkeypatch.setattr(renderer.sys, "platform", "win32")
+    client = FakeOfficeCliClient()
+    output = tmp_path / "community-plan.docx"
+
+    result = render_office_content(
+        office_format="docx",
+        content={"title": "Community plan", "body": "Ready for use.", "tables": []},
+        output_path=output,
+        client=client,
+    )
+
+    officecli_path = Path(client.commands[0][1])
+    assert result == output
+    assert output.is_file()
+    assert officecli_path.parent != output.parent
+    assert officecli_path.name == "document.docx"
+    assert not officecli_path.exists()
 
 
 def test_renderer_emits_designed_officecli_xlsx_commands(tmp_path):

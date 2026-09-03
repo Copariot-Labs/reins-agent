@@ -187,7 +187,7 @@ $OfficeSmokeEnvironment = @{
     OFFICECLI_SKIP_UPDATE = "1"
     REINS_HOME = $OfficeSmokeHome
     HERMES_HOME = $OfficeSmokeHome
-    REINS_WORKSPACE_ROOT = (Join-Path $OfficeSmokeHome "Workspace")
+    REINS_WORKSPACE_ROOT = (Join-Path $OfficeSmokeHome "中文工作区")
     PYTHONHOME = (Join-Path $Runtime "python")
     PYTHONIOENCODING = "utf-8"
     PYTHONUTF8 = "1"
@@ -208,7 +208,24 @@ try {
     if ($BrainCommand -ne $RuntimePython) {
         throw "Packaged Reins Office did not select its private Python brain: $OfficeStatusJson"
     }
-    Write-Host "Packaged Reins Office routing verified" -ForegroundColor Green
+
+    $OfficeCreateJson = (& $PackagedLauncher office create `
+        --format docx `
+        --prompt "创建一份Windows文件路径验证文档。" `
+        --title "Windows路径验证" `
+        --language zh `
+        --no-reins `
+        --json | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        throw "Packaged Reins Office document creation failed: $OfficeCreateJson"
+    }
+    $OfficeCreate = $OfficeCreateJson | ConvertFrom-Json
+    $OfficeCreatedPath = [string]$OfficeCreate.document.path
+    if (-not $OfficeCreate.ok -or -not $OfficeCreatedPath -or -not (Test-Path -LiteralPath $OfficeCreatedPath)) {
+        throw "Packaged Reins Office did not publish its Chinese-named smoke-test file: $OfficeCreateJson"
+    }
+    Remove-Item -LiteralPath $OfficeCreatedPath -Force
+    Write-Host "Packaged Reins Office routing and Windows path publishing verified" -ForegroundColor Green
 }
 finally {
     foreach ($Name in $OfficeSmokeEnvironment.Keys) {

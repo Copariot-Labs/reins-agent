@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
+import sys
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -134,19 +138,19 @@ def _office_issue_count(output: str) -> int:
     return int(match.group(1)) if match else 0
 
 
-def _officecli_working_path(destination: Path) -> Path:
-    """Keep non-ASCII user filenames away from OfficeCLI child handoffs.
+def _officecli_working_path(destination: Path) -> tuple[Path, Path | None]:
+    """Return an OfficeCLI-safe path and its disposable staging directory.
 
-    OfficeCLI supports Unicode document content, but its Windows resident
-    process can fail to reopen a newly-created file when the command-line path
-    itself contains CJK characters. Work under an ASCII sibling name and let
-    Python publish the validated file to the requested workspace filename.
+    On Windows, the user's Documents folder may be redirected or synchronized
+    even when the visible path looks ordinary. Keep the complete OfficeCLI
+    operation outside that workspace and publish the validated file ourselves.
+    Non-ASCII paths use the same staging flow on every platform.
     """
-    if destination.name.isascii():
-        return destination
-    return destination.with_name(
-        f".reins-office-{uuid4().hex}{destination.suffix.lower()}"
-    )
+    if not sys.platform.startswith("win") and str(destination).isascii():
+        return destination, None
+
+    staging_dir = Path(tempfile.mkdtemp(prefix="reins-office-render-"))
+    return staging_dir / f"document{destination.suffix.lower()}", staging_dir
 
 
 def _discard_working_file(path: Path) -> None:
@@ -154,6 +158,33 @@ def _discard_working_file(path: Path) -> None:
         path.unlink(missing_ok=True)
     except OSError:
         pass
+
+
+def _publish_working_file(source: Path, destination: Path) -> None:
+    """Publish a validated file without exposing OfficeCLI to its final path."""
+    if destination.exists():
+        raise OfficeRenderError(
+            f"The destination Office file already exists: {destination.name}"
+        )
+
+    publish_path = destination.with_name(
+        f".reins-publish-{uuid4().hex}{destination.suffix.lower()}"
+    )
+    try:
+        shutil.copyfile(source, publish_path)
+        os.replace(publish_path, destination)
+    except OSError as exc:
+        raise OfficeRenderError(
+            "Reins Office created and validated the file, but Windows could not "
+            f"publish it to the requested workspace filename: {destination.name}"
+        ) from exc
+    finally:
+        _discard_working_file(publish_path)
+
+    if not destination.is_file():
+        raise OfficeRenderError(
+            f"Reins Office could not publish the workspace file: {destination.name}"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -3536,7 +3567,7 @@ def render_office_content(
     normalized = normalize_office_format(office_format)
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    working_path = _officecli_working_path(path)
+    working_path, staging_dir = _officecli_working_path(path)
     client = client or OfficeCliClient()
 
     try:
@@ -3633,25 +3664,17 @@ def render_office_content(
                 pass
 
         if working_path != path:
-            if path.exists():
-                raise OfficeRenderError(
-                    f"The destination Office file already exists: {path.name}"
-                )
-            try:
-                working_path.replace(path)
-            except OSError as exc:
-                raise OfficeRenderError(
-                    "Reins Office created and validated the file, but Windows could not "
-                    f"publish it to the requested workspace filename: {path.name}"
-                ) from exc
+            _publish_working_file(working_path, path)
     except Exception:
         if working_path != path:
             try:
                 _run_mutation(client, ["close", working_path], timeout=15)
             except Exception:
                 pass
-            _discard_working_file(working_path)
         raise
+    finally:
+        if staging_dir is not None:
+            shutil.rmtree(staging_dir, ignore_errors=True)
 
     _report_render_progress(
         progress,
