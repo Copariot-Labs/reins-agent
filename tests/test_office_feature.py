@@ -7,6 +7,7 @@ from zipfile import ZipFile
 
 import pytest
 
+import reins.features.office.cli as office_cli
 import reins.features.office.content_writer as office_content_writer
 import reins.features.office.service as office_service
 from reins.features.office.editor import (
@@ -22,6 +23,7 @@ from reins.features.office.editor import (
 )
 from reins.features.office.intent import classify_office_followup
 from reins.features.office.content_writer import (
+    DEFAULT_OFFICE_CONTENT_TIMEOUT_SECONDS,
     OfficeContentError,
     OfficeContentResponseError,
     OfficeContentTimeoutError,
@@ -94,6 +96,16 @@ def test_office_format_aliases():
     assert normalize_office_format("excel") == "xlsx"
     assert normalize_office_format("ppt") == "pptx"
     assert normalize_office_format("unknown") == "docx"
+
+
+def test_office_cli_uses_long_running_model_timeout_by_default():
+    assert DEFAULT_OFFICE_CONTENT_TIMEOUT_SECONDS == 1_200
+
+    parser = office_cli.build_parser()
+    assert parser.parse_args(["create", "--prompt", "生成工作计划"]).timeout == 1_200
+    assert parser.parse_args(
+        ["revise", "--id", "office_1", "--instruction", "补充详细内容"]
+    ).timeout == 1_200
 
 
 def _write_minimal_office_package(path: Path, member: str) -> None:
@@ -838,6 +850,37 @@ def test_word_revision_paths_are_canonicalized_for_packaged_officecli():
                 ],
             }
         )
+
+
+def test_word_revision_normalizes_natural_language_character_spacing():
+    plan = normalize_revision_plan(
+        {
+            "summary": "Adjusted title typography",
+            "commands": [
+                {
+                    "verb": "set",
+                    "arguments": [
+                        "/body/p[1]",
+                        "--prop",
+                        "spacing=2 characters",
+                        "--prop",
+                        "letterSpacing=1.5字符",
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert plan["commands"] == [
+        [
+            "set",
+            "/body/p[1]",
+            "--prop",
+            "spacing=2pt",
+            "--prop",
+            "letterSpacing=1.5pt",
+        ]
+    ]
 
 
 def test_word_revision_prompt_includes_existing_design_and_revision_context():

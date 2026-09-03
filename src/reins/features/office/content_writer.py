@@ -35,7 +35,7 @@ class OfficeContentTimeoutError(OfficeContentError):
     """Raised when Reins did not finish Office content planning in time."""
 
 
-DEFAULT_OFFICE_CONTENT_TIMEOUT_SECONDS = 300
+DEFAULT_OFFICE_CONTENT_TIMEOUT_SECONDS = 1_200
 _DEFAULT_OFFICE_MAX_OUTPUT_TOKENS = 8_000
 _SECRET_RE = re.compile(
     r"(?i)\b(api[_-]?key|authorization|bearer|token|secret)(\s*[:=]?\s*)([^\s,;]+)"

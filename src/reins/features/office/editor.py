@@ -68,6 +68,27 @@ _WORD_INHERITED_FORMAT_KEYS = (
     "lineSpacing",
     "firstLineIndent",
 )
+_NATURAL_CHARACTER_SPACING_PATTERN = re.compile(
+    r"^\s*(?P<value>[+-]?(?:\d+(?:\.\d+)?|\.\d+))\s*"
+    r"(?:characters?|chars?|character\s*widths?|字符|个字符|字)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _normalize_revision_property(argument: str) -> str:
+    name, separator, value = argument.partition("=")
+    if not separator:
+        return argument
+    if name.strip().casefold() not in {"spacing", "charspacing", "letterspacing"}:
+        return argument
+    natural_spacing = _NATURAL_CHARACTER_SPACING_PATTERN.fullmatch(value)
+    if not natural_spacing:
+        return argument
+    number = float(natural_spacing.group("value"))
+    if not (-1000 <= number <= 1000):
+        return argument
+    normalized_number = f"{number:g}"
+    return f"{name}={normalized_number}pt"
 
 
 def _run_text(
@@ -536,6 +557,7 @@ Rules:
 - Never use Word @paraId selectors; the packaged OfficeCLI requires positional paths for revisions.
 - For Word and PowerPoint text replacement, prefer: set / --find OLD --replace NEW.
 - For properties, use repeated pairs: --prop key=value.
+- For Word character spacing properties (spacing, charSpacing, or letterSpacing), use a finite number with an OfficeCLI unit such as 2pt. Never use natural-language values such as "2 characters" or "两个字符".
 - For Word, add paragraphs under /body with --type paragraph.
 - Treat the existing file as the design source of truth. For Word design or formatting changes, copy the exact supported property values shown under "Word paragraph formatting" from an analogous existing title, heading, body paragraph, or list item.
 - A Word style name alone may not reproduce the visible design because existing paragraphs can also use direct size, color, bold, spacing, and alignment properties. Apply those shown properties when matching the design.
@@ -731,6 +753,11 @@ def normalize_revision_plan(raw: dict[str, Any]) -> dict[str, Any]:
             if "\x00" in text or len(text) > _MAX_ARGUMENT_LENGTH:
                 raise OfficeRevisionError(f"Revision command {index} contains an invalid argument.")
             safe_arguments.append(text)
+        for argument_index, argument in enumerate(safe_arguments[:-1]):
+            if argument == "--prop":
+                safe_arguments[argument_index + 1] = _normalize_revision_property(
+                    safe_arguments[argument_index + 1]
+                )
         if not safe_arguments[0].startswith("/"):
             raise OfficeRevisionError(f"Revision command {index} must start with a document element path.")
         for argument_index, argument in enumerate(safe_arguments[:-1]):

@@ -130,7 +130,11 @@ def build_parser() -> argparse.ArgumentParser:
     revise = subparsers.add_parser("revise", help="Revise an Office file with Reins.")
     revise.add_argument("--id", required=True, dest="document_id")
     revise.add_argument("--instruction", required=True)
-    revise.add_argument("--timeout", type=int, default=180)
+    revise.add_argument(
+        "--timeout",
+        type=int,
+        default=DEFAULT_OFFICE_CONTENT_TIMEOUT_SECONDS,
+    )
     revise.add_argument("--json", action="store_true", dest="json_output")
     revise.add_argument("--progress", action="store_true", help=argparse.SUPPRESS)
 

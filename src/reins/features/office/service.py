@@ -764,7 +764,7 @@ def revise_office_document(
     *,
     document_id: str,
     instruction: str,
-    timeout: int = 180,
+    timeout: int = DEFAULT_OFFICE_CONTENT_TIMEOUT_SECONDS,
     client: OfficeCliClient | None = None,
     planner: OfficePlanner | None = None,
     progress: OfficeProgressReporter | None = None,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -37,6 +37,7 @@ import { OFFICE_FORMAT_NAV_ITEMS, officeFormatFromQuery } from '@/shared/office-
 const PRESENTATION_STYLES: OfficePresentationStyle[] = ['auto', 'executive', 'modern', 'bold', 'minimal']
 const PRESENTATION_AUDIENCES: OfficePresentationAudience[] = ['general', 'executive', 'client', 'team']
 const PRESENTATION_DETAILS: OfficePresentationDetail[] = ['concise', 'balanced', 'detailed']
+const LONG_RUNNING_NOTICE_MS = 5 * 60 * 1000
 
 const message = useMessage()
 const { locale } = useI18n()
@@ -45,32 +46,121 @@ const router = useRouter()
 
 const format = ref<OfficeFormat>('docx')
 const skills = ref<OfficeSkill[]>([])
-const selectedSkillId = ref('')
-const title = ref('')
-const prompt = ref('')
-const language = ref('zh')
-const presentationStyle = ref<OfficePresentationStyle>('auto')
-const presentationAudience = ref<OfficePresentationAudience>('general')
-const presentationDetail = ref<OfficePresentationDetail>('balanced')
-const slideCount = ref(8)
-const working = ref(false)
-const importing = ref(false)
 const loading = ref(false)
 const previewLoading = ref(false)
 const previewVersion = ref(0)
 const previewHtml = ref('')
 const previewError = ref('')
-const activeOperation = ref<OfficeOperation | null>(null)
 const promptInputRef = ref<InputInst | null>(null)
 const officeFileInputRef = ref<HTMLInputElement | null>(null)
-const operationTransportError = ref('')
-const cancelingOperation = ref(false)
 const status = ref<OfficeStatus | null>(null)
 const documents = ref<OfficeDocument[]>([])
-const selectedId = ref<string | null>(null)
-const creatingNew = ref(true)
-let operationRunId = 0
 let previewRunId = 0
+
+interface PendingOfficeFile {
+  id: string
+  file: File
+  importedDocument?: OfficeDocument
+}
+
+interface OfficeFormatTaskState {
+  selectedSkillId: string
+  title: string
+  prompt: string
+  language: string
+  presentationStyle: OfficePresentationStyle
+  presentationAudience: OfficePresentationAudience
+  presentationDetail: OfficePresentationDetail
+  slideCount: number
+  selectedId: string | null
+  creatingNew: boolean
+  longRunning: boolean
+  working: boolean
+  importing: boolean
+  canceling: boolean
+  runId: number
+  operation: OfficeOperation | null
+  transportError: string
+  pendingFiles: PendingOfficeFile[]
+}
+
+function createFormatTaskState(): OfficeFormatTaskState {
+  return {
+    selectedSkillId: '',
+    title: '',
+    prompt: '',
+    language: 'zh',
+    presentationStyle: 'auto',
+    presentationAudience: 'general',
+    presentationDetail: 'balanced',
+    slideCount: 8,
+    selectedId: null,
+    creatingNew: true,
+    longRunning: false,
+    working: false,
+    importing: false,
+    canceling: false,
+    runId: 0,
+    operation: null,
+    transportError: '',
+    pendingFiles: [],
+  }
+}
+
+const formatTaskStates = reactive<Record<OfficeFormat, OfficeFormatTaskState>>({
+  docx: createFormatTaskState(),
+  xlsx: createFormatTaskState(),
+  pptx: createFormatTaskState(),
+})
+const currentTaskState = computed(() => formatTaskStates[format.value])
+const selectedSkillId = computed({
+  get: () => currentTaskState.value.selectedSkillId,
+  set: (value: string) => { currentTaskState.value.selectedSkillId = value },
+})
+const title = computed({
+  get: () => currentTaskState.value.title,
+  set: (value: string) => { currentTaskState.value.title = value },
+})
+const prompt = computed({
+  get: () => currentTaskState.value.prompt,
+  set: (value: string) => { currentTaskState.value.prompt = value },
+})
+const language = computed({
+  get: () => currentTaskState.value.language,
+  set: (value: string) => { currentTaskState.value.language = value },
+})
+const presentationStyle = computed({
+  get: () => currentTaskState.value.presentationStyle,
+  set: (value: OfficePresentationStyle) => { currentTaskState.value.presentationStyle = value },
+})
+const presentationAudience = computed({
+  get: () => currentTaskState.value.presentationAudience,
+  set: (value: OfficePresentationAudience) => { currentTaskState.value.presentationAudience = value },
+})
+const presentationDetail = computed({
+  get: () => currentTaskState.value.presentationDetail,
+  set: (value: OfficePresentationDetail) => { currentTaskState.value.presentationDetail = value },
+})
+const slideCount = computed({
+  get: () => currentTaskState.value.slideCount,
+  set: (value: number) => { currentTaskState.value.slideCount = value },
+})
+const selectedId = computed({
+  get: () => currentTaskState.value.selectedId,
+  set: (value: string | null) => { currentTaskState.value.selectedId = value },
+})
+const creatingNew = computed({
+  get: () => currentTaskState.value.creatingNew,
+  set: (value: boolean) => { currentTaskState.value.creatingNew = value },
+})
+const longRunning = computed(() => currentTaskState.value.longRunning)
+const working = computed(() => currentTaskState.value.working)
+const importing = computed(() => currentTaskState.value.importing)
+const cancelingOperation = computed(() => currentTaskState.value.canceling)
+const activeOperation = computed(() => currentTaskState.value.operation)
+const operationTransportError = computed(() => currentTaskState.value.transportError)
+const pendingFiles = computed(() => currentTaskState.value.pendingFiles)
+const longRunningTimers: Partial<Record<OfficeFormat, number>> = {}
 
 const isChinese = computed(() => locale.value.toLowerCase().startsWith('zh'))
 const copy = computed(() => isChinese.value
@@ -86,8 +176,11 @@ const copy = computed(() => isChinese.value
       generate: '生成文件',
       generating: '正在生成',
       importFile: '导入文件',
-      importingFile: '正在导入',
-      imported: '文件已导入工作区',
+      modifyingFiles: '正在修改',
+      pendingFiles: '待修改文件',
+      removeFile: '移除文件',
+      modifyFiles: '修改',
+      filesRevised: '文件已修改并保存',
       importFailed: '导入 Office 文件失败',
       importTypeMismatch: '当前区域仅支持 {extension} 文件',
       importInvalid: '所选文件不是有效的 {extension} Office 文件，或文件已经损坏',
@@ -131,6 +224,7 @@ const copy = computed(() => isChinese.value
       cancelling: '正在取消',
       cancelFailed: '取消任务失败',
       waitingForProgress: '正在连接 Office 处理任务',
+      longRunningNotice: '生成所需时间比平时更长。Reins 仍在处理中，您可以继续等待或取消任务。',
       suggestion: '建议',
       clarificationExample: '例如',
       technicalDetail: '错误详情',
@@ -150,8 +244,11 @@ const copy = computed(() => isChinese.value
       generate: 'Generate file',
       generating: 'Generating',
       importFile: 'Import file',
-      importingFile: 'Importing',
-      imported: 'File imported into the workspace',
+      modifyingFiles: 'Modifying',
+      pendingFiles: 'Files to modify',
+      removeFile: 'Remove file',
+      modifyFiles: 'Modify',
+      filesRevised: 'Files modified and saved',
       importFailed: 'Failed to import Office file',
       importTypeMismatch: 'This section only accepts {extension} files',
       importInvalid: 'The selected file is not a valid {extension} Office file or is damaged',
@@ -195,6 +292,7 @@ const copy = computed(() => isChinese.value
       cancelling: 'Cancelling',
       cancelFailed: 'Failed to cancel task',
       waitingForProgress: 'Connecting to the Office task',
+      longRunningNotice: 'Generation is taking longer than usual. Reins is still working; you can continue waiting or cancel the task.',
       suggestion: 'Suggestion',
       clarificationExample: 'Example',
       technicalDetail: 'Error detail',
@@ -315,9 +413,10 @@ function applySkillDefaults(skill: OfficeSkill | null) {
 }
 
 function resetOperationActivity() {
-  operationRunId += 1
-  activeOperation.value = null
-  operationTransportError.value = ''
+  const taskState = currentTaskState.value
+  taskState.runId += 1
+  taskState.operation = null
+  taskState.transportError = ''
 }
 
 function selectSkill(skill: OfficeSkill) {
@@ -332,13 +431,14 @@ function selectSkill(skill: OfficeSkill) {
 }
 
 async function selectFormat(nextFormat: OfficeFormat) {
-  if (working.value || nextFormat === format.value) return
+  if (nextFormat === format.value) return
   await router.push({ name: 'hermes.office', query: { ...route.query, type: nextFormat } })
 }
 
 function selectDocument(document: OfficeDocument, preserveActivity = false) {
   if (working.value && !preserveActivity) return
   if (!preserveActivity) resetOperationActivity()
+  currentTaskState.value.pendingFiles = []
   selectedId.value = document.id
   creatingNew.value = false
   prompt.value = ''
@@ -347,6 +447,7 @@ function selectDocument(document: OfficeDocument, preserveActivity = false) {
 function startNewDocument() {
   if (working.value) return
   resetOperationActivity()
+  currentTaskState.value.pendingFiles = []
   selectedId.value = null
   creatingNew.value = true
   title.value = ''
@@ -366,31 +467,43 @@ function openOfficeImportPicker() {
   officeFileInputRef.value?.click()
 }
 
-async function handleOfficeImport(event: Event) {
+function pendingFileId(file: File): string {
+  return `${file.name}:${file.size}:${file.lastModified}`
+}
+
+function formatFileSize(size: number): string {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function removePendingFile(id: string) {
+  if (working.value) return
+  currentTaskState.value.pendingFiles = pendingFiles.value.filter(item => item.id !== id)
+}
+
+function handleOfficeImport(event: Event) {
   const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
+  const files = Array.from(input.files || [])
+  input.value = ''
+  if (!files.length) return
 
   const selectedFormat = format.value
   const expectedExtension = `.${selectedFormat}`
-  if (!file.name.toLowerCase().endsWith(expectedExtension)) {
-    message.error(copy.value.importTypeMismatch.replace('{extension}', expectedExtension))
-    input.value = ''
-    return
-  }
-
-  importing.value = true
-  resetOperationActivity()
-  try {
-    const response = await importOfficeDocument(selectedFormat, file)
-    upsertDocument(response.document)
-    selectDocument(response.document, true)
-    message.success(copy.value.imported)
-  } catch (error) {
-    message.error(readableImportError(error, expectedExtension))
-  } finally {
-    importing.value = false
-    input.value = ''
+  const existingIds = new Set(pendingFiles.value.map(item => item.id))
+  for (const file of files) {
+    if (!file.name.toLowerCase().endsWith(expectedExtension)) {
+      message.error(copy.value.importTypeMismatch.replace('{extension}', expectedExtension))
+      continue
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      message.error(copy.value.importTooLarge)
+      continue
+    }
+    const id = pendingFileId(file)
+    if (existingIds.has(id)) continue
+    currentTaskState.value.pendingFiles.push({ id, file })
+    existingIds.add(id)
   }
 }
 
@@ -435,19 +548,39 @@ function pause(milliseconds: number): Promise<void> {
   return new Promise(resolve => window.setTimeout(resolve, milliseconds))
 }
 
-async function waitForOfficeOperation(initial: OfficeOperation): Promise<OfficeDocument | null> {
-  const runId = ++operationRunId
-  activeOperation.value = initial
+function clearLongRunningNotice(operationFormat: OfficeFormat) {
+  const timer = longRunningTimers[operationFormat]
+  if (timer !== undefined) window.clearTimeout(timer)
+  delete longRunningTimers[operationFormat]
+  formatTaskStates[operationFormat].longRunning = false
+}
+
+function startLongRunningNotice(operationFormat: OfficeFormat) {
+  clearLongRunningNotice(operationFormat)
+  longRunningTimers[operationFormat] = window.setTimeout(() => {
+    const taskState = formatTaskStates[operationFormat]
+    if (taskState.working) taskState.longRunning = true
+    delete longRunningTimers[operationFormat]
+  }, LONG_RUNNING_NOTICE_MS)
+}
+
+async function waitForOfficeOperation(
+  initial: OfficeOperation,
+  operationFormat: OfficeFormat,
+): Promise<OfficeDocument | null> {
+  const taskState = formatTaskStates[operationFormat]
+  const runId = ++taskState.runId
+  taskState.operation = initial
   let operation = initial
   let pollFailures = 0
 
   while (operation.status === 'queued' || operation.status === 'running') {
     await pause(650)
-    if (runId !== operationRunId) return null
+    if (runId !== taskState.runId) return null
     try {
       const response = await fetchOfficeOperation(operation.id)
       operation = response.operation
-      activeOperation.value = operation
+      taskState.operation = operation
       pollFailures = 0
     } catch (error) {
       pollFailures += 1
@@ -457,13 +590,16 @@ async function waitForOfficeOperation(initial: OfficeOperation): Promise<OfficeD
   }
 
   if (operation.status === 'failed') {
-    message.error(localizedOperationError('title') || (operation.kind === 'create'
+    const errorTitle = operation.error
+      ? (isChinese.value ? operation.error.title_zh : operation.error.title_en)
+      : ''
+    message.error(errorTitle || (operation.kind === 'create'
       ? copy.value.createFailed
       : copy.value.reviseFailed))
     return null
   }
   if (operation.status === 'needs_input') {
-    await focusPromptInput()
+    if (format.value === operationFormat) await focusPromptInput()
     return null
   }
   if (operation.status === 'cancelled') return null
@@ -472,17 +608,18 @@ async function waitForOfficeOperation(initial: OfficeOperation): Promise<OfficeD
 }
 
 async function cancelActiveOperation() {
-  const operation = activeOperation.value
+  const taskState = currentTaskState.value
+  const operation = taskState.operation
   if (!operation || !canCancelOperation.value || cancelingOperation.value) return
-  cancelingOperation.value = true
+  taskState.canceling = true
   try {
     const response = await cancelOfficeOperation(operation.id)
-    activeOperation.value = response.operation
+    taskState.operation = response.operation
     message.info(copy.value.cancelled)
   } catch (error) {
     message.error(readableError(error, copy.value.cancelFailed))
   } finally {
-    cancelingOperation.value = false
+    taskState.canceling = false
   }
 }
 
@@ -545,24 +682,56 @@ async function submitInstruction() {
     message.error(copy.value.promptRequired)
     return
   }
-  if (isCreateMode.value && !selectedSkill.value) {
+  const operationFormat = format.value
+  const taskState = formatTaskStates[operationFormat]
+  const filesToModify = taskState.pendingFiles.slice()
+  const createMode = isCreateMode.value
+  const skillForRequest = selectedSkill.value
+  const documentForRequest = selectedDocument.value
+  if (createMode && !filesToModify.length && !skillForRequest) {
     message.error(copy.value.skillRequired)
     return
   }
 
-  working.value = true
-  activeOperation.value = null
-  operationTransportError.value = ''
-  const createMode = isCreateMode.value
+  taskState.working = true
+  taskState.importing = filesToModify.length > 0
+  taskState.operation = null
+  taskState.transportError = ''
+  startLongRunningNotice(operationFormat)
   try {
-    if (createMode && selectedSkill.value) {
+    if (filesToModify.length) {
+      const completedIds = new Set<string>()
+      let lastDocument: OfficeDocument | null = null
+      for (const pendingFile of filesToModify) {
+        let importedDocument = pendingFile.importedDocument
+        if (!importedDocument) {
+          const imported = await importOfficeDocument(operationFormat, pendingFile.file)
+          importedDocument = imported.document
+          pendingFile.importedDocument = importedDocument
+        }
+        const response = await startOfficeRevisionOperation(importedDocument.id, cleanPrompt)
+        const revisedDocument = await waitForOfficeOperation(response.operation, operationFormat)
+        if (!revisedDocument) return
+        upsertDocument(revisedDocument)
+        lastDocument = revisedDocument
+        completedIds.add(pendingFile.id)
+        taskState.pendingFiles = taskState.pendingFiles.filter(item => !completedIds.has(item.id))
+      }
+      if (lastDocument) {
+        taskState.selectedId = lastDocument.id
+        taskState.creatingNew = false
+        taskState.prompt = ''
+        if (format.value === operationFormat) refreshPreview()
+      }
+      message.success(copy.value.filesRevised)
+    } else if (createMode && skillForRequest) {
       const response = await startOfficeCreateOperation({
-        format: format.value,
-        skill_id: selectedSkill.value.id,
+        format: operationFormat,
+        skill_id: skillForRequest.id,
         prompt: cleanPrompt,
         title: title.value.trim() || undefined,
         language: language.value,
-        ...(format.value === 'pptx'
+        ...(operationFormat === 'pptx'
           ? {
               presentation: {
                 style: presentationStyle.value,
@@ -573,32 +742,40 @@ async function submitInstruction() {
             }
           : {}),
       })
-      const document = await waitForOfficeOperation(response.operation)
+      const document = await waitForOfficeOperation(response.operation, operationFormat)
       if (!document) return
       upsertDocument(document)
-      selectDocument(document, true)
-      title.value = ''
+      taskState.selectedId = document.id
+      taskState.creatingNew = false
+      taskState.title = ''
+      taskState.prompt = ''
+      if (format.value === operationFormat) refreshPreview()
       message.success(copy.value.created)
-    } else if (selectedDocument.value) {
-      const response = await startOfficeRevisionOperation(selectedDocument.value.id, cleanPrompt)
-      const document = await waitForOfficeOperation(response.operation)
+    } else if (documentForRequest) {
+      const response = await startOfficeRevisionOperation(documentForRequest.id, cleanPrompt)
+      const document = await waitForOfficeOperation(response.operation, operationFormat)
       if (!document) return
       upsertDocument(document)
-      selectedId.value = document.id
-      prompt.value = ''
-      refreshPreview()
+      taskState.selectedId = document.id
+      taskState.creatingNew = false
+      taskState.prompt = ''
+      if (format.value === operationFormat) refreshPreview()
       message.success(copy.value.revised)
     }
   } catch (error) {
-    const fallback = createMode ? copy.value.createFailed : copy.value.reviseFailed
-    operationTransportError.value = readableError(error, fallback)
-    const currentOperation = activeOperation.value as OfficeOperation | null
+    const fallback = createMode && !filesToModify.length ? copy.value.createFailed : copy.value.reviseFailed
+    taskState.transportError = filesToModify.length
+      ? readableImportError(error, `.${operationFormat}`)
+      : readableError(error, fallback)
+    const currentOperation = taskState.operation
     if (currentOperation) {
-      activeOperation.value = Object.assign({}, currentOperation, { status: 'failed' as const })
+      taskState.operation = Object.assign({}, currentOperation, { status: 'failed' as const })
     }
-    message.error(operationTransportError.value)
+    message.error(taskState.transportError)
   } finally {
-    working.value = false
+    clearLongRunningNotice(operationFormat)
+    taskState.working = false
+    taskState.importing = false
   }
 }
 
@@ -616,11 +793,6 @@ watch(() => route.query.type, value => {
   const nextFormat = queryFormat(value)
   if (format.value === nextFormat) return
   format.value = nextFormat
-  selectedId.value = null
-  creatingNew.value = true
-  title.value = ''
-  prompt.value = ''
-  resetOperationActivity()
 }, { immediate: true })
 
 watch([format, skills], () => {
@@ -637,8 +809,11 @@ watch(
 
 onMounted(loadOffice)
 onBeforeUnmount(() => {
-  operationRunId += 1
   previewRunId += 1
+  for (const operationFormat of Object.keys(longRunningTimers) as OfficeFormat[]) {
+    const timer = longRunningTimers[operationFormat]
+    if (timer !== undefined) window.clearTimeout(timer)
+  }
 })
 </script>
 
@@ -747,6 +922,32 @@ onBeforeUnmount(() => {
 
         <form class="generation-grid" @submit.prevent="submitInstruction">
           <section class="generation-form">
+            <section v-if="pendingFiles.length" class="pending-files" :aria-label="copy.pendingFiles">
+              <div
+                v-for="pendingFile in pendingFiles"
+                :key="pendingFile.id"
+                class="pending-file"
+              >
+                <span class="pending-file-icon" :class="format">{{ currentFormat.mark }}</span>
+                <span class="pending-file-copy">
+                  <strong>{{ pendingFile.file.name }}</strong>
+                  <small>{{ formatFileSize(pendingFile.file.size) }}</small>
+                </span>
+                <button
+                  type="button"
+                  class="pending-file-remove"
+                  :aria-label="copy.removeFile"
+                  :title="copy.removeFile"
+                  :disabled="working"
+                  @click="removePendingFile(pendingFile.id)"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <path d="M6 6l12 12M18 6L6 18" />
+                  </svg>
+                </button>
+              </div>
+            </section>
+
             <label class="field instruction-field">
               <span>{{ copy.workflowInput }}</span>
               <NInput
@@ -801,6 +1002,9 @@ onBeforeUnmount(() => {
                 </li>
               </ol>
               <p v-else-if="activeOperation" class="activity-waiting">{{ copy.waitingForProgress }}</p>
+              <p v-if="longRunning && canCancelOperation" class="operation-long-running" role="status">
+                {{ copy.longRunningNotice }}
+              </p>
               <div v-if="activeOperation?.clarification" class="operation-clarification" role="status">
                 <strong>{{ localizedOperationClarification('title') }}</strong>
                 <p>{{ localizedOperationClarification('message') }}</p>
@@ -826,6 +1030,7 @@ onBeforeUnmount(() => {
                 ref="officeFileInputRef"
                 class="office-file-input"
                 type="file"
+                multiple
                 :accept="officeImportAccept"
                 @change="handleOfficeImport"
               >
@@ -833,20 +1038,21 @@ onBeforeUnmount(() => {
                 attr-type="button"
                 size="large"
                 secondary
-                :loading="importing"
                 :disabled="working"
                 @click="openOfficeImportPicker"
               >
-                {{ importing ? copy.importingFile : copy.importFile }}
+                {{ copy.importFile }}
               </NButton>
               <NButton
                 type="primary"
                 attr-type="submit"
                 size="large"
                 :loading="working"
-                :disabled="importing || !prompt.trim() || !selectedSkill || !servicesReady"
+                :disabled="!prompt.trim() || (!pendingFiles.length && !selectedSkill) || !servicesReady"
               >
-                {{ working ? copy.generating : copy.generate }}
+                {{ working
+                  ? (importing ? copy.modifyingFiles : copy.generating)
+                  : (pendingFiles.length ? copy.modifyFiles : copy.generate) }}
               </NButton>
             </div>
           </section>
@@ -982,6 +1188,9 @@ onBeforeUnmount(() => {
                 </li>
               </ol>
               <p v-else-if="activeOperation" class="activity-waiting">{{ copy.waitingForProgress }}</p>
+              <p v-if="longRunning && canCancelOperation" class="operation-long-running" role="status">
+                {{ copy.longRunningNotice }}
+              </p>
               <div v-if="activeOperation?.clarification" class="operation-clarification" role="status">
                 <strong>{{ localizedOperationClarification('title') }}</strong>
                 <p>{{ localizedOperationClarification('message') }}</p>
@@ -1398,6 +1607,82 @@ onBeforeUnmount(() => {
 }
 
 .instruction-field { flex: 1; }
+
+.pending-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pending-file {
+  position: relative;
+  width: 152px;
+  min-height: 78px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 11px 26px 11px 11px;
+  border: 1px solid $border-color;
+  border-radius: 8px;
+  background: $bg-secondary;
+}
+
+.pending-file-icon {
+  width: 28px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  color: #fff;
+  background: #2563eb;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.pending-file-icon.xlsx { background: #15803d; }
+.pending-file-icon.pptx { background: #c2410c; }
+
+.pending-file-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pending-file-copy strong,
+.pending-file-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pending-file-copy strong { font-size: 10px; font-weight: 620; }
+.pending-file-copy small { color: $text-muted; font-size: 9px; }
+
+.pending-file-remove {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: $text-muted;
+  background: transparent;
+  cursor: pointer;
+}
+
+.pending-file-remove:hover:not(:disabled) {
+  color: $text-primary;
+  background: rgba(127, 127, 127, .15);
+}
+
+.pending-file-remove:disabled { cursor: default; opacity: .45; }
+
 .form-actions {
   display: flex;
   align-items: center;
@@ -1543,6 +1828,16 @@ onBeforeUnmount(() => {
   margin: 12px 0 0;
   color: $text-muted;
   font-size: 11px;
+}
+
+.operation-long-running {
+  margin: 12px 0 0;
+  padding: 9px 11px;
+  border-left: 3px solid #ca8a04;
+  color: #854d0e;
+  background: rgba(254, 249, 195, .42);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .operation-error,

@@ -128,30 +128,31 @@ export interface OfficeChatIntentDecision {
 }
 
 const OFFICE_FORMATS = new Set<OfficeFormat>(['docx', 'xlsx', 'pptx'])
-const DEFAULT_TIMEOUT_MS = Number(process.env.REINS_OFFICE_WEB_TIMEOUT_MS || '') || 600_000
+const OFFICE_TASK_SAFETY_TIMEOUT_MS = 30 * 60 * 1000
+const DEFAULT_TIMEOUT_MS = Number(process.env.REINS_OFFICE_WEB_TIMEOUT_MS || '') || OFFICE_TASK_SAFETY_TIMEOUT_MS
 const DEFAULT_CREATE_MODEL_TIMEOUT_SECONDS = Math.min(
-  Math.max(Number(process.env.REINS_OFFICE_CONTENT_TIMEOUT_SECONDS || '') || 300, 60),
-  480,
+  Math.max(Number(process.env.REINS_OFFICE_CONTENT_TIMEOUT_SECONDS || '') || 1_200, 60),
+  1_500,
 )
 const DEFAULT_CREATE_WORKER_TIMEOUT_MS = Math.min(
   Math.max(
     Number(process.env.REINS_OFFICE_CREATE_WORKER_TIMEOUT_MS || '')
-      || Math.max((DEFAULT_CREATE_MODEL_TIMEOUT_SECONDS * 2 + 120) * 1000, 600_000),
+      || OFFICE_TASK_SAFETY_TIMEOUT_MS,
     180_000,
   ),
-  1_200_000,
+  3_600_000,
 )
 const DEFAULT_REVISION_MODEL_TIMEOUT_SECONDS = Math.min(
-  Math.max(Number(process.env.REINS_OFFICE_REVISION_TIMEOUT_SECONDS || '') || 300, 30),
-  900,
+  Math.max(Number(process.env.REINS_OFFICE_REVISION_TIMEOUT_SECONDS || '') || 1_200, 30),
+  1_500,
 )
 const DEFAULT_REVISION_WORKER_TIMEOUT_MS = Math.min(
   Math.max(
     Number(process.env.REINS_OFFICE_REVISION_WORKER_TIMEOUT_MS || '')
-      || Math.max((DEFAULT_REVISION_MODEL_TIMEOUT_SECONDS + 120) * 1000, 600_000),
+      || OFFICE_TASK_SAFETY_TIMEOUT_MS,
     180_000,
   ),
-  900_000,
+  3_600_000,
 )
 const OFFICE_PROGRESS_PREFIX = 'REINS_OFFICE_PROGRESS '
 const OFFICE_OPERATION_TTL_MS = 60 * 60 * 1000
@@ -350,6 +351,20 @@ function parseProgressLine(line: string): OfficeWorkerProgress | null {
 }
 
 function terminateOfficeWorker(child: ChildProcess, signal: NodeJS.Signals) {
+  if (process.platform === 'win32' && child.pid) {
+    try {
+      const killer = spawn(
+        'taskkill',
+        ['/PID', String(child.pid), '/T', ...(signal === 'SIGKILL' ? ['/F'] : [])],
+        { windowsHide: true, stdio: 'ignore' },
+      )
+      killer.on('error', () => {
+        try { child.kill(signal) } catch {}
+      })
+      killer.unref()
+      return
+    } catch {}
+  }
   if (process.platform !== 'win32' && child.pid) {
     try {
       process.kill(-child.pid, signal)
